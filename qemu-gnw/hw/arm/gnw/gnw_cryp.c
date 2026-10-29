@@ -256,6 +256,10 @@ static void process_block(GnwCrypState *s)
             for (int i = 0; i < 16; i++) {
                 out[i] = s->x[i] ^ ks[i];
             }
+            qemu_log_mask(LOG_UNIMP, "gnw-cryp: GCM %s A=%" PRIu64 " C=%" PRIu64
+                          " tag %08x%08x%08x%08x\n", dec ? "dec" : "enc",
+                          alen / 8, clen / 8, ldl_be_p(out), ldl_be_p(out + 4),
+                          ldl_be_p(out + 8), ldl_be_p(out + 12));
             push_out(s, out);
             break;
         }

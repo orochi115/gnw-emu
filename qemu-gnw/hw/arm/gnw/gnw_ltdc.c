@@ -281,6 +281,12 @@ static void ltdc_render_layer(GnwLtdcState *s, int n, uint32_t *fb,
             lut_identity[i] = 0xff000000 | (i * 0x010101);
         }
         clut = lut_identity;
+    } else if (fmt == PF_AL44) {
+        /* LTDC widens the 4-bit index to 8 bits by replication. */
+        for (int i = 0; i < 16; i++) {
+            lut_identity[i] = clut[i * 0x11];
+        }
+        clut = lut_identity;
     }
     if (lw <= 0) {
         return;
