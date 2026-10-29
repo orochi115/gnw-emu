@@ -218,20 +218,42 @@ static void aq_fill(void *opaque, AudioQueueRef q, AudioQueueBufferRef buf)
     UInt32 got = 0;
 
     pthread_mutex_lock(&s->pcm_lock);
-    while (got < cap && s->pcm_fill) {
+    while (got + 4 <= cap && s->pcm_fill >= 4) {
         unsigned chunk = MIN(cap - got, s->pcm_fill);
 
         chunk = MIN(chunk, PCM_RING - s->pcm_r);
+        chunk &= ~3u;
+        if (!chunk) {
+            break;
+        }
         memcpy(dst + got, s->pcm + s->pcm_r, chunk);
         s->pcm_r = (s->pcm_r + chunk) % PCM_RING;
         s->pcm_fill -= chunk;
         got += chunk;
     }
-    pthread_mutex_unlock(&s->pcm_lock);
-    if (got < cap) {
-        memset(dst + got, 0, cap - got);
+    if (got >= 4) {
+        int16_t *tail = (int16_t *)(dst + got - 4);
+
+        s->last_l = tail[0];
+        s->last_r = tail[1];
     }
-    buf->mAudioDataByteSize = cap;
+    pthread_mutex_unlock(&s->pcm_lock);
+    /*
+     * Play only the samples the guest has produced. A short read stays
+     * short, so a gap is not a block of zeros. A completely empty queue
+     * holds the last frame for a few milliseconds instead of clicking.
+     */
+    if (!got) {
+        int16_t *frame = (int16_t *)dst;
+        unsigned i;
+
+        for (i = 0; i < 128; i++) {
+            frame[i * 2] = s->last_l;
+            frame[i * 2 + 1] = s->last_r;
+        }
+        got = 128 * 4;
+    }
+    buf->mAudioDataByteSize = got;
     AudioQueueEnqueueBuffer(q, buf, 0, NULL);
 }
 
@@ -267,7 +289,7 @@ static void host_open(GnwDmaState *s, uint32_t rate, int channels)
     for (int i = 0; i < 3; i++) {
         AudioQueueBufferRef b;
 
-        AudioQueueAllocateBuffer(q, 2048 * fmt.mBytesPerFrame, &b);
+        AudioQueueAllocateBuffer(q, 512 * fmt.mBytesPerFrame, &b);
         memset(b->mAudioData, 0, b->mAudioDataBytesCapacity);
         b->mAudioDataByteSize = b->mAudioDataBytesCapacity;
         AudioQueueEnqueueBuffer(q, b, 0, NULL);
@@ -323,17 +345,13 @@ static void host_push(GnwDmaState *s, const uint8_t *src, uint32_t len,
             unsigned n = MIN(chunk / 4, (unsigned)sizeof(stack) / 4);
             const int16_t *s16 = (const int16_t *)(src + w / 2);
 
+            if (!n) {
+                break;
+            }
             chunk = n * 4;
             for (i = 0; i < n; i++) {
-                int32_t v = (int32_t)s16[i] * 4;
-
-                if (v > 32767) {
-                    v = 32767;
-                } else if (v < -32768) {
-                    v = -32768;
-                }
-                ((int16_t *)stack)[i * 2] = v;
-                ((int16_t *)stack)[i * 2 + 1] = v;
+                ((int16_t *)stack)[i * 2] = s16[i];
+                ((int16_t *)stack)[i * 2 + 1] = s16[i];
             }
             memcpy(s->pcm + pos, stack, chunk);
         } else {
