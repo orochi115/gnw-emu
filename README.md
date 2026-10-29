@@ -68,7 +68,7 @@ scripts/run.sh zelda      # 或 mario
     "press a" "wait 3000" "shot title.png"
 ```
 
-可用的步骤有 `wait MS`、`press BUTTONS [MS]`、`hold BUTTONS`、`release`、`shot FILE`、`regs`、`mem ADDR LEN FILE`；也可以用 `--script 文件` 每行写一步。其他选项：`--model mario`、`--wav out.wav`（录 SAI1 音频）、`--overlay`、`--log`、`--rtc`。
+可用的步骤有 `wait MS`、`press BUTTONS [MS]`、`hold BUTTONS`、`release`、`shot FILE`、`regs`、`mem ADDR LEN FILE`；也可以用 `--script 文件` 每行写一步。其他选项：`--model mario`、`--wav out.wav`（录 SAI1 音频；不接声卡）、`--overlay`、`--log`、`--rtc`。窗口里的声音由 `scripts/run.sh` 的 `audio=on` 打开。
 
 Python：
 
@@ -116,7 +116,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 
 ## 已知限制
 
-- 音频不会送到宿主声卡，只能录成 WAV。
+- 窗口运行（`scripts/run.sh`，机器属性 `audio=on`）用 macOS AudioQueue 播放 SAI1。不设 `audio=on` 时静音；录音仍用 `wav=` 或 `--wav`。时钟界面几乎没有声音，进游戏后才有 BGM。
 - MDMA、BDMA、I2C1、DAC、WWDG 都只是桩。
 - OTFDEC 的「仅解密取指、数据读回 0」模式没有模拟，所有访问都按已解密处理。
 - 定时器没有输入捕获，也没有 PWM 输出。

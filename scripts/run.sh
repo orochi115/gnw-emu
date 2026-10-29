@@ -10,5 +10,5 @@ MODEL=${1:-zelda}; [ $# -gt 0 ] && shift
 FW=${FW:-$ROOT/../firmware}
 mkdir -p "$ROOT/out"
 exec "$ROOT/build/qemu-system-arm" \
-    -M gnw-$MODEL,internal=$FW/internal_flash_backup_$MODEL.bin,external=$FW/flash_backup_$MODEL.bin,overlay=$ROOT/out/${MODEL}_flash.bin \
+    -M gnw-$MODEL,internal=$FW/internal_flash_backup_$MODEL.bin,external=$FW/flash_backup_$MODEL.bin,overlay=$ROOT/out/${MODEL}_flash.bin,audio=on \
     -rtc base=localtime -display ${DISPLAY_BACKEND:-cocoa,zoom-to-fit=on} "$@"

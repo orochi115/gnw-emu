@@ -9,6 +9,7 @@
  *   buttons=   bit mask of pressed buttons (see GNW_BTN_*), settable at
  *              run time with qom-set /machine buttons <mask>
  *   wav=       capture SAI1 audio into a WAV file
+ *   audio=     play SAI1 on the host speakers (macOS AudioQueue)
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -57,6 +58,7 @@ struct GnwMachineState {
     char *external_path;
     char *overlay_path;
     char *wav_path;
+    bool audio;
     uint32_t sample_rate;
     uint32_t buttons;           /* from QOM */
     uint32_t keys;              /* from the keyboard */
@@ -268,6 +270,7 @@ static void gnw_init(MachineState *machine)
     if (m->wav_path) {
         qdev_prop_set_string(dev, "wav", m->wav_path);
     }
+    qdev_prop_set_bit(dev, "playback", m->audio);
     sbd = map_dev(dev, (hwaddr[]){ 0x40020000, 0x40020400, 0x40020800,
                                    0x40015800 }, 4);
     for (int i = 0; i < 8; i++) {
@@ -335,6 +338,16 @@ STR_PROP(internal_path, "internal")
 STR_PROP(external_path, "external")
 STR_PROP(overlay_path, "overlay")
 STR_PROP(wav_path, "wav")
+
+static bool gnw_get_audio(Object *obj, Error **errp)
+{
+    return GNW_MACHINE(obj)->audio;
+}
+
+static void gnw_set_audio(Object *obj, bool v, Error **errp)
+{
+    GNW_MACHINE(obj)->audio = v;
+}
 
 static void gnw_get_u32(Object *obj, Visitor *v, const char *name,
                         void *opaque, Error **errp)
@@ -427,6 +440,10 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_wav_path);
     object_class_property_set_description(oc, "wav",
         "Write SAI1 audio output to this WAV file");
+    object_class_property_add_bool(oc, "audio",
+        gnw_get_audio, gnw_set_audio);
+    object_class_property_set_description(oc, "audio",
+        "Play SAI1 on the host speakers");
     object_class_property_add(oc, "buttons", "uint32", gnw_get_u32,
                               gnw_set_u32, NULL,
                               (void *)offsetof(GnwMachineState, buttons));

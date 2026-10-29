@@ -12,6 +12,7 @@
 #include "qom/object.h"
 #include "ui/console.h"
 #include "crypto/aes.h"
+#include <pthread.h>
 
 /* CPU clock the stock firmware programs (PLL1 280 MHz). */
 #define GNW_SYSCLK_HZ       280000000ULL
@@ -204,6 +205,14 @@ struct GnwDmaState {
     char *wav_path;
     FILE *wav;
     uint32_t wav_bytes;
+    bool playback;              /* host speakers via AudioQueue */
+    void *aq;                   /* AudioQueueRef */
+    int voice_rate;
+    int voice_ch;
+    uint8_t *pcm;
+    unsigned pcm_r;
+    unsigned pcm_fill;
+    pthread_mutex_t pcm_lock;
 };
 
 /* ------------------------------------------------------------------ */

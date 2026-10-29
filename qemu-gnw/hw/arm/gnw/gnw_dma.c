@@ -5,7 +5,8 @@
  * stream feeding SAI1 is paced at the SAI frame rate (derived from the
  * RCC PLL and SAI divider setup), raising half/full transfer interrupts
  * like the real audio path. The firmware's frame pacing may depend on
- * those interrupts. Optionally the samples are written to a WAV file.
+ * those interrupts. Samples can be written to a WAV file and, when an
+ * audiodev is set, played on the host.
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -18,6 +19,11 @@
 #include "system/address-spaces.h"
 #include "system/dma.h"
 #include "gnw.h"
+#ifdef __APPLE__
+#include <AudioToolbox/AudioToolbox.h>
+#endif
+
+#define PCM_RING (64 * 1024)
 
 #define SAI1_BASE   0x40015800
 #define S_CR        0
@@ -201,6 +207,166 @@ static void wav_capture(GnwDmaState *s, uint32_t addr, uint32_t len,
 }
 
 /* ------------------------------------------------------------------ */
+/* Host playback (AudioQueue; QEMU's CoreAudio voice stays silent here) */
+
+#ifdef __APPLE__
+static void aq_fill(void *opaque, AudioQueueRef q, AudioQueueBufferRef buf)
+{
+    GnwDmaState *s = opaque;
+    uint8_t *dst = buf->mAudioData;
+    UInt32 cap = buf->mAudioDataBytesCapacity;
+    UInt32 got = 0;
+
+    pthread_mutex_lock(&s->pcm_lock);
+    while (got < cap && s->pcm_fill) {
+        unsigned chunk = MIN(cap - got, s->pcm_fill);
+
+        chunk = MIN(chunk, PCM_RING - s->pcm_r);
+        memcpy(dst + got, s->pcm + s->pcm_r, chunk);
+        s->pcm_r = (s->pcm_r + chunk) % PCM_RING;
+        s->pcm_fill -= chunk;
+        got += chunk;
+    }
+    pthread_mutex_unlock(&s->pcm_lock);
+    if (got < cap) {
+        memset(dst + got, 0, cap - got);
+    }
+    buf->mAudioDataByteSize = cap;
+    AudioQueueEnqueueBuffer(q, buf, 0, NULL);
+}
+
+static void host_open(GnwDmaState *s, uint32_t rate, int channels)
+{
+    AudioStreamBasicDescription fmt = { 0 };
+    AudioQueueRef q;
+    OSStatus st;
+
+    if (s->aq && s->voice_rate == (int)rate && s->voice_ch == channels) {
+        return;
+    }
+    if (s->aq) {
+        AudioQueueStop(s->aq, true);
+        AudioQueueDispose(s->aq, true);
+        s->aq = NULL;
+    }
+    fmt.mSampleRate = rate;
+    fmt.mFormatID = kAudioFormatLinearPCM;
+    fmt.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger |
+                       kLinearPCMFormatFlagIsPacked;
+    fmt.mChannelsPerFrame = channels;
+    fmt.mBitsPerChannel = 16;
+    fmt.mFramesPerPacket = 1;
+    fmt.mBytesPerFrame = 2 * channels;
+    fmt.mBytesPerPacket = fmt.mBytesPerFrame;
+    st = AudioQueueNewOutput(&fmt, aq_fill, s, NULL, NULL, 0, &q);
+    if (st != noErr) {
+        qemu_log_mask(LOG_UNIMP, "gnw-sai: AudioQueueNewOutput failed (%d)\n",
+                      (int)st);
+        return;
+    }
+    for (int i = 0; i < 3; i++) {
+        AudioQueueBufferRef b;
+
+        AudioQueueAllocateBuffer(q, 2048 * fmt.mBytesPerFrame, &b);
+        memset(b->mAudioData, 0, b->mAudioDataBytesCapacity);
+        b->mAudioDataByteSize = b->mAudioDataBytesCapacity;
+        AudioQueueEnqueueBuffer(q, b, 0, NULL);
+    }
+    AudioQueueSetParameter(q, kAudioQueueParam_Volume, 1.0);
+    st = AudioQueueStart(q, NULL);
+    if (st != noErr) {
+        qemu_log_mask(LOG_UNIMP, "gnw-sai: AudioQueueStart failed (%d)\n",
+                      (int)st);
+        AudioQueueDispose(q, true);
+        return;
+    }
+    s->aq = q;
+    s->voice_rate = rate;
+    s->voice_ch = channels;
+}
+#else
+static void host_open(GnwDmaState *s, uint32_t rate, int channels)
+{
+}
+#endif
+
+/* 16-bit little-endian PCM. Mono is duplicated so both speakers play. */
+static void host_push(GnwDmaState *s, const uint8_t *src, uint32_t len,
+                      int channels)
+{
+    uint8_t stack[4096];
+    const uint8_t *in = src;
+    uint32_t out_len = len;
+    unsigned w = 0;
+
+    if (channels == 1) {
+        out_len = len * 2;
+        in = NULL;
+    }
+    pthread_mutex_lock(&s->pcm_lock);
+    if (!s->pcm) {
+        s->pcm = g_malloc(PCM_RING);
+    }
+    while (s->pcm_fill + out_len > PCM_RING) {
+        unsigned drop = s->pcm_fill + out_len - PCM_RING;
+
+        drop = MIN(drop, PCM_RING - s->pcm_r);
+        s->pcm_r = (s->pcm_r + drop) % PCM_RING;
+        s->pcm_fill -= drop;
+    }
+    while (w < out_len) {
+        unsigned pos = (s->pcm_r + s->pcm_fill) % PCM_RING;
+        unsigned chunk = MIN(out_len - w, PCM_RING - pos);
+        unsigned i;
+
+        if (channels == 1) {
+            unsigned n = MIN(chunk / 4, (unsigned)sizeof(stack) / 4);
+            const int16_t *s16 = (const int16_t *)(src + w / 2);
+
+            chunk = n * 4;
+            for (i = 0; i < n; i++) {
+                int32_t v = (int32_t)s16[i] * 4;
+
+                if (v > 32767) {
+                    v = 32767;
+                } else if (v < -32768) {
+                    v = -32768;
+                }
+                ((int16_t *)stack)[i * 2] = v;
+                ((int16_t *)stack)[i * 2 + 1] = v;
+            }
+            memcpy(s->pcm + pos, stack, chunk);
+        } else {
+            memcpy(s->pcm + pos, in + w, chunk);
+        }
+        s->pcm_fill += chunk;
+        w += chunk;
+    }
+    pthread_mutex_unlock(&s->pcm_lock);
+}
+
+static void host_play(GnwDmaState *s, uint32_t addr, uint32_t len,
+                      uint32_t rate, int channels)
+{
+    uint8_t *buf;
+
+    if (!s->playback || !len || channels < 1) {
+        return;
+    }
+    host_open(s, rate, channels == 1 ? 2 : channels);
+#ifdef __APPLE__
+    if (!s->aq) {
+        return;
+    }
+#endif
+    buf = g_malloc(len);
+    dma_memory_read(&address_space_memory, addr, buf, len,
+                    MEMTXATTRS_UNSPECIFIED);
+    host_push(s, buf, len, channels);
+    g_free(buf);
+}
+
+/* ------------------------------------------------------------------ */
 /* Streams                                                              */
 
 static int stream_psize(uint32_t cr)
@@ -245,8 +411,10 @@ static void stream_buffer(GnwDmaState *s, GnwDmaStream *st, int half)
     uint32_t base = (cr & CR_CT) ? r[S_M1AR] : r[S_M0AR];
     uint32_t bytes = st->total * stream_msize(cr);
     int ch = sai_data_per_frame(s, 0);
+    uint32_t off = half ? bytes / 2 : 0;
 
-    wav_capture(s, base + (half ? bytes / 2 : 0), bytes / 2, ch);
+    wav_capture(s, base + off, bytes / 2, ch);
+    host_play(s, base + off, bytes / 2, sai_frame_rate(s, 0), ch);
 }
 
 static void stream_tick(void *opaque)
@@ -469,6 +637,8 @@ static void gnw_dma_reset(DeviceState *dev)
     memset(s->dma, 0, sizeof(s->dma));
     memset(s->dmamux, 0, sizeof(s->dmamux));
     memset(s->sai, 0, sizeof(s->sai));
+    s->pcm_r = 0;
+    s->pcm_fill = 0;
     s->sai[0x04 / 4] = 0x00000040;
     s->sai[0x0c / 4] = 0x00000007;
     s->sai[0x24 / 4] = 0x00000040;
@@ -500,11 +670,13 @@ static void gnw_dma_init(Object *obj)
             sysbus_init_irq(sbd, &s->irq[c][i]);
         }
     }
+    pthread_mutex_init(&s->pcm_lock, NULL);
 }
 
 static const Property gnw_dma_props[] = {
     DEFINE_PROP_UINT32("sample-rate", GnwDmaState, sample_rate, 0),
     DEFINE_PROP_STRING("wav", GnwDmaState, wav_path),
+    DEFINE_PROP_BOOL("playback", GnwDmaState, playback, false),
 };
 
 static void gnw_dma_class_init(ObjectClass *klass, const void *data)

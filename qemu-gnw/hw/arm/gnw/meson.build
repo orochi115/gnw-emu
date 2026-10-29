@@ -1,4 +1,9 @@
-arm_common_ss.add(when: 'CONFIG_GNW', if_true: files(
+gnw_libs = []
+if host_machine.system() == 'darwin'
+  gnw_libs += dependency('appleframeworks', modules: 'AudioToolbox')
+endif
+
+arm_common_ss.add(when: 'CONFIG_GNW', if_true: [files(
   'gnw.c',
   'gnw_regs.c',
   'gnw_gpio.c',
@@ -7,4 +12,4 @@ arm_common_ss.add(when: 'CONFIG_GNW', if_true: files(
   'gnw_dma.c',
   'gnw_timer.c',
   'gnw_cryp.c',
-))
+), gnw_libs])
