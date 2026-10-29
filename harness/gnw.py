@@ -73,6 +73,8 @@ class GnW:
 
     # -- lifecycle -----------------------------------------------------
     def start(self) -> "GnW":
+        if self.proc:
+            return self
         self.proc = subprocess.Popen(self.args, stdin=subprocess.DEVNULL)
         for _ in range(200):
             if os.path.exists(self.sock):
@@ -104,7 +106,7 @@ class GnW:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     def __enter__(self):
-        return self.start()
+        return self if self.proc else self.start()
 
     def __exit__(self, *exc):
         self.close()

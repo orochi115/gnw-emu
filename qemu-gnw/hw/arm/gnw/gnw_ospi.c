@@ -429,10 +429,6 @@ static uint64_t ospi_read(void *opaque, hwaddr addr, unsigned size)
     }
 
     v = s->regs[addr / 4];
-    if (addr / 4 != R_SR) {
-        qemu_log_mask(LOG_UNIMP, "octospi1: read  0x%03x -> 0x%08x\n",
-                      (unsigned)(addr & ~3), v);
-    }
     if (addr / 4 == R_SR) {
         uint32_t level = s->fifo_len - s->fifo_pos;
         v &= ~(SR_BUSY | 0x3f00);
@@ -470,8 +466,6 @@ static void ospi_write(void *opaque, hwaddr addr, uint64_t value,
         value = (s->regs[idx] & ~mask) | ((value << shift) & mask);
         addr &= ~3;
     }
-    qemu_log_mask(LOG_UNIMP, "octospi1: write 0x%03x <- 0x%08x\n",
-                  idx * 4, (uint32_t)value);
 
     switch (idx) {
     case R_SR:
