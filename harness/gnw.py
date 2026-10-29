@@ -62,7 +62,8 @@ class GnW:
                      "-qmp", f"unix:{self.sock},server=on,wait=off",
                      "-rtc", f"base={rtc},clock=vm" if rtc else "base=localtime"]
         if deterministic:
-            self.args += ["-icount", "shift=auto,sleep=off"]
+            # 2^2 ns per instruction ~ 250 MIPS, close to the 280 MHz core.
+            self.args += ["-icount", "shift=2,sleep=off"]
         if log:
             self.args += ["-d", trace, "-D", log]
         self.args += extra or []

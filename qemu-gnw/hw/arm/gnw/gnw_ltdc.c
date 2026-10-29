@@ -180,7 +180,9 @@ static void ltdc_reload(GnwLtdcState *s)
 
 static int64_t ltdc_line_ns(GnwLtdcState *s, int line)
 {
-    return s->frame_start_ns + s->frame_ns * line / ltdc_total_lines(s);
+    int total = ltdc_total_lines(s);
+
+    return s->frame_start_ns + s->frame_ns * MIN(line, total) / total;
 }
 
 static void ltdc_schedule(GnwLtdcState *s)
@@ -229,7 +231,12 @@ static void ltdc_frame_tick(void *opaque)
         break;
     }
     if (s->phase == 3) {
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
         s->frame_start_ns += s->frame_ns;
+        if (s->frame_start_ns + s->frame_ns < now) {
+            s->frame_start_ns = now;    /* fell behind: resynchronise */
+        }
         s->phase = 0;
     }
     ltdc_update_irq(s);
@@ -434,7 +441,14 @@ static void ltdc_write(void *opaque, hwaddr addr, uint64_t value,
         ltdc_update_irq(s);
         return;
     case L_LIPCR:
+    case L_BPCR:
+    case L_AWCR:
+    case L_TWCR:
+        /* Timing changed: re-place the next event within the frame. */
         s->regs[idx] = value;
+        if (s->regs[L_GCR] & 1) {
+            ltdc_schedule(s);
+        }
         return;
     }
     if (idx == LY(0, LY_CLUTWR) || idx == LY(1, LY_CLUTWR)) {
