@@ -1,6 +1,8 @@
 """End-to-end tests: boot the stock firmware headless and check behaviour."""
 import re
+import struct
 import sys
+import wave
 from pathlib import Path
 
 import pytest
@@ -82,6 +84,27 @@ def test_zelda_links_awakening_runs(golden):
         frame = gw.frame()
         assert lit_fraction(frame) > 0.3
         golden("zelda-gb-intro", frame)
+
+
+@zelda
+def test_zelda_audio_has_no_buffer_seam(tmp_path):
+    # SAI1 runs from pll2_p at ~48 kHz. At the wrong rate the game's buffer
+    # queue overruns and every 240-sample block ends with a click.
+    wav = tmp_path / "a.wav"
+    with boot("zelda", wav=str(wav)) as gw:
+        gw.press("game", 150, 1000)
+        gw.press("a", 150, 6000)
+    with wave.open(str(wav)) as w:
+        assert 47900 < w.getframerate() < 48100
+        d = struct.unpack(f"<{w.getnframes()}h", w.readframes(w.getnframes()))
+    jump = [abs(d[i + 1] - 2 * d[i] + d[i - 1]) for i in range(1, len(d) - 1)]
+    thr = sorted(jump)[len(jump) * 995 // 1000]
+    at = [0] * 240
+    for i, v in enumerate(jump):
+        if v > thr:
+            at[(i + 1) % 240] += 1
+    assert sum(at) > 100                        # the music is playing
+    assert at[238] + at[239] < 6 * sum(at) / 240
 
 
 @zelda

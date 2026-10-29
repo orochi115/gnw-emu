@@ -118,7 +118,8 @@ static uint32_t sai_frame_rate(GnwDmaState *s, int block)
     uint32_t fs;
 
     if (s->rcc) {
-        switch (extract32(s->rcc->regs[0x4c / 4], 0, 3)) {
+        /* RCC_CDCCIP1R.SAI1SEL */
+        switch (extract32(s->rcc->regs[0x50 / 4], 0, 3)) {
         case 0: ker = pll_out(s->rcc, 0, 16); break;   /* pll1_q */
         case 1: ker = pll_out(s->rcc, 1, 9); break;    /* pll2_p */
         case 2: ker = pll_out(s->rcc, 2, 9); break;    /* pll3_p */

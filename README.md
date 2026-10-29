@@ -117,7 +117,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 ## 已知限制
 
 - 窗口运行（`scripts/run.sh`，机器属性 `audio=on`）用 macOS AudioQueue 播放 SAI1。不设 `audio=on` 时静音；录音仍用 `wav=` 或 `--wav`。时钟界面几乎没有声音，进游戏后才有 BGM。
-- 游戏 BGM 有周期性杂音，`wav=` 录到的 SAI 原始流里就有，不是声卡后加的。Zelda 的 SAI DMA 是双缓冲、240 个 16 位采样、只开 TC 中断，但开启时 M0 和 M1 指向同一地址，模拟的 NDTR 又减不到 0。固件按这些标志写下一拍，块与块之间每隔 240 个采样（约 5.4 ms）会跳一下。同一固件在实机上没有这个接缝，问题在 DMA 时序，不在固件。播放端不再做 4 倍放大，缓冲空档也不再填静音。
+- SAI1 的采样率按 RCC 和 SAI 寄存器推算（Zelda 为 pll2_p 12.289 MHz，约 48004 Hz）。以前误读了 `RCC_CDCCIPR` 而不是 `RCC_CDCCIP1R` 的 SAI1SEL，得到 44270 Hz，比游戏的出声速度慢约 8%。游戏的缓冲队列因此溢出，正在播放的缓冲被改写，每 240 个采样的块尾都有杂音。
 - MDMA、BDMA、I2C1、DAC、WWDG 都只是桩。
 - OTFDEC 的「仅解密取指、数据读回 0」模式没有模拟，所有访问都按已解密处理。
 - 定时器没有输入捕获，也没有 PWM 输出。
