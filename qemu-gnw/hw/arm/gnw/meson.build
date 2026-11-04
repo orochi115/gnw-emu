@@ -13,4 +13,5 @@ arm_common_ss.add(when: 'CONFIG_GNW', if_true: [files(
   'gnw_timer.c',
   'gnw_cryp.c',
   'gnw_jpeg.c',
+  'gnw_adc.c',
 ), gnw_libs])

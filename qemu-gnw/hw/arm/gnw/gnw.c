@@ -14,6 +14,11 @@
  *   audio=     play SAI1 on the host speakers (macOS AudioQueue)
  *   realtime=  with -icount shift=N,sleep=off: pace virtual time to the
  *              host clock (see gnw_realtime_tick)
+ *   battery=   battery level in percent (default 100), settable at run time
+ *   usb-power= USB power connected (charging until full), settable at run time
+ *   battery-life-min / charge-time-min
+ *              minutes for 100 -> 0 % on battery / 0 -> 100 % on USB
+ *              (0 = level stays put); see gnw_battery_tick
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -58,6 +63,7 @@ struct GnwMachineState {
     GnwOspiState *ospi;
     GnwLtdcState *ltdc;
     GnwDmaState *dma;
+    GnwAdcState *adc;
 
     char *internal_path;
     char *bank2_path;
@@ -66,6 +72,12 @@ struct GnwMachineState {
     char *wav_path;
     bool audio;
     bool realtime;
+    uint32_t battery;           /* QOM view of level, percent */
+    bool usb;
+    uint32_t battery_life_min, charge_time_min;
+    uint32_t adc_override;      /* debug: raw channel-4 value, 0 = model */
+    double level;               /* percent, fractional */
+    QEMUTimer *bat_timer;
     QEMUTimer *rt_timer;
     int64_t rt_base_v, rt_base_h;
     uint32_t sample_rate;
@@ -136,6 +148,60 @@ static void gnw_realtime_start(GnwMachineState *m)
     qemu_add_vm_change_state_handler(gnw_realtime_vmstate, m);
 }
 
+/*
+ * Battery and charger (BQ24072).
+ *
+ * The cell voltage reaches ADC12_INP4 (PC4) through a divider.  Retro-Go
+ * reads ADC1 channel 4 with a 1.5-cycle sample and maps 11000 -> 0 %,
+ * 13000 -> 100 % (Core/Src/bq24072.c).  The stock firmware samples the
+ * same pin on ADC2 for 810.5 cycles and sees ~3.3x more (see gnw_adc.c):
+ * it shows four bars from ~43000, one red bar below ~39000 and powers off
+ * below ~36740, i.e. below about 5 % on this scale.  The level property
+ * uses Retro-Go's scale, so Retro-Go shows exactly the configured percent.
+ * The charger reports on two open-drain, active-low pins:
+ *   PA2  PGOOD: USB power present
+ *   PE7  CHG:   charging (low while charging, released when full)
+ * Both are EXTI sources in Retro-Go, so plugging and unplugging is seen at
+ * once; the level is polled about once a second (TIM1).
+ */
+#define BAT_RAW_EMPTY   11000   /* Retro-Go's 1.5-cycle readings */
+#define BAT_RAW_FULL    13000
+#define BAT_SHORT_SAMPLE 0.3023 /* 1 - exp(-1.5 / ADC_TAU_CYCLES) */
+
+static void gnw_battery_apply(GnwMachineState *m)
+{
+    bool charging = m->usb && m->level < 100.0;
+
+    m->level = MIN(MAX(m->level, 0.0), 100.0);
+    m->battery = (uint32_t)(m->level + 0.5);
+    if (m->adc) {
+        double short_raw = BAT_RAW_EMPTY +
+                           (BAT_RAW_FULL - BAT_RAW_EMPTY) * m->level / 100.0;
+
+        /* Channel value = settled reading; the ADC applies the sampling. */
+        gnw_adc_set_channel(m->adc, 4, m->adc_override ? m->adc_override :
+                            MIN(short_raw / BAT_SHORT_SAMPLE, 65535.0));
+    }
+    if (m->gpio) {
+        gnw_gpio_set_external(m->gpio, 0, 2, !m->usb);    /* PA2 PGOOD */
+        gnw_gpio_set_external(m->gpio, 4, 7, !charging);  /* PE7 CHG */
+    }
+}
+
+static void gnw_battery_tick(void *opaque)
+{
+    GnwMachineState *m = opaque;
+
+    if (m->usb && m->charge_time_min) {
+        m->level += 100.0 / (m->charge_time_min * 60.0);
+    } else if (!m->usb && m->battery_life_min) {
+        m->level -= 100.0 / (m->battery_life_min * 60.0);
+    }
+    gnw_battery_apply(m);
+    timer_mod(m->bat_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                            NANOSECONDS_PER_SECOND);
+}
+
 /* GPIO port/pin of each button (retro-go Core/Inc/main.h). */
 static const struct { int port, pin; } button_pins[GNW_BTN_COUNT] = {
     [GNW_BTN_LEFT]   = { 3, 11 },
@@ -192,6 +258,20 @@ static void gnw_key_event(DeviceState *dev, QemuConsole *src,
 {
     GnwMachineState *m = GNW_MACHINE(qdev_get_machine());
     int qcode = qemu_input_linux_to_qcode(evt->key.key);
+
+    /* Battery shortcuts: '-' / '=' change the level by 10 %, C toggles USB. */
+    if (evt->key.down && (qcode == Q_KEY_CODE_MINUS ||
+                          qcode == Q_KEY_CODE_EQUAL || qcode == Q_KEY_CODE_C)) {
+        if (qcode == Q_KEY_CODE_C) {
+            m->usb = !m->usb;
+        } else {
+            m->level += qcode == Q_KEY_CODE_EQUAL ? 10 : -10;
+        }
+        gnw_battery_apply(m);
+        info_report("gnw: battery %u%%, USB %s", m->battery,
+                    m->usb ? "connected" : "disconnected");
+        return;
+    }
 
     for (int i = 0; i < GNW_BTN_COUNT; i++) {
         if (button_keys[i] == qcode) {
@@ -368,6 +448,7 @@ static void gnw_init(MachineState *machine)
     /* Timers */
     {
         static const struct { hwaddr base; int irq; bool wide; } tims[] = {
+            { 0x40010000, GNW_IRQ_TIM1_UP, false },    /* Retro-Go: 1 Hz poll */
             { 0x40000000, GNW_IRQ_TIM2, true },
             { 0x40000400, GNW_IRQ_TIM3, false },
             { 0x40000800, GNW_IRQ_TIM4, false },
@@ -390,6 +471,16 @@ static void gnw_init(MachineState *machine)
     /* CRYP (AES-GCM for the save slots) */
     sbd = map_dev(qdev_new("gnw-cryp"), (hwaddr[]){ 0x48021000 }, 1);
     sysbus_connect_irq(sbd, 0, NVIC(GNW_IRQ_CRYP));
+
+    /* ADC1/ADC2 (battery on channel 4) */
+    dev = qdev_new(TYPE_GNW_ADC);
+    m->adc = (GnwAdcState *)dev;
+    sbd = map_dev(dev, (hwaddr[]){ 0x40022000 }, 1);
+    sysbus_connect_irq(sbd, 0, NVIC(GNW_IRQ_ADC));
+    m->level = m->battery;
+    gnw_battery_apply(m);
+    m->bat_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gnw_battery_tick, m);
+    timer_mod(m->bat_timer, NANOSECONDS_PER_SECOND);
 
     /* JPEG codec (Retro-Go cover flow; polled, no IRQ needed) */
     map_dev(qdev_new(TYPE_GNW_JPEG), (hwaddr[]){ 0x52003000 }, 1);
@@ -430,6 +521,59 @@ STR_PROP(bank2_path, "bank2")
 STR_PROP(external_path, "external")
 STR_PROP(overlay_path, "overlay")
 STR_PROP(wav_path, "wav")
+
+static void gnw_get_battery(Object *obj, Visitor *v, const char *name,
+                            void *opaque, Error **errp)
+{
+    visit_type_uint32(v, name, &GNW_MACHINE(obj)->battery, errp);
+}
+
+static void gnw_set_battery(Object *obj, Visitor *v, const char *name,
+                            void *opaque, Error **errp)
+{
+    GnwMachineState *m = GNW_MACHINE(obj);
+    uint32_t pct;
+
+    if (!visit_type_uint32(v, name, &pct, errp)) {
+        return;
+    }
+    if (pct > 100) {
+        error_setg(errp, "battery must be 0..100");
+        return;
+    }
+    m->battery = pct;
+    m->level = pct;
+    gnw_battery_apply(m);
+}
+
+static bool gnw_get_usb(Object *obj, Error **errp)
+{
+    return GNW_MACHINE(obj)->usb;
+}
+
+static void gnw_set_usb(Object *obj, bool v, Error **errp)
+{
+    GnwMachineState *m = GNW_MACHINE(obj);
+
+    m->usb = v;
+    gnw_battery_apply(m);
+}
+
+static void gnw_get_plain_u32(Object *obj, Visitor *v, const char *name,
+                              void *opaque, Error **errp)
+{
+    uint32_t *p = (uint32_t *)((char *)obj + (uintptr_t)opaque);
+
+    visit_type_uint32(v, name, p, errp);
+}
+
+static void gnw_set_plain_u32(Object *obj, Visitor *v, const char *name,
+                              void *opaque, Error **errp)
+{
+    uint32_t *p = (uint32_t *)((char *)obj + (uintptr_t)opaque);
+
+    visit_type_uint32(v, name, p, errp);
+}
 
 static bool gnw_get_realtime(Object *obj, Error **errp)
 {
@@ -546,6 +690,29 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_wav_path);
     object_class_property_set_description(oc, "wav",
         "Write SAI1 audio output to this WAV file");
+    object_class_property_add(oc, "battery", "uint32", gnw_get_battery,
+                              gnw_set_battery, NULL, NULL);
+    object_class_property_set_description(oc, "battery",
+        "Battery level in percent (0..100, default 100)");
+    object_class_property_add_bool(oc, "usb-power", gnw_get_usb,
+                                   gnw_set_usb);
+    object_class_property_set_description(oc, "usb-power",
+        "USB power connected: charges to 100 %, then reports full");
+    object_class_property_add(oc, "battery-life-min", "uint32",
+                              gnw_get_plain_u32, gnw_set_plain_u32, NULL,
+                              (void *)offsetof(GnwMachineState,
+                                               battery_life_min));
+    object_class_property_set_description(oc, "battery-life-min",
+        "Minutes to drain 100 -> 0 % without USB (0 = no drain, default 480)");
+    object_class_property_add(oc, "charge-time-min", "uint32",
+                              gnw_get_plain_u32, gnw_set_plain_u32, NULL,
+                              (void *)offsetof(GnwMachineState,
+                                               charge_time_min));
+    object_class_property_set_description(oc, "charge-time-min",
+        "Minutes to charge 0 -> 100 % on USB (0 = no change, default 180)");
+    object_class_property_add(oc, "adc-override", "uint32",
+                              gnw_get_plain_u32, gnw_set_plain_u32, NULL,
+                              (void *)offsetof(GnwMachineState, adc_override));
     object_class_property_add_bool(oc, "realtime",
         gnw_get_realtime, gnw_set_realtime);
     object_class_property_set_description(oc, "realtime",
@@ -573,6 +740,15 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
         "Pause the VM after this many ms of virtual time");
 }
 
+static void gnw_machine_instance_init(Object *obj)
+{
+    GnwMachineState *m = GNW_MACHINE(obj);
+
+    m->battery = 100;
+    m->battery_life_min = 480;      /* ~8 h of play */
+    m->charge_time_min = 180;       /* ~3 h on USB */
+}
+
 static void gnw_zelda_class_init(ObjectClass *oc, const void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
@@ -595,6 +771,7 @@ static const TypeInfo gnw_machine_types[] = {
         .abstract = true,
         .instance_size = sizeof(GnwMachineState),
         .class_size = sizeof(GnwMachineClass),
+        .instance_init = gnw_machine_instance_init,
         .class_init = gnw_machine_class_init,
     }, {
         .name = MACHINE_TYPE_NAME("gnw-zelda"),

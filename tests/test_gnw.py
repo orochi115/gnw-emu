@@ -144,3 +144,39 @@ def test_saves_go_to_overlay_only(tmp_path):
         pass
     assert overlay.exists() and overlay.stat().st_size == len(original)
     assert (FIRMWARE / "flash_backup_zelda.bin").read_bytes() == original
+
+
+def icon_colours(img):
+    """Green / red pixel counts in the stock menu's battery icon."""
+    raw = img.convert("RGB").crop((276, 0, 312, 16)).tobytes()
+    px = [tuple(raw[i:i + 3]) for i in range(0, len(raw), 3)]
+    green = sum(1 for r, g, b in px if g > 150 and r < 100)
+    red = sum(1 for r, g, b in px if r > 150 and g < 100)
+    return green, red
+
+
+@zelda
+@pytest.mark.parametrize("percent, expect", [(100, "green"), (20, "red"), (3, "off")])
+def test_zelda_battery_level(percent, expect):
+    """ADC2 channel 4 follows battery=; the stock firmware powers off when empty."""
+    with boot("zelda", battery=percent) as gw:
+        gw.press("game", 150, 1000)
+        menu = gw.frame()
+    if expect == "off":
+        assert lit_fraction(menu) < 0.05
+        return
+    green, red = icon_colours(menu)
+    assert (green > 20 and red == 0) if expect == "green" else (red > 8 and green == 0)
+
+
+@zelda
+def test_battery_drain_charge_and_runtime_set():
+    with boot("zelda", 1000, battery_life_min=1, charge_time_min=2) as gw:
+        gw.set_battery(100)
+        gw.run(30000)                       # 1 min for 100 % -> 50 %
+        assert abs(gw.battery - 50) <= 1
+        gw.set_usb(True)
+        gw.run(30000)                       # 2 min for 100 % -> +25 %
+        assert abs(gw.battery - 75) <= 1
+        gw.set_battery(10)
+        assert gw.battery == 10

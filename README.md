@@ -54,6 +54,8 @@ scripts/run.sh zelda      # 或 mario
 | G / T / P | GAME / TIME / PAUSE |
 | O | POWER |
 | Return / Tab | START / SELECT（仅 Zelda） |
+| - / = | 电量 −10% / +10% |
+| C | 插上 / 拔掉 USB 电源 |
 
 存档写到 `out/<model>_flash.bin`。第一次运行时从 dump 复制，`firmware/` 下的文件不会被改动。
 
@@ -70,6 +72,8 @@ INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin BANK2=$B/bank2.bin \
 开机进入原厂时钟。按住 **← + G**（LEFT + GAME）后，补丁过的引导程序会跳到 Bank 2 的 Retro-Go。
 Retro-Go 里 G 对应游戏的 START，P（PAUSE）打开游戏菜单，T（TIME）对应 SELECT。
 存档写进 `OVERLAY` 指定的文件，备份本身不会被改动。
+
+电池：`BATTERY=30 USB_POWER=on BATTERY_LIFE_MIN=10 scripts/run.sh zelda` 这类环境变量设定开机电量、是否插着 USB、耗电和充电速度；窗口里按 `-`/`=` 调电量，按 `C` 插拔 USB。Headless 用 `GnW(battery=..., usb=..., battery_life_min=..., charge_time_min=...)`，运行中 `gw.set_battery(n)`、`gw.set_usb(True)`。注意 QEMU 在 VM 暂停时会丢弃键盘事件，脚本里要在运行时发键。
 
 Headless 时用 `--internal/--external/--bank2`，或者 `GnW(internal=..., external=..., bank2=...)`。
 `tests/test_retrogo.py` 会找最新的 `../game-and-watch-backup/backups/full_*`（也可以用 `GNW_FULL_BACKUP` 指定），没有就跳过。
@@ -131,7 +135,10 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | CRYP | AES-ECB/CBC/CTR/GCM，加密和解密都支持。算出的存档 GCM tag 与 dump 里两份 NVRAM 的 tag 一致 |
 | TIM2–7、TIM15–17 | 计数、更新中断 |
 | RTC + TAMP | 日历、亚秒、唤醒定时器、闹钟 A/B、备份寄存器 |
-| SPI2（LCD 初始化）、ADC、HSEM、CRC、DBGMCU 等 | 桩：可读回，状态位恒为就绪 |
+| ADC1/ADC2 | 转换（软件启动、连续模式、EOC/EOS 中断）、分辨率、过采样、SMPR 采样时间。通道 4 接电池分压：采样时间短时电容充不满，读数按 1−e^(−周期/4.17) 打折，所以 Retro-Go（1.5 周期）和原厂（810.5 周期）读到的数值与真机一致 |
+| 电池与充电（BQ24072） | 机器属性 `battery`（0–100，默认 100）、`usb-power`、`battery-life-min`（默认 480）、`charge-time-min`（默认 180），运行中可用 `qom-set` 修改；PA2（PGOOD）、PE7（CHG）低电平有效并触发 EXTI。原厂固件：≥约 75% 显示 4 格，≤约 25% 变红，低于约 5% 开机即关机。百分比用 Retro-Go 的尺度，Retro-Go 显示的就是设定值 |
+| TIM1 | 只有更新中断（Retro-Go 用它每秒读一次电量） |
+| SPI2（LCD 初始化）、HSEM、CRC、DBGMCU 等 | 桩：可读回，状态位恒为就绪 |
 | 其他 `0x40000000–0x5FFFFFFF` | `unimplemented-device`，读回 0；加 `-d unimp` 后会记日志 |
 
 ## 已知限制
@@ -139,6 +146,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 - 窗口运行（`scripts/run.sh`，机器属性 `audio=on`）用 macOS AudioQueue 播放 SAI1，前面有 60 ms 的抖动缓冲（读空后重新攒满再播，积压超过 200 ms 就丢掉最旧的数据）。`GNW_AQ_DUMP=文件` 会把实际播放的数据存成 raw（48 kHz、16 位、双声道），可以和 `wav=` 录到的 SAI 数据对比。不设 `audio=on` 时静音；录音仍用 `wav=` 或 `--wav`。时钟界面几乎没有声音，进游戏后才有 BGM。
 - SAI1 的采样率按 RCC 和 SAI 寄存器推算（Zelda 为 pll2_p 12.289 MHz，约 48004 Hz）。以前误读了 `RCC_CDCCIPR` 而不是 `RCC_CDCCIP1R` 的 SAI1SEL，得到 44270 Hz，比游戏的出声速度慢约 8%。游戏的缓冲队列因此溢出，正在播放的缓冲被改写，每 240 个采样的块尾都有杂音。
 - MDMA、BDMA、I2C1、DAC、WWDG 都只是桩。
+- 电量用电压线性近似，没有模拟锂电池放电曲线；0% 不会自动关机，只有原厂固件会在低电量时自己关机。
 - OTFDEC 的「仅解密取指、数据读回 0」模式没有模拟，所有访问都按已解密处理。
 - 定时器没有输入捕获，也没有 PWM 输出。
 - 低功耗模式下 CPU 只是停在 WFI，不模拟功耗。
@@ -152,3 +160,5 @@ build/qemu-system-arm -M gnw-zelda,internal=...,external=... -display none -s -S
 ```
 
 启动卡住时，看 `-d unimp,guest_errors` 日志里最后被轮询的寄存器，再到 RM0455 里查对应的位。
+
+调试用的机器属性 `adc-override=<0–65535>` 直接指定 ADC 通道 4 的稳定读数（采样打折之前），用来试探固件的电量阈值。

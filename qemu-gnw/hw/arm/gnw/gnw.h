@@ -24,6 +24,8 @@
 #define GNW_IRQ_EXTI9_5     23
 #define GNW_IRQ_EXTI15_10   40
 #define GNW_IRQ_RTC_ALARM   41
+#define GNW_IRQ_ADC         18
+#define GNW_IRQ_TIM1_UP     25
 #define GNW_IRQ_TIM2        28
 #define GNW_IRQ_TIM3        29
 #define GNW_IRQ_TIM4        30
@@ -236,6 +238,10 @@ struct GnwTimState {
 
 #define TYPE_GNW_RTC "gnw-rtc"
 #define TYPE_GNW_JPEG "gnw-jpeg"
+#define TYPE_GNW_ADC "gnw-adc"
+typedef struct GnwAdcState GnwAdcState;
+/* Set the 16-bit full-scale input of an ADC channel (shared by ADC1/2). */
+void gnw_adc_set_channel(GnwAdcState *s, int ch, uint16_t value);
 OBJECT_DECLARE_SIMPLE_TYPE(GnwRtcState, GNW_RTC)
 
 struct GnwRtcState {

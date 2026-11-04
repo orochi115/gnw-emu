@@ -48,7 +48,9 @@ class GnW:
                  extra: list[str] | None = None,
                  internal: str | None = None, external: str | None = None,
                  bank2: str | None = None, audio: bool = False,
-                 realtime: bool = False):
+                 realtime: bool = False, battery: int | None = None,
+                 usb: bool | None = None, battery_life_min: int | None = None,
+                 charge_time_min: int | None = None):
         firmware = Path(firmware)
         self.model = model
         self.tmp = Path(tempfile.mkdtemp(prefix="gnw-"))
@@ -60,6 +62,14 @@ class GnW:
             opts.append(f"bank2={bank2}")
         if audio:
             opts.append("audio=on")
+        if battery is not None:
+            opts.append(f"battery={battery}")
+        if usb is not None:
+            opts.append(f"usb-power={'on' if usb else 'off'}")
+        if battery_life_min is not None:
+            opts.append(f"battery-life-min={battery_life_min}")
+        if charge_time_min is not None:
+            opts.append(f"charge-time-min={charge_time_min}")
         if realtime and not deterministic:
             # Exact timers (icount) paced to the host clock by the machine.
             opts.append("realtime=on")
@@ -149,6 +159,23 @@ class GnW:
                 raise RuntimeError("qemu exited while running")
         self.qmp.cmd("stop")
         raise TimeoutError(f"guest did not reach +{ms} ms in time")
+
+    # -- battery -------------------------------------------------------
+    @property
+    def battery(self) -> int:
+        return self.qmp.cmd("qom-get", path="/machine", property="battery")
+
+    def set_battery(self, percent: int) -> None:
+        self.qmp.cmd("qom-set", path="/machine", property="battery",
+                     value=int(percent))
+
+    @property
+    def usb(self) -> bool:
+        return self.qmp.cmd("qom-get", path="/machine", property="usb-power")
+
+    def set_usb(self, connected: bool) -> None:
+        self.qmp.cmd("qom-set", path="/machine", property="usb-power",
+                     value=bool(connected))
 
     # -- input ---------------------------------------------------------
     def set_buttons(self, names) -> None:

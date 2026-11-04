@@ -1,6 +1,6 @@
 /*
  * Game & Watch: generic read-back register files and the simple
- * peripherals built on top of them (RCC, PWR, FLASH, SPI2, ADC, ...).
+ * peripherals built on top of them (RCC, PWR, FLASH, SPI2, ...).
  *
  * Every write is stored and read back. Peripheral specific hooks set
  * the status bits the stock firmware polls on (ready flags etc.).
@@ -254,34 +254,6 @@ static uint32_t spi_read(GnwRegs *s, hwaddr off, uint32_t v)
 }
 
 /* ------------------------------------------------------------------ */
-/* ADC1/ADC2 (battery measurement)                                      */
-
-static uint32_t adc_read(GnwRegs *s, hwaddr off, uint32_t v)
-{
-    hwaddr r = off & 0xff;
-
-    if ((off & 0x300) == 0x300) {
-        return v;               /* common registers */
-    }
-    switch (r) {
-    case 0x00: /* ISR: ADRDY, EOSMP, EOC, EOS */
-        return v | 0xf;
-    case 0x08: /* CR: ADCAL, ADSTART, ADSTP, ADDIS self-clear */
-        return v & ~((1u << 31) | (1 << 2) | (1 << 4) | (1 << 1));
-    case 0x40: /* DR: plenty of battery */
-        return 0xe000;
-    }
-    return v;
-}
-
-static void adc_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
-{
-    if ((off & 0x300) != 0x300 && (off & 0xff) == 0x00) {
-        s->regs[off / 4] = old & ~v;    /* ISR: write 1 to clear */
-    }
-}
-
-/* ------------------------------------------------------------------ */
 /* DBGMCU                                                               */
 
 static void dbgmcu_reset(GnwRegs *s)
@@ -335,7 +307,6 @@ GnwRegs *gnw_regs_create_stubs(void)
     gnw_regs_create("flash-if", 0x52002000, 0x1000, flash_read, NULL,
                     flash_reset);
     gnw_regs_create("spi2", 0x40003800, 0x400, spi_read, NULL, NULL);
-    gnw_regs_create("adc12", 0x40022000, 0x400, adc_read, adc_write, NULL);
     gnw_regs_create("dbgmcu", 0x5c001000, 0x400, NULL, NULL, dbgmcu_reset);
     gnw_regs_create("hsem", 0x58026400, 0x400, hsem_read, NULL, NULL);
     gnw_regs_create("crc", 0x58024c00, 0x400, NULL, crc_write, crc_reset);
