@@ -47,7 +47,8 @@ class GnW:
                  trace: str = "unimp,guest_errors", display: str = "none",
                  extra: list[str] | None = None,
                  internal: str | None = None, external: str | None = None,
-                 bank2: str | None = None, audio: bool = False):
+                 bank2: str | None = None, audio: bool = False,
+                 realtime: bool = False):
         firmware = Path(firmware)
         self.model = model
         self.tmp = Path(tempfile.mkdtemp(prefix="gnw-"))
@@ -59,6 +60,9 @@ class GnW:
             opts.append(f"bank2={bank2}")
         if audio:
             opts.append("audio=on")
+        if realtime and not deterministic:
+            # Exact timers (icount) paced to the host clock by the machine.
+            opts.append("realtime=on")
         if overlay:
             opts.append(f"overlay={overlay}")
         if wav:
@@ -69,6 +73,8 @@ class GnW:
                      "-rtc", f"base={rtc},clock=vm" if rtc else "base=localtime"]
         if deterministic:
             # 2^2 ns per instruction ~ 250 MIPS, close to the 280 MHz core.
+            self.args += ["-icount", "shift=2,sleep=off"]
+        elif realtime:
             self.args += ["-icount", "shift=2,sleep=off"]
         if log:
             self.args += ["-d", trace, "-D", log]

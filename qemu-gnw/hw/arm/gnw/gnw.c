@@ -12,6 +12,8 @@
  *              run time with qom-set /machine buttons <mask>
  *   wav=       capture SAI1 audio into a WAV file
  *   audio=     play SAI1 on the host speakers (macOS AudioQueue)
+ *   realtime=  with -icount shift=N,sleep=off: pace virtual time to the
+ *              host clock (see gnw_realtime_tick)
  *
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
@@ -31,6 +33,7 @@
 #include "system/address-spaces.h"
 #include "system/system.h"
 #include "system/runstate.h"
+#include "exec/icount.h"
 #include "qemu/timer.h"
 #include "ui/input.h"
 #include "gnw.h"
@@ -62,6 +65,9 @@ struct GnwMachineState {
     char *overlay_path;
     char *wav_path;
     bool audio;
+    bool realtime;
+    QEMUTimer *rt_timer;
+    int64_t rt_base_v, rt_base_h;
     uint32_t sample_rate;
     uint32_t buttons;           /* from QOM */
     uint32_t keys;              /* from the keyboard */
@@ -69,6 +75,66 @@ struct GnwMachineState {
     QEMUTimer *stop_timer;
     QemuInputHandlerState *input;
 };
+
+/*
+ * Real-time pacing for interactive use.
+ *
+ * Without icount, QEMU fires virtual timers from the main loop as host
+ * time passes.  When the loop runs late, periodic timers catch up with a
+ * burst of expiries in one pass and the NVIC merges them: SysTick lost a
+ * third of its interrupts under Retro-Go, whose frame pacing (HAL_GetTick)
+ * then skipped audio half-buffers.  -icount shift=N,sleep=off fires every
+ * timer at its exact instruction count instead, but runs as fast as the
+ * host allows (and QEMU refuses align=on with sleep=off).
+ *
+ * This timer restores real-time speed: every millisecond of virtual time
+ * it sleeps until the host clock has caught up.  It runs on the main loop
+ * with the BQL held, so the vCPU waits too.  After a VM stop, or if the
+ * host falls behind by more than 50 ms, the reference point is reset
+ * rather than running fast to catch up.
+ */
+#define RT_SLICE_NS     (1 * SCALE_MS)
+#define RT_MAX_BEHIND   (50 * SCALE_MS)
+
+static void gnw_realtime_tick(void *opaque)
+{
+    GnwMachineState *m = opaque;
+    int64_t v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    int64_t h = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+    int64_t ahead = (v - m->rt_base_v) - (h - m->rt_base_h);
+
+    if (ahead > 0) {
+        g_usleep(ahead / 1000);
+    } else if (ahead < -RT_MAX_BEHIND) {
+        m->rt_base_v = v;
+        m->rt_base_h = h;
+    }
+    timer_mod(m->rt_timer, v + RT_SLICE_NS);
+}
+
+static void gnw_realtime_vmstate(void *opaque, bool running, RunState state)
+{
+    GnwMachineState *m = opaque;
+
+    if (running) {
+        m->rt_base_v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        m->rt_base_h = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+    }
+}
+
+static void gnw_realtime_start(GnwMachineState *m)
+{
+    if (!icount_enabled()) {
+        warn_report("gnw: realtime=on needs -icount shift=N,sleep=off; "
+                    "ignored");
+        return;
+    }
+    m->rt_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gnw_realtime_tick, m);
+    m->rt_base_v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    m->rt_base_h = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+    timer_mod(m->rt_timer, m->rt_base_v + RT_SLICE_NS);
+    qemu_add_vm_change_state_handler(gnw_realtime_vmstate, m);
+}
 
 /* GPIO port/pin of each button (retro-go Core/Inc/main.h). */
 static const struct { int port, pin; } button_pins[GNW_BTN_COUNT] = {
@@ -337,6 +403,9 @@ static void gnw_init(MachineState *machine)
     g_free(internal);
     g_free(external);
 
+    if (m->realtime) {
+        gnw_realtime_start(m);
+    }
     armv7m_load_kernel(ARM_CPU(first_cpu), NULL, 0, 0);
 #undef NVIC
 }
@@ -361,6 +430,16 @@ STR_PROP(bank2_path, "bank2")
 STR_PROP(external_path, "external")
 STR_PROP(overlay_path, "overlay")
 STR_PROP(wav_path, "wav")
+
+static bool gnw_get_realtime(Object *obj, Error **errp)
+{
+    return GNW_MACHINE(obj)->realtime;
+}
+
+static void gnw_set_realtime(Object *obj, bool v, Error **errp)
+{
+    GNW_MACHINE(obj)->realtime = v;
+}
 
 static bool gnw_get_audio(Object *obj, Error **errp)
 {
@@ -467,6 +546,10 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_wav_path);
     object_class_property_set_description(oc, "wav",
         "Write SAI1 audio output to this WAV file");
+    object_class_property_add_bool(oc, "realtime",
+        gnw_get_realtime, gnw_set_realtime);
+    object_class_property_set_description(oc, "realtime",
+        "With -icount shift=N,sleep=off, pace virtual time to the host clock");
     object_class_property_add_bool(oc, "audio",
         gnw_get_audio, gnw_set_audio);
     object_class_property_set_description(oc, "audio",

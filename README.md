@@ -102,7 +102,8 @@ with GnW("zelda", deterministic=True) as gw:
 时间以虚拟时间计。机器提供两个 QOM 属性：`stop-after-ms` 让 VM 在给定的虚拟时间后暂停，`vtime-ns` 读取当前虚拟时间。`buttons` 是按键位掩码，运行中可以用 `qom-set /machine buttons <mask>` 修改。
 
 - `deterministic=True` 时加 `-icount shift=2,sleep=off`，每条指令记 4 ns，约 250 MIPS。相同的输入得到逐字节相同的 RAM 和画面。空闲时虚拟时间直接跳到下一个事件，标题画面下大约是实时的 11 倍速。
-- 不加这个选项时，虚拟时间跟随真实时间。
+- 不加这个选项时，虚拟时间跟随真实时间。但这时定时器由主循环按宿主时间触发：主循环晚了，周期定时器会在一轮里连续补发，NVIC 把它们合并成一次。Retro-Go 下 SysTick 因此丢了约三分之一的中断，它用 `HAL_GetTick()` 调节帧节奏，结果漏掉 DMA 半区，声音出现杂音。
+- `realtime=True`（`scripts/run.sh` 默认使用）：`-icount shift=2,sleep=off` 加机器属性 `realtime=on`。每个定时器都在精确的指令数触发，机器每 1 ms 虚拟时间检查一次，虚拟时间跑到真实时间前面就睡眠等待。窗口里的行为与 `deterministic=True` 一致（同一操作序列下 SAI 输出逐字节相同），速度与真实时间一致。VM 暂停后或宿主落后超过 50 ms 时重新对齐，不会加速追赶。
 - RTC 默认从 `2026-01-01 09:00` 开始，用的是 `clock=vm`；`--rtc host` 改用本机时间。
 
 测试：
@@ -135,7 +136,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 
 ## 已知限制
 
-- 窗口运行（`scripts/run.sh`，机器属性 `audio=on`）用 macOS AudioQueue 播放 SAI1。不设 `audio=on` 时静音；录音仍用 `wav=` 或 `--wav`。时钟界面几乎没有声音，进游戏后才有 BGM。
+- 窗口运行（`scripts/run.sh`，机器属性 `audio=on`）用 macOS AudioQueue 播放 SAI1，前面有 60 ms 的抖动缓冲（读空后重新攒满再播，积压超过 200 ms 就丢掉最旧的数据）。`GNW_AQ_DUMP=文件` 会把实际播放的数据存成 raw（48 kHz、16 位、双声道），可以和 `wav=` 录到的 SAI 数据对比。不设 `audio=on` 时静音；录音仍用 `wav=` 或 `--wav`。时钟界面几乎没有声音，进游戏后才有 BGM。
 - SAI1 的采样率按 RCC 和 SAI 寄存器推算（Zelda 为 pll2_p 12.289 MHz，约 48004 Hz）。以前误读了 `RCC_CDCCIPR` 而不是 `RCC_CDCCIP1R` 的 SAI1SEL，得到 44270 Hz，比游戏的出声速度慢约 8%。游戏的缓冲队列因此溢出，正在播放的缓冲被改写，每 240 个采样的块尾都有杂音。
 - MDMA、BDMA、I2C1、DAC、WWDG 都只是桩。
 - OTFDEC 的「仅解密取指、数据读回 0」模式没有模拟，所有访问都按已解密处理。

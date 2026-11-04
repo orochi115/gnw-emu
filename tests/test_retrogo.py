@@ -54,3 +54,29 @@ def test_left_game_boots_retrogo_and_cover_flow(tmp_path):
         gw.press("a", 400, 8000)
         # Main menu with cover flow (JPEG codec + DMA2D YCbCr input).
         assert green_header(gw.frame()) > 0.5
+
+
+@needs_backup
+def test_realtime_mode_keeps_systick_and_pace(tmp_path):
+    """realtime=True: no SysTick interrupts lost, and guest time ~ wall time.
+
+    Without icount, late main-loop timers made the NVIC merge SysTick
+    expiries; Retro-Go's HAL_GetTick() then ran ~1/3 slow and its frame
+    pacing skipped audio half-buffers.
+    """
+    import time
+
+    def uwtick(gw):
+        # HAL uwTick of this Retro-Go build (from gw_retro_go.map).
+        return int(gw.hmp("x /1wx 0x2000ec6c").split()[-1], 16)
+
+    with GnW("zelda", realtime=True, internal=str(BACKUP / "bank1.bin"),
+             external=str(BACKUP / "ext.bin"), bank2=str(BACKUP / "bank2.bin"),
+             overlay=str(tmp_path / "ov.bin")) as gw:
+        gw.run(2000)
+        gw.press("left+game", 300, 3000)
+        t0, v0, w0 = uwtick(gw), gw.vtime_ms, time.time()
+        gw.run(3000)
+        t1, v1, w1 = uwtick(gw), gw.vtime_ms, time.time()
+    assert abs((t1 - t0) - (v1 - v0)) <= 0.01 * (v1 - v0)
+    assert 2.7 < w1 - w0 < 4.0

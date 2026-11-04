@@ -506,6 +506,32 @@ static void stream_buffer(GnwDmaState *s, GnwDmaStream *st, int half)
     int ch = sai_data_per_frame(s, 0);
     uint32_t off = half ? bytes / 2 : 0;
 
+    {
+        /*
+         * Debug: a non-silent half captured unchanged one cycle later.
+         * Usually the guest missed a DMA event and the old audio replays;
+         * looping music can also repeat exactly, so compare with a
+         * deterministic run before blaming the timing.
+         */
+        static uint8_t prev[2][8192];
+        static uint64_t stale;
+        uint8_t cur[8192];
+        uint32_t n = MIN(bytes / 2, sizeof(cur));
+        bool silent = true;
+
+        dma_memory_read(&address_space_memory, base + off, cur, n,
+                        MEMTXATTRS_UNSPECIFIED);
+        for (uint32_t k = 0; k < n && silent; k++) {
+            silent = !cur[k];
+        }
+        if (!silent && !memcmp(cur, prev[half], n)) {
+            stale++;
+            qemu_log_mask(LOG_UNIMP, "gnw-dma: half %d unchanged since last "
+                          "cycle (%" PRIu64 " so far) at %.3f s\n", half,
+                          stale, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1e9);
+        }
+        memcpy(prev[half], cur, n);
+    }
     wav_capture(s, base + off, bytes / 2, ch);
     host_play(s, base + off, bytes / 2, sai_frame_rate(s, 0), ch);
 }
@@ -518,6 +544,23 @@ static void stream_tick(void *opaque)
 
     if (!(r[S_CR] & CR_EN)) {
         return;
+    }
+    {
+        /* Debug (-d unimp): how late do the half/full transfer events fire? */
+        static int64_t worst, n_late, last_rep;
+        int64_t sched = st->start_ns + st->item_ns * st->total /
+                        (st->half_done ? 1 : 2);
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        int64_t late = now - sched;
+
+        worst = MAX(worst, late);
+        n_late += late > 4 * SCALE_MS;
+        if (now - last_rep > 2 * NANOSECONDS_PER_SECOND) {
+            qemu_log_mask(LOG_UNIMP, "gnw-dma: event lateness max %.2f ms, "
+                          "%" PRId64 " > 4 ms\n", worst / 1e6, n_late);
+            worst = n_late = 0;
+            last_rep = now;
+        }
     }
     if (!st->half_done) {
         st->half_done = true;
