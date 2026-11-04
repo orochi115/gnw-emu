@@ -211,15 +211,73 @@ static void wav_capture(GnwDmaState *s, uint32_t addr, uint32_t len,
 /* Host playback (AudioQueue; QEMU's CoreAudio voice stays silent here) */
 
 #ifdef __APPLE__
+/* Debug: GNW_AQ_DUMP=file.raw records exactly what the host queue plays. */
+static struct {
+    FILE *dump;
+    bool init;
+    uint64_t calls, short_reads, empty, dropped, frames;
+    int64_t last_report;
+} aq_dbg;
+
+static void aq_debug(const uint8_t *data, UInt32 len, UInt32 cap,
+                     bool empty)
+{
+    int64_t now = g_get_monotonic_time();
+
+    if (!aq_dbg.init) {
+        const char *p = getenv("GNW_AQ_DUMP");
+        aq_dbg.init = true;
+        aq_dbg.dump = p ? fopen(p, "wb") : NULL;
+        aq_dbg.last_report = now;
+    }
+    aq_dbg.calls++;
+    aq_dbg.frames += len / 4;
+    aq_dbg.short_reads += len < cap;
+    aq_dbg.empty += empty;
+    if (aq_dbg.dump) {
+        fwrite(data, 1, len, aq_dbg.dump);
+    }
+    if (now - aq_dbg.last_report >= 2000000) {
+        qemu_log_mask(LOG_UNIMP, "gnw-aq: %" PRIu64 " fills, %" PRIu64
+                      " short, %" PRIu64 " empty, %" PRIu64 " frames, %"
+                      PRIu64 " bytes dropped\n", aq_dbg.calls,
+                      aq_dbg.short_reads, aq_dbg.empty, aq_dbg.frames,
+                      aq_dbg.dropped);
+        aq_dbg.last_report = now;
+    }
+}
+
+/*
+ * Jitter buffer.  The guest delivers audio in bursts (one DMA half-buffer,
+ * e.g. 800 frames every 16.7 ms for Retro-Go) on QEMU timers that can run
+ * a few ms late, while the host queue pulls 512-frame buffers on its own
+ * clock.  So: start (and restart after an underrun) only once PCM_PRIME
+ * worth of audio is queued, always hand the host a full buffer, and if the
+ * guest really runs dry, fade the last frame out instead of inserting a
+ * flat step.  host_push() trims the queue back when it grows past
+ * PCM_HIGH (guest ahead of the host clock, e.g. after a pause).
+ */
+static unsigned pcm_ms_bytes(GnwDmaState *s, unsigned ms)
+{
+    return ((s->voice_rate ? s->voice_rate : 48000) * 4u * ms / 1000) & ~3u;
+}
+
+#define PCM_PRIME_MS    60
+#define PCM_HIGH_MS     200
+
 static void aq_fill(void *opaque, AudioQueueRef q, AudioQueueBufferRef buf)
 {
     GnwDmaState *s = opaque;
     uint8_t *dst = buf->mAudioData;
-    UInt32 cap = buf->mAudioDataBytesCapacity;
+    UInt32 cap = buf->mAudioDataBytesCapacity & ~3u;
     UInt32 got = 0;
+    bool underrun;
 
     pthread_mutex_lock(&s->pcm_lock);
-    while (got + 4 <= cap && s->pcm_fill >= 4) {
+    if (!s->pcm_primed && s->pcm_fill >= pcm_ms_bytes(s, PCM_PRIME_MS)) {
+        s->pcm_primed = true;
+    }
+    while (s->pcm_primed && got < cap && s->pcm_fill >= 4) {
         unsigned chunk = MIN(cap - got, s->pcm_fill);
 
         chunk = MIN(chunk, PCM_RING - s->pcm_r);
@@ -234,27 +292,29 @@ static void aq_fill(void *opaque, AudioQueueRef q, AudioQueueBufferRef buf)
     }
     if (got >= 4) {
         int16_t *tail = (int16_t *)(dst + got - 4);
-
         s->last_l = tail[0];
         s->last_r = tail[1];
     }
-    pthread_mutex_unlock(&s->pcm_lock);
-    /*
-     * Play only the samples the guest has produced. A short read stays
-     * short, so a gap is not a block of zeros. A completely empty queue
-     * holds the last frame for a few milliseconds instead of clicking.
-     */
-    if (!got) {
-        int16_t *frame = (int16_t *)dst;
-        unsigned i;
-
-        for (i = 0; i < 128; i++) {
-            frame[i * 2] = s->last_l;
-            frame[i * 2 + 1] = s->last_r;
-        }
-        got = 128 * 4;
+    underrun = got < cap;
+    if (underrun) {
+        s->pcm_primed = false;          /* rebuild the margin first */
     }
-    buf->mAudioDataByteSize = got;
+    pthread_mutex_unlock(&s->pcm_lock);
+
+    if (underrun) {
+        /* Fade the last frame to silence over the rest of the buffer. */
+        unsigned n = (cap - got) / 4;
+        int16_t *f = (int16_t *)(dst + got);
+
+        for (unsigned i = 0; i < n; i++) {
+            int32_t k = (int32_t)(n - 1 - i) * 256 / (n ? n : 1);
+            f[i * 2] = s->last_l * k / 256;
+            f[i * 2 + 1] = s->last_r * k / 256;
+        }
+        s->last_l = s->last_r = 0;
+    }
+    aq_debug(dst, got, cap, got == 0);
+    buf->mAudioDataByteSize = cap;
     AudioQueueEnqueueBuffer(q, buf, 0, NULL);
 }
 
@@ -330,10 +390,24 @@ static void host_push(GnwDmaState *s, const uint8_t *src, uint32_t len,
     if (!s->pcm) {
         s->pcm = g_malloc(PCM_RING);
     }
+#ifdef __APPLE__
+    /* Guest ahead of the host clock: drop the oldest audio, keep ~PRIME. */
+    if (s->pcm_fill + out_len > pcm_ms_bytes(s, PCM_HIGH_MS)) {
+        unsigned keep = pcm_ms_bytes(s, PCM_PRIME_MS);
+        unsigned drop = s->pcm_fill > keep ? s->pcm_fill - keep : 0;
+
+        s->pcm_r = (s->pcm_r + drop) % PCM_RING;
+        s->pcm_fill -= drop;
+        aq_dbg.dropped += drop;
+    }
+#endif
     while (s->pcm_fill + out_len > PCM_RING) {
         unsigned drop = s->pcm_fill + out_len - PCM_RING;
 
         drop = MIN(drop, PCM_RING - s->pcm_r);
+#ifdef __APPLE__
+        aq_dbg.dropped += drop;
+#endif
         s->pcm_r = (s->pcm_r + drop) % PCM_RING;
         s->pcm_fill -= drop;
     }

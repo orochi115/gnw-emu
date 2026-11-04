@@ -47,7 +47,7 @@ class GnW:
                  trace: str = "unimp,guest_errors", display: str = "none",
                  extra: list[str] | None = None,
                  internal: str | None = None, external: str | None = None,
-                 bank2: str | None = None):
+                 bank2: str | None = None, audio: bool = False):
         firmware = Path(firmware)
         self.model = model
         self.tmp = Path(tempfile.mkdtemp(prefix="gnw-"))
@@ -57,6 +57,8 @@ class GnW:
                 f"external={external or firmware / f'flash_backup_{model}.bin'}"]
         if bank2:
             opts.append(f"bank2={bank2}")
+        if audio:
+            opts.append("audio=on")
         if overlay:
             opts.append(f"overlay={overlay}")
         if wav:

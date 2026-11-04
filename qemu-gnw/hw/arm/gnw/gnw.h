@@ -213,6 +213,7 @@ struct GnwDmaState {
     unsigned pcm_r;
     unsigned pcm_fill;
     int16_t last_l, last_r;
+    bool pcm_primed;
     pthread_mutex_t pcm_lock;
 };
 
