@@ -80,3 +80,28 @@ def test_realtime_mode_keeps_systick_and_pace(tmp_path):
         t1, v1, w1 = uwtick(gw), gw.vtime_ms, time.time()
     assert abs((t1 - t0) - (v1 - v0)) <= 0.01 * (v1 - v0)
     assert 2.7 < w1 - w0 < 4.0
+
+
+@needs_backup
+def test_cover_flow_redraw_does_not_flicker(tmp_path):
+    """The idle cover flow redraws every ~0.3 s into the back buffer only.
+
+    LTDC used to raise RRIF on immediate reloads; the stale flag fired as
+    soon as lcd_swap() enabled RRIE, and the screen showed the buffer that
+    was being redrawn.
+    """
+    with GnW("zelda", deterministic=True, internal=str(BACKUP / "bank1.bin"),
+             external=str(BACKUP / "ext.bin"), bank2=str(BACKUP / "bank2.bin"),
+             overlay=str(tmp_path / "ov.bin")) as gw:
+        gw.run(3000)
+        gw.press("left+game", 300, 4000)
+        gw.press("b", 400, 1500)
+        gw.press("pause", 400, 1000)
+        for _ in range(5):
+            gw.press("down", 300, 300)
+        gw.press("a", 400, 4000)
+        first = gw.frame().convert("L").tobytes()
+        for _ in range(100):
+            gw.run(10)
+            cur = gw.frame().convert("L").tobytes()
+            assert sum(1 for a, b in zip(first, cur) if abs(a - b) > 30) < 200

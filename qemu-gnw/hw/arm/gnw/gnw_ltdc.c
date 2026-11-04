@@ -418,10 +418,16 @@ static void ltdc_write(void *opaque, hwaddr addr, uint64_t value,
         return;
     case L_SRCR:
         if (value & 1) {
+            /*
+             * Immediate reload.  RRIF is only raised by a vertical-blanking
+             * reload (RM0455 LTDC_ISR.RRIF).  Raising it here left a stale
+             * flag behind Retro-Go's HAL_LTDC_SetAddress() in the reload
+             * callback; the next HAL_LTDC_Reload() enabled RRIE, the stale
+             * flag fired at once, and the callback pointed the display at
+             * the buffer about to be drawn (visible redraw flicker).
+             */
             s->regs[L_SRCR] = 0;
             ltdc_reload(s);
-            s->regs[L_ISR] |= ISR_RRIF;
-            ltdc_update_irq(s);
         } else {
             s->regs[L_SRCR] = value & 2;
         }
