@@ -1,6 +1,6 @@
 # gnw-emu：Game & Watch（Zelda / Mario）LLE 模拟器
 
-在 QEMU 里新增 `gnw-zelda`、`gnw-mario` 两种机器，直接加载 `../firmware/` 里的两份镜像：
+在 QEMU 里新增 `gnw-zelda`、`gnw-mario` 两种机器，直接加载 `../firmware/` 里的两份镜像（改装机的完整备份见下文「运行改装机的完整备份」）：
 
 - `internal_flash_backup_*.bin`：片内 Flash，映射到 `0x08000000`，从这里的向量表复位；
 - `flash_backup_*.bin`：外挂 SPI NOR，经 OCTOSPI1 和 OTFDEC 映射到 `0x90000000`。
@@ -34,7 +34,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 ## 构建
 
 ```sh
-brew install ninja meson pkg-config glib pixman
+brew install ninja meson pkg-config glib pixman jpeg-turbo
 python3 -m venv .venv && .venv/bin/pip install qemu.qmp pytest pillow pycryptodome
 scripts/build.sh
 ```
@@ -56,6 +56,23 @@ scripts/run.sh zelda      # 或 mario
 | Return / Tab | START / SELECT（仅 Zelda） |
 
 存档写到 `out/<model>_flash.bin`。第一次运行时从 dump 复制，`firmware/` 下的文件不会被改动。
+
+## 运行改装机的完整备份（原厂 + Retro-Go 双系统）
+
+用 `game-and-watch-backup/gnw_full_backup.py` 做出的备份（`bank1.bin`、`bank2.bin`、`ext.bin`）可以直接运行：
+
+```sh
+B=../game-and-watch-backup/backups/full_YYYYMMDD_HHMM
+INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin BANK2=$B/bank2.bin \
+    OVERLAY=out/device_flash.bin scripts/run.sh zelda
+```
+
+开机进入原厂时钟。按住 **← + G**（LEFT + GAME）后，补丁过的引导程序会跳到 Bank 2 的 Retro-Go。
+Retro-Go 里 G 对应游戏的 START，P（PAUSE）打开游戏菜单，T（TIME）对应 SELECT。
+存档写进 `OVERLAY` 指定的文件，备份本身不会被改动。
+
+Headless 时用 `--internal/--external/--bank2`，或者 `GnW(internal=..., external=..., bank2=...)`。
+`tests/test_retrogo.py` 会找最新的 `../game-and-watch-backup/backups/full_*`（也可以用 `GNW_FULL_BACKUP` 指定），没有就跳过。
 
 ## Headless 与自动化
 
@@ -91,7 +108,7 @@ with GnW("zelda", deterministic=True) as gw:
 测试：
 
 ```sh
-.venv/bin/python -m pytest -q tests            # 9 个用例，约 17 秒
+.venv/bin/python -m pytest -q tests            # 11 个用例，约 30 秒
 GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后更新哈希
 ```
 
@@ -101,12 +118,14 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 |---|---|
 | Cortex-M7 / NVIC / SysTick / MPU / FPU | QEMU 自带 |
 | ITCM、DTCM、AXI/AHB/SRD/Backup SRAM | RAM |
+| 片内 Flash Bank 1 / Bank 2 | `internal=` 映射到 `0x08000000`（128 或 256 KiB）；`bank2=` 映射到 `0x08100000`（256 KiB，手册未写），不给时读出全 0xFF |
 | RCC、PWR、FLASH 接口 | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位 |
 | GPIO A–K、EXTI、SYSCFG | 实现。按键低电平有效，边沿经 `EXTICR` 路由到 EXTI 中断 |
 | OCTOSPI1 + MX25U | 间接读写、自动轮询、内存映射；支持 RDID/RDSR/WRSR/读/页编程/扇区擦除。写入可落到 overlay 文件 |
 | OTFDEC1 | 区域、nonce、密钥、KEYCRC；`0x90000000` 窗口里放的是已解密的内容，TCG 可以全速执行 |
 | LTDC | 两层，支持 ARGB8888/RGB888/RGB565/ARGB1555/ARGB4444/L8/AL44/AL88 与 CLUT；按 60 Hz 产生行中断和重载中断 |
-| DMA2D | M2M、PFC、混合、R2M，以及 CLUT 加载 |
+| DMA2D | M2M、PFC、混合、R2M、前景或背景固定颜色的混合（MODE 4/5），以及 CLUT 加载；前景支持 YCbCr 输入（JPEG 编解码器输出的 MCU 块格式，4:4:4/4:2:2/4:2:0） |
+| JPEG 编解码器 | 只做解码，供 Retro-Go 封面流使用。收集写入 `DIR` 的数据直到 EOI，用 libjpeg 解成原始 YCbCr，按硬件格式（每个 MCU 依次输出 Y 块、Cb、Cr）从 `DOR` 读出；见到 SOS 时填好 `CONFR1–7` 并置 `HPDF` |
 | DMA1/2 + DMAMUX1 + SAI1 | 送往 SAI 的流按 RCC PLL 与 SAI 分频算出的采样率（Zelda 为 44270 Hz）产生 HT/TC 中断，可录成 WAV。存储器到存储器的传输立即完成 |
 | CRYP | AES-ECB/CBC/CTR/GCM，加密和解密都支持。算出的存档 GCM tag 与 dump 里两份 NVRAM 的 tag 一致 |
 | TIM2–7、TIM15–17 | 计数、更新中断 |

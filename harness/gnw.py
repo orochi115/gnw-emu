@@ -45,14 +45,18 @@ class GnW:
                  rtc: str = "2026-01-01T09:00:00", deterministic: bool = False,
                  wav: str | None = None, log: str | None = None,
                  trace: str = "unimp,guest_errors", display: str = "none",
-                 extra: list[str] | None = None):
+                 extra: list[str] | None = None,
+                 internal: str | None = None, external: str | None = None,
+                 bank2: str | None = None):
         firmware = Path(firmware)
         self.model = model
         self.tmp = Path(tempfile.mkdtemp(prefix="gnw-"))
         self.sock = str(self.tmp / "qmp.sock")
         opts = [f"gnw-{model}",
-                f"internal={firmware / f'internal_flash_backup_{model}.bin'}",
-                f"external={firmware / f'flash_backup_{model}.bin'}"]
+                f"internal={internal or firmware / f'internal_flash_backup_{model}.bin'}",
+                f"external={external or firmware / f'flash_backup_{model}.bin'}"]
+        if bank2:
+            opts.append(f"bank2={bank2}")
         if overlay:
             opts.append(f"overlay={overlay}")
         if wav:

@@ -2,7 +2,9 @@
  * Nintendo Game & Watch (Mario 2020 / Zelda 2021) machine.
  *
  * STM32H7B0VB (Cortex-M7) running the stock firmware from the two dumps:
- *   internal=  128 KiB internal flash image, mapped at 0x08000000
+ *   internal=  internal flash bank 1 image (128 or 256 KiB), at 0x08000000
+ *   bank2=     optional internal flash bank 2 image (up to 256 KiB, e.g.
+ *              Retro-Go), at 0x08100000; reads as erased (0xff) if absent
  *   external=  SPI NOR image (1 or 4 MiB), seen through OCTOSPI1/OTFDEC
  *   overlay=   optional writable copy of the SPI NOR that receives the
  *              firmware's save writes (created from external= if missing)
@@ -47,7 +49,7 @@ struct GnwMachineState {
     ARMv7MState armv7m;
     Clock *sysclk;
     Clock *refclk;
-    MemoryRegion itcm, flash, dtcm, axi_sram, ahb_sram, srd_sram, bkp_sram;
+    MemoryRegion itcm, flash, flash2, dtcm, axi_sram, ahb_sram, srd_sram, bkp_sram;
 
     GnwGpioState *gpio;
     GnwOspiState *ospi;
@@ -55,6 +57,7 @@ struct GnwMachineState {
     GnwDmaState *dma;
 
     char *internal_path;
+    char *bank2_path;
     char *external_path;
     char *overlay_path;
     char *wav_path;
@@ -206,6 +209,22 @@ static void gnw_init(MachineState *machine)
                            MAX(pow2ceil(int_len), 128 * KiB), &error_fatal);
     memcpy(memory_region_get_ram_ptr(&m->flash), internal, int_len);
     memory_region_add_subregion(sysmem, 0x08000000, &m->flash);
+    /* Bank 2: undocumented on the H7B0, but present (256 KiB). */
+    memory_region_init_rom(&m->flash2, NULL, "flash-bank2", 256 * KiB,
+                           &error_fatal);
+    memset(memory_region_get_ram_ptr(&m->flash2), 0xff, 256 * KiB);
+    if (m->bank2_path) {
+        size_t b2_len;
+        uint8_t *b2 = load_file("bank2", m->bank2_path, &b2_len);
+
+        if (b2_len > 256 * KiB) {
+            error_report("gnw: bank2 image larger than 256 KiB");
+            exit(1);
+        }
+        memcpy(memory_region_get_ram_ptr(&m->flash2), b2, b2_len);
+        g_free(b2);
+    }
+    memory_region_add_subregion(sysmem, 0x08100000, &m->flash2);
     ram_at(&m->dtcm, "dtcm", 0x20000000, 128 * KiB);
     ram_at(&m->axi_sram, "axi-sram", 0x24000000, 1 * MiB);
     ram_at(&m->ahb_sram, "ahb-sram", 0x30000000, 128 * KiB);
@@ -306,6 +325,9 @@ static void gnw_init(MachineState *machine)
     sbd = map_dev(qdev_new("gnw-cryp"), (hwaddr[]){ 0x48021000 }, 1);
     sysbus_connect_irq(sbd, 0, NVIC(GNW_IRQ_CRYP));
 
+    /* JPEG codec (Retro-Go cover flow; polled, no IRQ needed) */
+    map_dev(qdev_new(TYPE_GNW_JPEG), (hwaddr[]){ 0x52003000 }, 1);
+
     /* RTC + TAMP */
     dev = qdev_new(TYPE_GNW_RTC);
     sbd = map_dev(dev, (hwaddr[]){ 0x58004000, 0x58004400 }, 2);
@@ -335,6 +357,7 @@ static void gnw_init(MachineState *machine)
     }
 
 STR_PROP(internal_path, "internal")
+STR_PROP(bank2_path, "bank2")
 STR_PROP(external_path, "external")
 STR_PROP(overlay_path, "overlay")
 STR_PROP(wav_path, "wav")
@@ -428,6 +451,10 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_internal_path);
     object_class_property_set_description(oc, "internal",
         "Internal flash image (internal_flash_backup_*.bin)");
+    object_class_property_add_str(oc, "bank2", gnw_get_bank2_path,
+                                  gnw_set_bank2_path);
+    object_class_property_set_description(oc, "bank2",
+        "Internal flash bank 2 image, mapped at 0x08100000 (e.g. Retro-Go)");
     object_class_property_add_str(oc, "external", gnw_get_external_path,
                                   gnw_set_external_path);
     object_class_property_set_description(oc, "external",

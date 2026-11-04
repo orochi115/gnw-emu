@@ -234,6 +234,7 @@ struct GnwTimState {
 };
 
 #define TYPE_GNW_RTC "gnw-rtc"
+#define TYPE_GNW_JPEG "gnw-jpeg"
 OBJECT_DECLARE_SIMPLE_TYPE(GnwRtcState, GNW_RTC)
 
 struct GnwRtcState {

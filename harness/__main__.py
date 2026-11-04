@@ -64,6 +64,9 @@ def main(argv=None):
     r.add_argument("--log", help="write -d unimp,guest_errors log here")
     r.add_argument("--rtc", default="2026-01-01T09:00:00",
                    help="RTC start time (ISO), or 'host' for the host clock")
+    r.add_argument("--internal", help="bank 1 image (default: firmware/)")
+    r.add_argument("--external", help="SPI flash image (default: firmware/)")
+    r.add_argument("--bank2", help="bank 2 image (e.g. Retro-Go)")
     sub.add_parser("buttons", help="list button names")
     a = ap.parse_args(argv)
 
@@ -74,7 +77,8 @@ def main(argv=None):
     if a.script:
         steps += open(a.script).read().splitlines()
     with GnW(a.model, deterministic=a.deterministic, overlay=a.overlay,
-             wav=a.wav, log=a.log,
+             wav=a.wav, log=a.log, internal=a.internal,
+             external=a.external, bank2=a.bank2,
              rtc=None if a.rtc == "host" else a.rtc) as gw:
         run_script(gw, steps)
         print(f"guest time {gw.vtime_ms:.0f} ms", file=sys.stderr)

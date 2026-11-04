@@ -528,6 +528,53 @@ static uint32_t dma2d_alpha(uint32_t pfccr, uint32_t c)
     return (a << 24) | (c & 0xffffff);
 }
 
+/*
+ * FG in YCbCr mode (CM=1011): the buffer holds JPEG-codec output, i.e.
+ * 8x8 blocks grouped per MCU (Y blocks, then Cb, then Cr).  CSS selects
+ * the MCU geometry; FGOR pads the line to a whole number of MCUs.
+ */
+#define CM_YCBCR    11
+
+static uint8_t clamp8(int v)
+{
+    return v < 0 ? 0 : v > 255 ? 255 : v;
+}
+
+static void dma2d_ycbcr_line(GnwLtdcState *s, int y, int w, uint8_t *out)
+{
+    uint32_t pfccr = s->d2d[D_FGPFCCR];
+    int css = extract32(pfccr, 18, 2);
+    int mw = css ? 16 : 8, mh = css == 2 ? 16 : 8;
+    int nyb = (mw / 8) * (mh / 8);
+    int mcus = (w + extract32(s->d2d[D_FGOR], 0, 16)) / mw;
+    int mcu_bytes = (nyb + 2) * 64;
+    int ly = y % mh;
+    uint32_t row = s->d2d[D_FGMAR] + (y / mh) * mcus * mcu_bytes;
+    uint8_t *mcu = g_malloc(mcu_bytes);
+    int cur = -1;
+
+    for (int x = 0; x < w; x++) {
+        int m = x / mw, lx = x % mw;
+        int yb = (ly / 8) * (mw / 8) + lx / 8;
+        int cx = css ? lx / 2 : lx, cy = css == 2 ? ly / 2 : ly;
+        int Y, Cb, Cr;
+
+        if (m != cur) {
+            dma_memory_read(&address_space_memory, row + m * mcu_bytes, mcu,
+                            mcu_bytes, MEMTXATTRS_UNSPECIFIED);
+            cur = m;
+        }
+        Y = mcu[yb * 64 + (ly % 8) * 8 + lx % 8];
+        Cb = mcu[nyb * 64 + cy * 8 + cx] - 128;
+        Cr = mcu[(nyb + 1) * 64 + cy * 8 + cx] - 128;
+        stl_le_p(out + x * 4, 0xff000000 |
+                 (clamp8(Y + ((91881 * Cr) >> 16)) << 16) |
+                 (clamp8(Y - ((22554 * Cb + 46802 * Cr) >> 16)) << 8) |
+                 clamp8(Y + ((116130 * Cb) >> 16)));
+    }
+    g_free(mcu);
+}
+
 static void dma2d_run(GnwLtdcState *s)
 {
     int mode = extract32(s->d2d[D_CR], 16, 3);
@@ -536,20 +583,23 @@ static void dma2d_run(GnwLtdcState *s)
     int ofmt = s->d2d[D_OPFCCR] & 7;
     int ffmt = s->d2d[D_FGPFCCR] & 0xf, bfmt = s->d2d[D_BGPFCCR] & 0xf;
     int obpp = pf_bits[ofmt];
+    bool ycbcr = ffmt == CM_YCBCR;
     uint8_t *fl = g_malloc(w * 4 + 4), *bl = g_malloc(w * 4 + 4),
             *ol = g_malloc(w * 4 + 4);
 
     for (int y = 0; y < h; y++) {
         uint32_t oaddr = s->d2d[D_OMAR] +
                          y * (w + extract32(s->d2d[D_OOR], 0, 16)) * obpp / 8;
-        uint32_t faddr = s->d2d[D_FGMAR] +
+        uint32_t faddr = ycbcr ? 0 : s->d2d[D_FGMAR] +
                          y * (w + extract32(s->d2d[D_FGOR], 0, 16)) *
                          pf_bits[ffmt] / 8;
         uint32_t baddr = s->d2d[D_BGMAR] +
                          y * (w + extract32(s->d2d[D_BGOR], 0, 16)) *
                          pf_bits[bfmt] / 8;
 
-        if (mode != 3 && mode != 5) {
+        if (ycbcr && mode != 3 && mode != 4) {
+            dma2d_ycbcr_line(s, y, w, fl);
+        } else if (mode != 3 && mode != 4) {
             dma_memory_read(&address_space_memory, faddr, fl,
                             (w * pf_bits[ffmt] + 7) / 8,
                             MEMTXATTRS_UNSPECIFIED);
@@ -574,13 +624,14 @@ static void dma2d_run(GnwLtdcState *s)
                 c = pixel_get(tmp, ofmt, 0, NULL, 0);
             } else {
                 uint32_t f = dma2d_alpha(s->d2d[D_FGPFCCR],
-                                         mode == 5 ? s->d2d[D_FGCOLR] :
+                                         mode == 4 ? s->d2d[D_FGCOLR] :
+                                         ycbcr ? ldl_le_p(fl + x * 4) :
                                          pixel_get(fl, ffmt, x, s->d2d_fgclut,
                                                    s->d2d[D_FGCOLR]));
                 c = f;
                 if (mode == 2 || mode == 4 || mode == 5) {
                     uint32_t b = dma2d_alpha(s->d2d[D_BGPFCCR],
-                                             mode == 4 ? s->d2d[D_BGCOLR] :
+                                             mode == 5 ? s->d2d[D_BGCOLR] :
                                              pixel_get(bl, bfmt, x,
                                                        s->d2d_bgclut,
                                                        s->d2d[D_BGCOLR]));
