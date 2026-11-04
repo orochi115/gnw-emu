@@ -58,6 +58,10 @@ struct GnwMachineState {
     Clock *sysclk;
     Clock *refclk;
     MemoryRegion itcm, flash, flash2, dtcm, axi_sram, ahb_sram, srd_sram, bkp_sram;
+    MemoryRegion dwt;
+    uint32_t dwt_ctrl;
+    uint32_t dwt_frozen;        /* CYCCNT while the counter is stopped */
+    uint64_t dwt_base;          /* cycles at which CYCCNT was 0 */
 
     GnwGpioState *gpio;
     GnwOspiState *ospi;
@@ -86,6 +90,69 @@ struct GnwMachineState {
     bool power_was_pressed;
     QEMUTimer *stop_timer;
     QemuInputHandlerState *input;
+};
+
+/*
+ * DWT: only CTRL.CYCCNTENA and CYCCNT, enough for cycle-counting benches
+ * (hwtest/).  CYCCNT is virtual time converted at GNW_SYSCLK_HZ, i.e. the
+ * clock the emulator assumes; with -icount shift=2 every instruction counts
+ * 4 ns = 1.12 cycles.  NUMCOMP reads 4 as on the real core.
+ */
+static uint64_t gnw_dwt_cycles(void)
+{
+    return muldiv64(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), GNW_SYSCLK_HZ,
+                    NANOSECONDS_PER_SECOND);
+}
+
+static uint32_t gnw_dwt_cyccnt(GnwMachineState *m)
+{
+    return (m->dwt_ctrl & 1) ? (uint32_t)(gnw_dwt_cycles() - m->dwt_base)
+                             : m->dwt_frozen;
+}
+
+static uint64_t gnw_dwt_read(void *opaque, hwaddr addr, unsigned size)
+{
+    GnwMachineState *m = opaque;
+
+    switch (addr) {
+    case 0x000:
+        return 0x40000000 | m->dwt_ctrl;
+    case 0x004:
+        return gnw_dwt_cyccnt(m);
+    default:
+        return 0;
+    }
+}
+
+static void gnw_dwt_write(void *opaque, hwaddr addr, uint64_t val,
+                          unsigned size)
+{
+    GnwMachineState *m = opaque;
+
+    switch (addr) {
+    case 0x000:
+        if ((val & 1) && !(m->dwt_ctrl & 1)) {
+            m->dwt_base = gnw_dwt_cycles() - m->dwt_frozen;
+        } else if (!(val & 1) && (m->dwt_ctrl & 1)) {
+            m->dwt_frozen = gnw_dwt_cyccnt(m);
+        }
+        m->dwt_ctrl = val & 1;
+        break;
+    case 0x004:
+        m->dwt_frozen = val;
+        m->dwt_base = gnw_dwt_cycles() - (uint32_t)val;
+        break;
+    default:
+        break;
+    }
+}
+
+static const MemoryRegionOps gnw_dwt_ops = {
+    .read = gnw_dwt_read,
+    .write = gnw_dwt_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid.min_access_size = 4,
+    .valid.max_access_size = 4,
 };
 
 /*
@@ -395,6 +462,10 @@ static void gnw_init(MachineState *machine)
     object_property_set_link(OBJECT(armv7m), "memory", OBJECT(sysmem),
                              &error_abort);
     sysbus_realize(SYS_BUS_DEVICE(armv7m), &error_fatal);
+    memory_region_init_io(&m->dwt, OBJECT(machine), &gnw_dwt_ops, m, "dwt",
+                          0x1000);
+    memory_region_add_subregion_overlap(&m->armv7m.container, 0xe0001000,
+                                        &m->dwt, 0);
 
     /* Anything not modelled below logs with -d unimp and reads as zero. */
     create_unimplemented_device("periph-apb-ahb", 0x40000000, 0x20000000);

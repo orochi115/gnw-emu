@@ -21,6 +21,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 | `tests/` | pytest 端到端用例；`golden.json` 只记录画面哈希 |
 | `tools/gnwcrypt.py` | 离线 OTFDEC 解密，移植自 `game-and-watch-patch` 的 `crypt()`，测试里用作参照 |
 | `tools/scan_mmio.py` | 结合 SVD 扫描镜像字面量池，列出固件用到的外设 |
+| `hwtest/` | Cortex-M7 时序测试，真机和模拟器都能跑；结果与周期精确化评估见 `docs/cycle-accuracy.md` |
 
 ## 复用的社区代码
 
@@ -122,6 +123,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | 外设 | 状态 |
 |---|---|
 | Cortex-M7 / NVIC / SysTick / MPU / FPU | QEMU 自带 |
+| DWT | 只有 `CTRL.CYCCNTENA` 和 `CYCCNT`：按 280 MHz 把虚拟时间折算成周期（`-icount shift=2` 时每条指令 1.12 周期） |
 | ITCM、DTCM、AXI/AHB/SRD/Backup SRAM | RAM |
 | 片内 Flash Bank 1 / Bank 2 | `internal=` 映射到 `0x08000000`（128 或 256 KiB）；`bank2=` 映射到 `0x08100000`（256 KiB，手册未写），不给时读出全 0xFF |
 | RCC、PWR、FLASH 接口 | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位 |
@@ -150,6 +152,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 - OTFDEC 的「仅解密取指、数据读回 0」模式没有模拟，所有访问都按已解密处理。
 - 定时器没有输入捕获，也没有 PWM 输出。
 - 低功耗模式下 CPU 只是停在 WFI，不模拟功耗。
+- 时序是功能级的：CPU 和定时器时钟固定为 280 MHz，原厂固件实际跑在 136 MHz，所以它的 SysTick 节拍快了一倍；每条指令固定 1.12 周期；DMA、DMA2D 瞬间完成。真机测量和差距评估见 `docs/cycle-accuracy.md`。
 
 ## 调试
 
