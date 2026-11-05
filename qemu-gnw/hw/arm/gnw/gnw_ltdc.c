@@ -320,6 +320,23 @@ static void ltdc_render_layer(GnwLtdcState *s, int n, uint32_t *fb,
     g_free(line);
 }
 
+/* LCD supply rails: PD4 = 3.3 V enable (high), PD1 = 1.8 V enable (low). */
+static bool ltdc_panel_powered(GnwLtdcState *s)
+{
+    return s->rail_3v3 && !s->rail_1v8_n;
+}
+
+static void ltdc_rail_in(void *opaque, int n, int level)
+{
+    GnwLtdcState *s = opaque;
+
+    if (n == 0) {
+        s->rail_3v3 = level;
+    } else {
+        s->rail_1v8_n = level;
+    }
+}
+
 static bool ltdc_update_display(void *opaque)
 {
     GnwLtdcState *s = opaque;
@@ -347,7 +364,9 @@ static bool ltdc_update_display(void *opaque)
     for (int i = 0; i < w * h; i++) {
         fb[i] = (s->regs[L_GCR] & 1) ? (a[L_BCCR] & 0xffffff) : 0;
     }
-    if (s->regs[L_GCR] & 1) {
+    if (!ltdc_panel_powered(s)) {
+        memset(fb, 0, w * h * sizeof(*fb));     /* panel off: dark */
+    } else if (s->regs[L_GCR] & 1) {
         ltdc_render_layer(s, 0, fb, w, h);
         ltdc_render_layer(s, 1, fb, w, h);
     }
@@ -746,6 +765,7 @@ static void gnw_ltdc_init(Object *obj)
     sysbus_init_mmio(sbd, &s->dma2d_mmio);
     sysbus_init_irq(sbd, &s->ltdc_irq);
     sysbus_init_irq(sbd, &s->dma2d_irq);
+    qdev_init_gpio_in_named(DEVICE(obj), ltdc_rail_in, "panel-power", 2);
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ltdc_frame_tick, s);
 }
 

@@ -143,7 +143,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | ITCM、DTCM、AXI/AHB/SRD/Backup SRAM | RAM |
 | 片内 Flash Bank 1 / Bank 2 | `internal=` 映射到 `0x08000000`（128 或 256 KiB）；`bank2=` 映射到 `0x08100000`（256 KiB，手册未写），不给时读出全 0xFF |
 | FLASH 接口 | 解锁、按 16 字节 flash word 编程、扇区擦除和整 Bank 擦除；`bank1-overlay=` / `bank2-overlay=` 把改动写回文件 |
-| RCC、PWR | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位 |
+| RCC、PWR | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位。深度睡眠：QEMU 的 NVIC 不保存 `SCR.SLEEPDEEP`，机器自己保存一份；内核在深度睡眠（STOP/STANDBY）里时屏蔽 SysTick，电源键经 WKUP1 把内核从 STOP 唤醒（Retro-Go SD 的睡眠）。LCD 供电（PD4、PD1）关闭时画面全黑 |
 | SPI1 + microSD 卡 | STM32H7 SPI v2 主机，支持 DMA（DMAMUX 37/38）；SPI 模式 SDHC 卡，也可以接在 OSPI 引脚上走软件 SPI。见 `docs/sdcard.md` |
 | HASH、器件 UID | SHA-1/SHA-256/MD5；`0x08FFF800` 处的 UID（`uid=`） |
 | GPIO A–K、EXTI、SYSCFG | 实现。按键低电平有效，边沿经 `EXTICR` 路由到 EXTI 中断 |

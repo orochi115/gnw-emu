@@ -7,6 +7,10 @@
 #   scripts/run_sd_update.sh [extra qemu args...]
 #
 #   1. clock (stock firmware) -> hold LEFT + G
+#      The freshly patched flash has no settings yet, so the stock firmware
+#      starts with "PRESS TIME BUTTON".  LEFT + G works on that screen too.
+#      (TIME itself is not recognised there in the emulator; plugging USB
+#      in and out with C twice gets to the clock setting instead.)
 #   2. "Updating firmware" ... "Firmware update done" -> press any button
 #   3. clock again -> hold LEFT + G -> Retro-Go SD
 #
@@ -58,6 +62,7 @@ echo "bank1  : $DB/bank1.bin -> $D/bank1.bin (patched stock + SD bootloader)"
 echo "bank2  : $D/bank2.bin (erased until the update runs)"
 echo "card   : $D/card.img (${SD_WIRING:-spi1}, with retro-go_update.bin)"
 echo "LEFT + G: update -> any button -> LEFT + G: Retro-Go SD.  FRESH=1 to redo."
+echo "On \"PRESS TIME BUTTON\" use LEFT + G directly (or C twice to set the clock)."
 
 INTERNAL=$DB/bank1.bin EXTERNAL=$DB/ext.bin OVERLAY=$D/ext.bin \
 BANK1_OVERLAY=$D/bank1.bin BANK2_OVERLAY=$D/bank2.bin \

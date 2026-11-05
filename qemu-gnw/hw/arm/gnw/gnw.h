@@ -179,6 +179,7 @@ struct GnwLtdcState {
 
     qemu_irq ltdc_irq;
     qemu_irq dma2d_irq;
+    bool rail_3v3, rail_1v8_n;  /* PD4, PD1: the panel shows black when off */
 };
 
 /* ------------------------------------------------------------------ */

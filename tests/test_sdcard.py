@@ -156,6 +156,26 @@ def test_genesis_flash_cache_and_savestate(card, tmp_path):
 
 
 @needs_sd
+def test_power_button_sleeps_and_wakes(card, tmp_path):
+    """POWER puts Retro-Go SD into STOP2 (panel off) until POWER again.
+
+    QEMU's NVIC drops SCR.SLEEPDEEP and wakes WFI on any SysTick, so the
+    machine keeps its own SCR copy, gates SysTick in deep sleep, wakes the
+    core through WKUP1 and shows black while the LCD rails are off.
+    """
+    with boot(card, tmp_path) as gw:
+        gw.run(6000)
+        gw.press("power", 300, 3000)
+        text = log(gw, card)
+        assert "Entering STOP2" in text and "Waking up" not in text
+        assert max(gw.frame().convert("L").getdata()) == 0      # panel off
+        gw.press("power", 300, 4000)
+        assert "Finish waking up" in log(gw, card)
+        assert vtor(gw) == "0x08100000"
+        assert max(gw.frame().convert("L").getdata()) > 0
+
+
+@needs_sd
 def test_update_from_sd_standalone_bootloader(card, tmp_path):
     img = tmp_path / "card.img"
     shutil.copy(card["update"], img)

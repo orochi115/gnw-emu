@@ -38,7 +38,9 @@
 #include "hw/core/clock.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/irq.h"
 #include "hw/arm/armv7m.h"
+#include "target/arm/cpu.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/machines-qom.h"
 #include "hw/misc/unimp.h"
@@ -106,6 +108,9 @@ struct GnwMachineState {
     uint32_t keys;              /* from the keyboard */
     bool power_was_pressed;
     QEMUTimer *stop_timer;
+    qemu_irq systick_irq;       /* NVIC systick-trigger, behind the gate */
+    MemoryRegion scr_mr;
+    uint32_t scr;               /* SCB->SCR including SLEEPDEEP */
     QemuInputHandlerState *input;
 };
 
@@ -202,6 +207,17 @@ static void gnw_realtime_tick(void *opaque)
     if (ahead > 0) {
         g_usleep(ahead / 1000);
     } else if (ahead < -RT_MAX_BEHIND) {
+        /*
+         * The host could not keep up: say so (at most once a second), so
+         * a visible stutter in the window can be told apart from the
+         * firmware's own pacing.
+         */
+        static int64_t last_warn;
+        if (h - last_warn > NANOSECONDS_PER_SECOND) {
+            warn_report("gnw: host fell %" PRId64 " ms behind real time at "
+                        "%.1f s (virtual)", -ahead / SCALE_MS, v / 1e9);
+            last_warn = h;
+        }
         m->rt_base_v = v;
         m->rt_base_h = h;
     }
@@ -328,6 +344,17 @@ static void gnw_apply_buttons(GnwMachineState *m)
     if (power && !m->power_was_pressed && gnw_pwr_standby_armed()) {
         /* Wake from standby: the SoC comes back up through reset. */
         qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
+    } else if (power && !m->power_was_pressed && gnw_pwr &&
+               (gnw_pwr->regs[0x28 / 4] & 1) && first_cpu->halted &&
+               (m->scr & R_V7M_SCR_SLEEPDEEP_MASK)) {
+        /*
+         * Wake from Stop through WKUP1 (PA0, power button, enabled in
+         * PWR_WKUPEPR): no interrupt is involved, the core just resumes
+         * after its WFI (Retro-Go SD's sleep).  Flag it like the PWR does.
+         */
+        gnw_pwr->regs[0x24 / 4] |= 1;               /* WKUPFR.WKUPF1 */
+        gnw_pwr->regs[0x10 / 4] |= 1 << 5;          /* CPUCR.STOPF */
+        cpu_interrupt(first_cpu, CPU_INTERRUPT_EXITTB);
     }
     m->power_was_pressed = power;
     for (int i = 0; i < GNW_BTN_COUNT; i++) {
@@ -369,6 +396,51 @@ static const QemuInputHandler gnw_input_handler = {
     .name = "Game & Watch buttons",
     .mask = INPUT_EVENT_MASK_KEY,
     .event = gnw_key_event,
+};
+
+/*
+ * Deep sleep (STOP / STANDBY: WFI with SCR.SLEEPDEEP) stops the core's
+ * clocks, SysTick included; only EXTI/RTC events wake it.  QEMU's WFI
+ * wakes for any pending exception, so SysTick goes through this gate and
+ * is dropped while the core sleeps deeply.  Retro-Go SD's power button
+ * sleep (STOP2) otherwise woke up on the next tick.
+ */
+static void gnw_systick_gate(void *opaque, int n, int level)
+{
+    GnwMachineState *m = opaque;
+
+    if (level && first_cpu->halted && (m->scr & R_V7M_SCR_SLEEPDEEP_MASK)) {
+        return;
+    }
+    qemu_set_irq(m->systick_irq, level);
+}
+
+/*
+ * SCB->SCR: QEMU's NVIC treats SLEEPDEEP as RAZ/WI, so keep our own copy
+ * (for the gate above) and pass the write on for the other bits.
+ */
+static uint64_t gnw_scr_read(void *opaque, hwaddr addr, unsigned size)
+{
+    return ((GnwMachineState *)opaque)->scr;
+}
+
+static MemTxResult gnw_scr_write(void *opaque, hwaddr addr, uint64_t val,
+                                 unsigned size, MemTxAttrs attrs)
+{
+    GnwMachineState *m = opaque;
+    MemoryRegion *nvic = sysbus_mmio_get_region(SYS_BUS_DEVICE(&m->armv7m.nvic),
+                                                0);
+
+    m->scr = val & 0x1e;    /* SLEEPONEXIT, SLEEPDEEP, SLEEPDEEPS, SEVONPEND */
+    return memory_region_dispatch_write(nvic, 0xd10, val, MO_32, attrs);
+}
+
+static const MemoryRegionOps gnw_scr_ops = {
+    .read = gnw_scr_read,
+    .write_with_attrs = gnw_scr_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid.min_access_size = 4,
+    .valid.max_access_size = 4,
 };
 
 static void *load_file(const char *what, const char *path, size_t *len)
@@ -482,10 +554,18 @@ static void gnw_init(MachineState *machine)
     object_property_set_link(OBJECT(armv7m), "memory", OBJECT(sysmem),
                              &error_abort);
     sysbus_realize(SYS_BUS_DEVICE(armv7m), &error_fatal);
+    m->systick_irq = qdev_get_gpio_in_named(DEVICE(&m->armv7m.nvic),
+                                            "systick-trigger", M_REG_NS);
+    sysbus_connect_irq(SYS_BUS_DEVICE(&m->armv7m.systick[M_REG_NS]), 0,
+                       qemu_allocate_irq(gnw_systick_gate, m, 0));
     memory_region_init_io(&m->dwt, OBJECT(machine), &gnw_dwt_ops, m, "dwt",
                           0x1000);
     memory_region_add_subregion_overlap(&m->armv7m.container, 0xe0001000,
                                         &m->dwt, 0);
+    memory_region_init_io(&m->scr_mr, OBJECT(machine), &gnw_scr_ops, m,
+                          "scb-scr", 4);
+    memory_region_add_subregion_overlap(&m->armv7m.container, 0xe000ed10,
+                                        &m->scr_mr, 1);
 
     /* Anything not modelled below logs with -d unimp and reads as zero. */
     create_unimplemented_device("periph-apb-ahb", 0x40000000, 0x20000000);
@@ -517,6 +597,10 @@ static void gnw_init(MachineState *machine)
     sbd = map_dev(dev, (hwaddr[]){ 0x50001000, 0x52001000 }, 2);
     sysbus_connect_irq(sbd, 0, NVIC(GNW_IRQ_LTDC));
     sysbus_connect_irq(sbd, 1, NVIC(GNW_IRQ_DMA2D));
+    qdev_connect_gpio_out_named(DEVICE(m->gpio), "pin", GNW_PIN(3, 4),
+                                qdev_get_gpio_in_named(dev, "panel-power", 0));
+    qdev_connect_gpio_out_named(DEVICE(m->gpio), "pin", GNW_PIN(3, 1),
+                                qdev_get_gpio_in_named(dev, "panel-power", 1));
 
     /* DMA1, DMA2, DMAMUX1, SAI1 */
     dev = qdev_new(TYPE_GNW_DMA);
