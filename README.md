@@ -32,7 +32,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 - [STMicroelectronics/stm32h7xx-hal-driver](https://github.com/STMicroelectronics/stm32h7xx-hal-driver)（已克隆到 `../stm32h7xx-hal-driver`）：OTFDEC 的 KEYCRC 算法，以及 CRYP GCM 各阶段的软硬件约定。
 - `game-and-watch-retro-go`：按键引脚（`Core/Inc/main.h`）。
 - `game-and-watch-patch`：OTFDEC 计数器格式和密钥在镜像中的偏移。
-- `docs/gnw-lle/svd/STM32H7B0.svd`：寄存器地址和中断号。
+- `docs/lle/svd/STM32H7B0.svd`：寄存器地址和中断号。内存图与手册链接见 `docs/lle/README.md`。
 - [qemu.qmp](https://pypi.org/project/qemu.qmp/)：Python 侧的 QMP 客户端。
 
 ## 构建
