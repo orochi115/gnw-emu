@@ -584,12 +584,109 @@ static void stream_tick(void *opaque)
     timer_mod(st->timer, st->start_ns + st->item_ns * st->total / 2);
 }
 
+/* ------------------------------------------------------------------ */
+/* Peripheral handshake (SPI1)                                          */
+
+#define SPI1_BASE   0x40013000
+
+static GnwDmaStream *req_stream(GnwDmaState *s, int req)
+{
+    for (int ch = 0; ch < 16; ch++) {
+        int c = ch / 8, i = ch % 8;
+
+        if ((s->dmamux[ch] & 0x7f) == req &&
+            (sreg(s, c, i)[S_CR] & CR_EN) && s->stream[c][i].periph) {
+            return &s->stream[c][i];
+        }
+    }
+    return NULL;
+}
+
+bool gnw_dma_req_active(GnwDmaState *s, int req)
+{
+    return req_stream(s, req) != NULL;
+}
+
+/* One item done: advance NDTR, raise HT/TC, stop unless circular. */
+static void periph_item_done(GnwDmaState *s, GnwDmaStream *st)
+{
+    uint32_t *r = sreg(s, st->ctrl, st->idx);
+    uint32_t n = (r[S_NDTR] & 0xffff) - 1;
+
+    r[S_NDTR] = n;
+    if (n == st->total / 2) {
+        stream_flag(s, st->ctrl, st->idx, F_HT);
+    }
+    if (n == 0) {
+        if (r[S_CR] & CR_CIRC) {
+            r[S_NDTR] = st->total;
+        } else {
+            r[S_CR] &= ~CR_EN;
+        }
+        stream_flag(s, st->ctrl, st->idx, F_TC);
+    }
+}
+
+static uint32_t periph_mem_addr(GnwDmaState *s, GnwDmaStream *st, int *ms)
+{
+    uint32_t *r = sreg(s, st->ctrl, st->idx);
+    uint32_t cr = r[S_CR];
+    uint32_t done = st->total - (r[S_NDTR] & 0xffff);
+
+    *ms = stream_msize(cr);
+    return r[S_M0AR] + ((cr & CR_MINC) ? done * *ms : 0);
+}
+
+bool gnw_dma_req_mem_to_periph(GnwDmaState *s, int req, uint32_t *item)
+{
+    GnwDmaStream *st = req_stream(s, req);
+    uint32_t v = 0;
+    int ms;
+    uint32_t a;
+
+    if (!st || extract32(sreg(s, st->ctrl, st->idx)[S_CR], 6, 2) != 1) {
+        return false;
+    }
+    a = periph_mem_addr(s, st, &ms);
+    dma_memory_read(&address_space_memory, a, &v, ms, MEMTXATTRS_UNSPECIFIED);
+    *item = le32_to_cpu(v);
+    periph_item_done(s, st);
+    return true;
+}
+
+bool gnw_dma_req_periph_to_mem(GnwDmaState *s, int req, uint32_t item)
+{
+    GnwDmaStream *st = req_stream(s, req);
+    uint32_t v = cpu_to_le32(item);
+    int ms;
+    uint32_t a;
+
+    if (!st || extract32(sreg(s, st->ctrl, st->idx)[S_CR], 6, 2) != 0) {
+        return false;
+    }
+    a = periph_mem_addr(s, st, &ms);
+    dma_memory_write(&address_space_memory, a, &v, ms,
+                     MEMTXATTRS_UNSPECIFIED);
+    periph_item_done(s, st);
+    return true;
+}
+
 static void stream_enable(GnwDmaState *s, int c, int i)
 {
     uint32_t *r = sreg(s, c, i);
     uint32_t pa = r[S_PAR];
     GnwDmaStream *st = &s->stream[c][i];
     int dir = extract32(r[S_CR], 6, 2);
+
+    st->periph = false;
+    if (dir != 2 && pa >= SPI1_BASE && pa < SPI1_BASE + 0x400) {
+        st->periph = true;
+        st->total = r[S_NDTR] & 0xffff;
+        if (s->periph_kick) {
+            s->periph_kick(s->periph_opaque);
+        }
+        return;
+    }
 
     if (dir == 1 && pa >= SAI1_BASE && pa < SAI1_BASE + 0x400) {
         int block = pa >= SAI1_BASE + 0x40 ? 1 : 0;

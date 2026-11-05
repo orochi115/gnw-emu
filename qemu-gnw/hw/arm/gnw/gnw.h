@@ -25,6 +25,7 @@
 #define GNW_IRQ_EXTI15_10   40
 #define GNW_IRQ_RTC_ALARM   41
 #define GNW_IRQ_ADC         18
+#define GNW_IRQ_SPI1        35
 #define GNW_IRQ_TIM1_UP     25
 #define GNW_IRQ_TIM2        28
 #define GNW_IRQ_TIM3        29
@@ -107,7 +108,12 @@ struct GnwGpioState {
     uint32_t exti[0x100 / 4];
     uint32_t syscfg[0x400 / 4];
     qemu_irq exti_irq[7];   /* EXTI0..4, EXTI9_5, EXTI15_10 */
+    /* Pin levels for devices on the board, line = port * 16 + pin. */
+    qemu_irq out[GNW_GPIO_PORTS * 16];
+    uint16_t last_out[GNW_GPIO_PORTS];
 };
+
+#define GNW_PIN(port, pin) ((port) * 16 + (pin))
 
 void gnw_gpio_set_external(GnwGpioState *s, int port, int pin, bool level);
 
@@ -189,6 +195,7 @@ typedef struct GnwDmaStream {
     int64_t item_ns;
     uint32_t total;
     bool half_done;
+    bool periph;                /* handshaked with a peripheral model */
 } GnwDmaStream;
 
 struct GnwDmaState {
@@ -217,7 +224,20 @@ struct GnwDmaState {
     int16_t last_l, last_r;
     bool pcm_primed;
     pthread_mutex_t pcm_lock;
+    /* Called when a stream towards a handshaking peripheral is enabled. */
+    void (*periph_kick)(void *opaque);
+    void *periph_opaque;
 };
+
+/*
+ * Peripheral flow control for DMAMUX1 request line `req` (RM0455 table
+ * 123, e.g. SPI1 RX 37, TX 38): move one item between the peripheral and
+ * the enabled stream that serves the request.  Returns false when no
+ * stream is ready, so the peripheral falls back to its registers.
+ */
+bool gnw_dma_req_active(GnwDmaState *s, int req);
+bool gnw_dma_req_mem_to_periph(GnwDmaState *s, int req, uint32_t *item);
+bool gnw_dma_req_periph_to_mem(GnwDmaState *s, int req, uint32_t item);
 
 /* ------------------------------------------------------------------ */
 /* General purpose timers and RTC                                       */
@@ -257,5 +277,94 @@ struct GnwRtcState {
     qemu_irq wkup_irq;
     qemu_irq alarm_irq;
 };
+
+/* ------------------------------------------------------------------ */
+/* SPI (v2) master, SPI1 for the SD card mod                            */
+
+#define TYPE_GNW_SPI "gnw-spi"
+OBJECT_DECLARE_SIMPLE_TYPE(GnwSpiState, GNW_SPI)
+
+#define GNW_SPI_FIFO 16
+
+/* Exchange one byte with the device on the bus. */
+typedef uint8_t (*GnwSpiXfer)(void *opaque, uint8_t out);
+
+struct GnwSpiState {
+    SysBusDevice parent_obj;
+    MemoryRegion mmio;
+    uint32_t regs[0x400 / 4];
+    uint32_t sr;                /* sticky status bits */
+    uint8_t rx[GNW_SPI_FIFO];
+    unsigned rx_head, rx_len;
+    bool running;               /* CSTART until EOT */
+    uint16_t ctsize;            /* frames left (0: endless) */
+    GnwSpiXfer xfer;
+    void *xfer_opaque;
+    GnwDmaState *dma;
+    int req_rx, req_tx;
+    qemu_irq irq;
+};
+
+void gnw_spi_attach(GnwSpiState *s, GnwSpiXfer fn, void *opaque);
+void gnw_spi_connect_dma(GnwSpiState *s, GnwDmaState *dma, int req_rx,
+                         int req_tx);
+
+/* ------------------------------------------------------------------ */
+/* microSD card (SPI mode) for the Retro-Go SD mod                      */
+
+#define TYPE_GNW_SDCARD "gnw-sdcard"
+OBJECT_DECLARE_SIMPLE_TYPE(GnwSdState, GNW_SDCARD)
+
+struct GnwSdState {
+    SysBusDevice parent_obj;
+    BlockBackend *blk;
+    bool ospi_wiring;
+    bool trace;                 /* log every command (-D file) */
+    bool read_only;
+    uint64_t sectors;
+    GnwGpioState *gpio;         /* for MISO on PD12 (ospi wiring) */
+
+    bool powered, selected, idle, app;
+    int state;
+    uint8_t cmd[6];
+    int cmd_len;
+    uint8_t out[600];
+    unsigned out_len, out_pos;
+    bool rd_multi, wr_multi;
+    uint32_t rd_lba, wr_lba;
+    uint8_t wbuf[514];
+    unsigned wpos;
+    uint64_t reads, writes;
+
+    /* bit-banged wiring */
+    bool bb_clk, bb_mosi;
+    uint8_t bb_in, bb_out;
+    int bit;
+};
+
+uint8_t gnw_sdcard_spi_xfer(void *opaque, uint8_t in);
+
+/* ------------------------------------------------------------------ */
+/* Embedded flash: both banks + FLASH interface (program/erase)         */
+
+#define TYPE_GNW_FLASH "gnw-flash"
+OBJECT_DECLARE_SIMPLE_TYPE(GnwFlashState, GNW_FLASH)
+
+struct GnwFlashState {
+    SysBusDevice parent_obj;
+    MemoryRegion mmio;
+    MemoryRegion bank[2];
+    uint32_t size[2];
+    int fd[2];                  /* overlay file, -1 if none */
+    uint32_t regs[0x1000 / 4];
+    int key_step[2];
+    uint8_t wbuf[2][16];
+    uint32_t waddr[2];
+    uint16_t wmask[2];
+};
+
+/* Create bank b (0/1) from an image and/or a persistent overlay file. */
+void gnw_flash_load(GnwFlashState *s, int b, const uint8_t *data,
+                    size_t len, uint32_t size, const char *overlay);
 
 #endif

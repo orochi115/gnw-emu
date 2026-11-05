@@ -67,6 +67,11 @@ def main(argv=None):
     r.add_argument("--internal", help="bank 1 image (default: firmware/)")
     r.add_argument("--external", help="SPI flash image (default: firmware/)")
     r.add_argument("--bank2", help="bank 2 image (e.g. Retro-Go)")
+    r.add_argument("--bank1-overlay", help="file keeping bank 1 programming")
+    r.add_argument("--bank2-overlay", help="file keeping bank 2 programming")
+    r.add_argument("--sdcard", help="SD card image (Retro-Go SD mod)")
+    r.add_argument("--sd-wiring", choices=["spi1", "ospi"],
+                   help="SD mod wiring (default spi1)")
     sub.add_parser("buttons", help="list button names")
     a = ap.parse_args(argv)
 
@@ -79,6 +84,8 @@ def main(argv=None):
     with GnW(a.model, deterministic=a.deterministic, overlay=a.overlay,
              wav=a.wav, log=a.log, internal=a.internal,
              external=a.external, bank2=a.bank2,
+             bank1_overlay=a.bank1_overlay, bank2_overlay=a.bank2_overlay,
+             sdcard=a.sdcard, sd_wiring=a.sd_wiring,
              rtc=None if a.rtc == "host" else a.rtc) as gw:
         run_script(gw, steps)
         print(f"guest time {gw.vtime_ms:.0f} ms", file=sys.stderr)

@@ -50,7 +50,11 @@ class GnW:
                  bank2: str | None = None, audio: bool = False,
                  realtime: bool = False, battery: int | None = None,
                  usb: bool | None = None, battery_life_min: int | None = None,
-                 charge_time_min: int | None = None):
+                 charge_time_min: int | None = None,
+                 sdcard: str | None = None, sd_wiring: str | None = None,
+                 sd_snapshot: bool = False,
+                 bank1_overlay: str | None = None,
+                 bank2_overlay: str | None = None, uid: str | None = None):
         firmware = Path(firmware)
         self.model = model
         self.tmp = Path(tempfile.mkdtemp(prefix="gnw-"))
@@ -60,6 +64,14 @@ class GnW:
                 f"external={external or firmware / f'flash_backup_{model}.bin'}"]
         if bank2:
             opts.append(f"bank2={bank2}")
+        if bank1_overlay:
+            opts.append(f"bank1-overlay={bank1_overlay}")
+        if bank2_overlay:
+            opts.append(f"bank2-overlay={bank2_overlay}")
+        if sd_wiring:
+            opts.append(f"sd-wiring={sd_wiring}")
+        if uid:
+            opts.append(f"uid={uid}")
         if audio:
             opts.append("audio=on")
         if battery is not None:
@@ -88,6 +100,12 @@ class GnW:
             self.args += ["-icount", "shift=2,sleep=off"]
         if log:
             self.args += ["-d", trace, "-D", log]
+        if sdcard:
+            # Retro-Go SD mod: SPI-mode microSD card image (MBR + FAT/exFAT).
+            drive = f"if=sd,format=raw,file={sdcard}"
+            if sd_snapshot:
+                drive += ",snapshot=on"
+            self.args += ["-drive", drive]
         self.args += extra or []
         self.proc: subprocess.Popen | None = None
         self.qmp: QEMUMonitorProtocol | None = None

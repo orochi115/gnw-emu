@@ -305,6 +305,32 @@ static void flash_command_write(GnwOspiState *s, const uint8_t *data,
 }
 
 /* Commands that return data: fill the FIFO. */
+
+/*
+ * SFDP (JESD216): the header and the first two dwords of the basic flash
+ * parameter table.  Retro-Go sizes its external flash ROM cache from the
+ * density field (dword 2: size in bits - 1).
+ */
+static uint8_t ospi_sfdp_byte(GnwOspiState *s, uint32_t addr)
+{
+    static const uint8_t hdr[16] = {
+        'S', 'F', 'D', 'P', 0x06, 0x01, 0x00, 0xff,     /* rev 1.6, 1 NPH */
+        0x00, 0x06, 0x01, 0x10, 0x30, 0x00, 0x00, 0xff, /* BFPT, 16 dw @0x30 */
+    };
+    uint32_t dw[2] = {
+        0xfff320e5,                                     /* 4K erase: 0x20 */
+        s->flash_size * 8 - 1,                          /* density, bits */
+    };
+
+    if (addr < sizeof(hdr)) {
+        return hdr[addr];
+    }
+    if (addr >= 0x30 && addr < 0x38) {
+        return dw[(addr - 0x30) / 4] >> (8 * (addr & 3));
+    }
+    return 0xff;
+}
+
 static void flash_command_read(GnwOspiState *s, uint8_t *out, uint32_t len)
 {
     uint8_t cmd = s->regs[R_IR] & 0xff;
@@ -329,7 +355,12 @@ static void flash_command_read(GnwOspiState *s, uint8_t *out, uint32_t len)
             out[i] = s->flash[(addr + i) & (s->flash_size - 1)];
         }
         break;
-    case 0x5a: case 0x2b: case 0x48:
+    case 0x5a:                  /* SFDP: header + JEDEC basic table */
+        for (uint32_t i = 0; i < len; i++) {
+            out[i] = ospi_sfdp_byte(s, addr + i);
+        }
+        break;
+    case 0x2b: case 0x48:
         break;
     default:
         qemu_log_mask(LOG_UNIMP, "gnw-ospi: read command 0x%02x\n", cmd);
@@ -519,10 +550,15 @@ void gnw_ospi_load(GnwOspiState *s, const uint8_t *data, uint32_t size,
     memcpy(s->flash, data, size);
     s->overlay_path = g_strdup(overlay);
 
-    /* MX25U8035F (1 MiB) or MX25U3232F (4 MiB) */
+    /*
+     * Macronix 1.8 V parts: C2 25 (0x20 + log2 size), e.g. MX25U8035F
+     * (1 MiB, stock Mario) 34, MX25U3232F (4 MiB, stock Zelda) 36,
+     * MX25U51245G (64 MiB, the usual mod) 3A.  Retro-Go picks its command
+     * set (3- or 4-byte addressing) from this ID.
+     */
     s->jedec[0] = 0xc2;
     s->jedec[1] = 0x25;
-    s->jedec[2] = ctz32(s->flash_size);
+    s->jedec[2] = 0x20 + ctz32(s->flash_size);
     s->status = 0x40;           /* QE */
 
     memory_region_init_rom(&s->xip, OBJECT(s), "ospi-xip", s->flash_size,

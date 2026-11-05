@@ -1,6 +1,6 @@
 /*
  * Game & Watch: generic read-back register files and the simple
- * peripherals built on top of them (RCC, PWR, FLASH, SPI2, ...).
+ * peripherals built on top of them (RCC, PWR, SPI2, HASH, ...).
  *
  * Every write is stored and read back. Peripheral specific hooks set
  * the status bits the stock firmware polls on (ready flags etc.).
@@ -221,25 +221,6 @@ static void pwr_reset(GnwRegs *s)
 }
 
 /* ------------------------------------------------------------------ */
-/* Embedded flash interface: nothing ever busy.                         */
-
-static uint32_t flash_read(GnwRegs *s, hwaddr off, uint32_t v)
-{
-    switch (off) {
-    case 0x10: case 0x110:     /* SR1/SR2: BSY, QW, WBNE clear */
-        return v & ~0x7;
-    }
-    return v;
-}
-
-static void flash_reset(GnwRegs *s)
-{
-    s->regs[0x0c / 4] = 0x00000031;     /* CR1: LOCK */
-    s->regs[0x10c / 4] = 0x00000031;
-    s->regs[0x1c / 4] = 0x0000aaf0;     /* OPTSR_CUR: RDP level 0 look */
-}
-
-/* ------------------------------------------------------------------ */
 /* SPI2 (LCD panel setup): every transfer completes immediately.         */
 
 static uint32_t spi_read(GnwRegs *s, hwaddr off, uint32_t v)
@@ -297,6 +278,79 @@ static void crc_reset(GnwRegs *s)
     s->regs[0x14 / 4] = 0x04c11db7;
 }
 
+/* ------------------------------------------------------------------ */
+/* HASH: SHA-1/SHA-224/SHA-256/MD5 over the words written to DIN.       */
+
+static GByteArray *hash_msg;
+
+static void hash_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
+{
+    uint32_t cr = s->regs[0];
+
+    if (!hash_msg) {
+        hash_msg = g_byte_array_new();
+    }
+    if (off == 0x00 && (v & (1 << 2))) {        /* CR.INIT */
+        g_byte_array_set_size(hash_msg, 0);
+        s->regs[0] &= ~(1 << 2);
+        s->regs[0x24 / 4] &= ~(1 << 1);
+    } else if (off == 0x04) {                   /* DIN */
+        uint8_t b[4];
+        switch (extract32(cr, 4, 2)) {          /* DATATYPE swapping */
+        case 0: stl_be_p(b, v); break;
+        case 1: stl_be_p(b, (v << 16) | (v >> 16)); break;
+        default: stl_le_p(b, v); break;         /* 8-bit data (and bit) */
+        }
+        g_byte_array_append(hash_msg, b, 4);
+    } else if (off == 0x08 && (v & (1 << 8))) { /* STR.DCAL */
+        unsigned nblw = v & 0x1f;
+        unsigned algo = extract32(cr, 7, 1) | extract32(cr, 18, 1) << 1;
+        static const GChecksumType types[4] = {
+            G_CHECKSUM_SHA1, G_CHECKSUM_MD5, G_CHECKSUM_SHA256,
+            G_CHECKSUM_SHA256,
+        };
+        guint len = hash_msg->len;
+        uint8_t digest[32];
+        gsize dlen = sizeof(digest);
+        GChecksum *ck;
+
+        if (nblw && len >= 4) {
+            len -= 4 - (nblw + 7) / 8;
+        }
+        if (algo == 2) {
+            qemu_log_mask(LOG_UNIMP, "hash: SHA-224 not supported\n");
+        }
+        ck = g_checksum_new(types[algo]);
+        g_checksum_update(ck, hash_msg->data, len);
+        g_checksum_get_digest(ck, digest, &dlen);
+        g_checksum_free(ck);
+        for (unsigned i = 0; i < dlen / 4; i++) {
+            uint32_t w = ldl_be_p(digest + 4 * i);
+            if (i < 5) {
+                s->regs[0x0c / 4 + i] = w;
+            }
+            s->regs[0x310 / 4 + i] = w;
+        }
+        if (algo == 1) {                        /* MD5 digest is LE */
+            for (unsigned i = 0; i < 4; i++) {
+                s->regs[0x0c / 4 + i] = s->regs[0x310 / 4 + i] =
+                    ldl_le_p(digest + 4 * i);
+            }
+        }
+        s->regs[0x08 / 4] &= ~(1 << 8);
+        s->regs[0x24 / 4] |= 1 << 1;            /* SR.DCIS */
+        g_byte_array_set_size(hash_msg, 0);
+    }
+}
+
+static uint32_t hash_read(GnwRegs *s, hwaddr off, uint32_t v)
+{
+    if (off == 0x24) {                          /* SR: DIN always ready */
+        return (v & (1 << 1)) | 1;
+    }
+    return v;
+}
+
 GnwRegs *gnw_regs_create_stubs(void)
 {
     GnwRegs *rcc = gnw_regs_create("rcc", 0x58024400, 0x400, rcc_read, NULL,
@@ -304,11 +358,10 @@ GnwRegs *gnw_regs_create_stubs(void)
 
     gnw_pwr = gnw_regs_create("pwr", 0x58024800, 0x400, pwr_read, pwr_write,
                               pwr_reset);
-    gnw_regs_create("flash-if", 0x52002000, 0x1000, flash_read, NULL,
-                    flash_reset);
     gnw_regs_create("spi2", 0x40003800, 0x400, spi_read, NULL, NULL);
     gnw_regs_create("dbgmcu", 0x5c001000, 0x400, NULL, NULL, dbgmcu_reset);
     gnw_regs_create("hsem", 0x58026400, 0x400, hsem_read, NULL, NULL);
+    gnw_regs_create("hash", 0x48021400, 0x400, hash_read, hash_write, NULL);
     gnw_regs_create("crc", 0x58024c00, 0x400, NULL, crc_write, crc_reset);
     gnw_regs_create("octospim", 0x5200b400, 0x400, NULL, NULL, NULL);
     gnw_regs_create("dmamux2", 0x58025800, 0x400, NULL, NULL, NULL);

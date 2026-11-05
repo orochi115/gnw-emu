@@ -21,6 +21,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 | `tests/` | pytest 端到端用例；`golden.json` 只记录画面哈希 |
 | `tools/gnwcrypt.py` | 离线 OTFDEC 解密，移植自 `game-and-watch-patch` 的 `crypt()`，测试里用作参照 |
 | `tools/scan_mmio.py` | 结合 SVD 扫描镜像字面量池，列出固件用到的外设 |
+| `scripts/build_retrogo_sd.sh`、`fetch_cores.sh`、`make_sd_image.py`、`make_sd_dualboot.py` | Retro-Go SD：编译固件、下载核心、生成 SD 卡镜像、拼双系统 Bank 1（见 `docs/sdcard.md`） |
 | `hwtest/` | Cortex-M7 时序测试，真机和模拟器都能跑；结果与周期精确化评估见 `docs/cycle-accuracy.md` |
 
 ## 复用的社区代码
@@ -79,6 +80,18 @@ Retro-Go 里 G 对应游戏的 START，P（PAUSE）打开游戏菜单，T（TIME
 Headless 时用 `--internal/--external/--bank2`，或者 `GnW(internal=..., external=..., bank2=...)`。
 `tests/test_retrogo.py` 会找最新的 `../game-and-watch-backup/backups/full_*`（也可以用 `GNW_FULL_BACKUP` 指定），没有就跳过。
 
+## Retro-Go SD（microSD 改装）
+
+支持 sylverb 的 Retro-Go SD 2.x，SD 卡的两种接法都支持：SPI1（默认），以及复用外挂 Flash 引脚的软件 SPI（`SD_WIRING=ospi`）。卡镜像用 `-drive if=sd,format=raw,file=…` 挂载，或者设置 `SDCARD=` 环境变量。核心、ROM、封面、存档都在卡上，ROM 缓存用外挂 Flash。bootloader 能从卡上的 `retro-go_update.bin` 刷写 Bank 2，通过 `BANK2_OVERLAY=` 落盘。
+
+```sh
+B=../game-and-watch-backup/backups/full_YYYYMMDD_HHMM
+INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin BANK2=../retro-go-sd/build/gw_retro_go_intflash.bin \
+    OVERLAY=out/sd_ext.bin SDCARD=out/sd/sdcard.img scripts/run.sh zelda
+```
+
+编译、镜像生成、升级流程和调试方法见 `docs/sdcard.md`。
+
 ## Headless 与自动化
 
 命令行：
@@ -114,7 +127,7 @@ with GnW("zelda", deterministic=True) as gw:
 测试：
 
 ```sh
-.venv/bin/python -m pytest -q tests            # 11 个用例，约 30 秒
+.venv/bin/python -m pytest -q tests            # 22 个用例，约 4 分钟（SD 用例缺依赖时跳过）
 GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后更新哈希
 ```
 
@@ -126,9 +139,12 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | DWT | 只有 `CTRL.CYCCNTENA` 和 `CYCCNT`：按 280 MHz 把虚拟时间折算成周期（`-icount shift=2` 时每条指令 1.12 周期） |
 | ITCM、DTCM、AXI/AHB/SRD/Backup SRAM | RAM |
 | 片内 Flash Bank 1 / Bank 2 | `internal=` 映射到 `0x08000000`（128 或 256 KiB）；`bank2=` 映射到 `0x08100000`（256 KiB，手册未写），不给时读出全 0xFF |
-| RCC、PWR、FLASH 接口 | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位 |
+| FLASH 接口 | 解锁、按 16 字节 flash word 编程、扇区擦除和整 Bank 擦除；`bank1-overlay=` / `bank2-overlay=` 把改动写回文件 |
+| RCC、PWR | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位 |
+| SPI1 + microSD 卡 | STM32H7 SPI v2 主机，支持 DMA（DMAMUX 37/38）；SPI 模式 SDHC 卡，也可以接在 OSPI 引脚上走软件 SPI。见 `docs/sdcard.md` |
+| HASH、器件 UID | SHA-1/SHA-256/MD5；`0x08FFF800` 处的 UID（`uid=`） |
 | GPIO A–K、EXTI、SYSCFG | 实现。按键低电平有效，边沿经 `EXTICR` 路由到 EXTI 中断 |
-| OCTOSPI1 + MX25U | 间接读写、自动轮询、内存映射；支持 RDID/RDSR/WRSR/读/页编程/扇区擦除。写入可落到 overlay 文件 |
+| OCTOSPI1 + MX25U | 间接读写、自动轮询、内存映射；支持 RDID（真实 ID：`C2 25 0x20+log2 容量`）、SFDP、RDSR/WRSR、读、页编程、扇区擦除。写入可落到 overlay 文件 |
 | OTFDEC1 | 区域、nonce、密钥、KEYCRC；`0x90000000` 窗口里放的是已解密的内容，TCG 可以全速执行 |
 | LTDC | 两层，支持 ARGB8888/RGB888/RGB565/ARGB1555/ARGB4444/L8/AL44/AL88 与 CLUT；按 60 Hz 产生行中断和重载中断 |
 | DMA2D | M2M、PFC、混合、R2M、前景或背景固定颜色的混合（MODE 4/5），以及 CLUT 加载；前景支持 YCbCr 输入（JPEG 编解码器输出的 MCU 块格式，4:4:4/4:2:2/4:2:0） |

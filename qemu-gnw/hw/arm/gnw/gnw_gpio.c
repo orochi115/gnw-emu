@@ -58,12 +58,28 @@ static void exti_update(GnwGpioState *s)
     qemu_set_irq(s->exti_irq[6], extract32(pend, 10, 6) != 0);
 }
 
+/* Tell board devices (SD card) about pin level changes. */
+static void gpio_outputs(GnwGpioState *s, int port, uint16_t in)
+{
+    uint16_t changed = in ^ s->last_out[port];
+
+    s->last_out[port] = in;
+    for (int pin = 0; pin < 16 && changed; pin++) {
+        if (changed & (1 << pin)) {
+            changed &= ~(1 << pin);
+            qemu_set_irq(s->out[GNW_PIN(port, pin)], (in >> pin) & 1);
+        }
+    }
+}
+
 /* Look for edges on pins wired to EXTI lines. */
 static void gpio_sample(GnwGpioState *s, int port)
 {
     GnwGpioPort *p = &s->port[port];
     uint16_t in = port_input(p);
     uint16_t changed = in ^ p->last_in;
+
+    gpio_outputs(s, port, in);
 
     p->last_in = in;
     for (int pin = 0; pin < 16 && changed; pin++) {
@@ -241,6 +257,7 @@ static void gnw_gpio_reset(DeviceState *dev)
             p->pupdr = 0x00000100;
         }
         p->last_in = port_input(p);
+        s->last_out[i] = p->last_in;
     }
     memset(s->exti, 0, sizeof(s->exti));
     memset(s->syscfg, 0, sizeof(s->syscfg));
@@ -263,6 +280,8 @@ static void gnw_gpio_init(Object *obj)
     for (int i = 0; i < 7; i++) {
         sysbus_init_irq(sbd, &s->exti_irq[i]);
     }
+    qdev_init_gpio_out_named(DEVICE(obj), s->out, "pin",
+                             GNW_GPIO_PORTS * 16);
 }
 
 static void gnw_gpio_class_init(ObjectClass *klass, const void *data)

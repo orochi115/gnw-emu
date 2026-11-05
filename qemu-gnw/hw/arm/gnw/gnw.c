@@ -5,6 +5,9 @@
  *   internal=  internal flash bank 1 image (128 or 256 KiB), at 0x08000000
  *   bank2=     optional internal flash bank 2 image (up to 256 KiB, e.g.
  *              Retro-Go), at 0x08100000; reads as erased (0xff) if absent
+ *   bank1-overlay= / bank2-overlay=
+ *              files that keep internal flash programming (Retro-Go SD
+ *              updates); created from internal= / bank2= if missing
  *   external=  SPI NOR image (1 or 4 MiB), seen through OCTOSPI1/OTFDEC
  *   overlay=   optional writable copy of the SPI NOR that receives the
  *              firmware's save writes (created from external= if missing)
@@ -16,6 +19,10 @@
  *              host clock (see gnw_realtime_tick)
  *   battery=   battery level in percent (default 100), settable at run time
  *   usb-power= USB power connected (charging until full), settable at run time
+ *   sd-wiring= Retro-Go SD mod: "spi1" (default) or "ospi" (bit-banged on
+ *              the flash pins); the card image is -drive if=sd,format=raw
+ *   uid=       96-bit device ID as 24 hex digits (Retro-Go keys its flash
+ *              cache index with it)
  *   battery-life-min / charge-time-min
  *              minutes for 100 -> 0 % on battery / 0 -> 100 % on USB
  *              (0 = level stays put); see gnw_battery_tick
@@ -38,6 +45,9 @@
 #include "system/address-spaces.h"
 #include "system/system.h"
 #include "system/runstate.h"
+#include "system/blockdev.h"
+#include "system/block-backend.h"
+#include "hw/core/qdev-properties-system.h"
 #include "exec/icount.h"
 #include "qemu/timer.h"
 #include "ui/input.h"
@@ -57,8 +67,9 @@ struct GnwMachineState {
     ARMv7MState armv7m;
     Clock *sysclk;
     Clock *refclk;
-    MemoryRegion itcm, flash, flash2, dtcm, axi_sram, ahb_sram, srd_sram, bkp_sram;
+    MemoryRegion itcm, dtcm, axi_sram, ahb_sram, srd_sram, bkp_sram;
     MemoryRegion dwt;
+    MemoryRegion uid_rom;
     uint32_t dwt_ctrl;
     uint32_t dwt_frozen;        /* CYCCNT while the counter is stopped */
     uint64_t dwt_base;          /* cycles at which CYCCNT was 0 */
@@ -68,9 +79,15 @@ struct GnwMachineState {
     GnwLtdcState *ltdc;
     GnwDmaState *dma;
     GnwAdcState *adc;
+    GnwSpiState *spi1;
+    GnwSdState *sd;
+    char *sd_wiring;
+    char *uid;
 
     char *internal_path;
     char *bank2_path;
+    char *bank1_overlay;
+    char *bank2_overlay;
     char *external_path;
     char *overlay_path;
     char *wav_path;
@@ -418,26 +435,29 @@ static void gnw_init(MachineState *machine)
 
     /* Memory */
     ram_at(&m->itcm, "itcm", 0x00000000, 64 * KiB);
-    memory_region_init_rom(&m->flash, NULL, "flash",
-                           MAX(pow2ceil(int_len), 128 * KiB), &error_fatal);
-    memcpy(memory_region_get_ram_ptr(&m->flash), internal, int_len);
-    memory_region_add_subregion(sysmem, 0x08000000, &m->flash);
-    /* Bank 2: undocumented on the H7B0, but present (256 KiB). */
-    memory_region_init_rom(&m->flash2, NULL, "flash-bank2", 256 * KiB,
-                           &error_fatal);
-    memset(memory_region_get_ram_ptr(&m->flash2), 0xff, 256 * KiB);
-    if (m->bank2_path) {
-        size_t b2_len;
-        uint8_t *b2 = load_file("bank2", m->bank2_path, &b2_len);
+    /*
+     * Flash banks and the FLASH interface.  Bank 2 is undocumented on the
+     * H7B0 but present (256 KiB); it reads as erased unless bank2= is set.
+     */
+    dev = qdev_new(TYPE_GNW_FLASH);
+    {
+        GnwFlashState *fl = GNW_FLASH(dev);
+        uint8_t *b2 = NULL;
+        size_t b2_len = 0;
 
-        if (b2_len > 256 * KiB) {
-            error_report("gnw: bank2 image larger than 256 KiB");
-            exit(1);
+        if (m->bank2_path) {
+            b2 = load_file("bank2", m->bank2_path, &b2_len);
+            if (b2_len > 256 * KiB) {
+                error_report("gnw: bank2 image larger than 256 KiB");
+                exit(1);
+            }
         }
-        memcpy(memory_region_get_ram_ptr(&m->flash2), b2, b2_len);
+        gnw_flash_load(fl, 0, internal, int_len,
+                       MAX(pow2ceil(int_len), 128 * KiB), m->bank1_overlay);
+        gnw_flash_load(fl, 1, b2, b2_len, 256 * KiB, m->bank2_overlay);
         g_free(b2);
     }
-    memory_region_add_subregion(sysmem, 0x08100000, &m->flash2);
+    map_dev(dev, (hwaddr[]){ 0x52002000, 0x08000000, 0x08100000 }, 3);
     ram_at(&m->dtcm, "dtcm", 0x20000000, 128 * KiB);
     ram_at(&m->axi_sram, "axi-sram", 0x24000000, 1 * MiB);
     ram_at(&m->ahb_sram, "ahb-sram", 0x30000000, 128 * KiB);
@@ -562,6 +582,72 @@ static void gnw_init(MachineState *machine)
     sysbus_connect_irq(sbd, 0, NVIC(GNW_IRQ_RTC_WKUP));
     sysbus_connect_irq(sbd, 1, NVIC(GNW_IRQ_RTC_ALARM));
 
+    /* SPI1 + microSD card (Retro-Go SD mod) */
+    dev = qdev_new(TYPE_GNW_SPI);
+    m->spi1 = GNW_SPI(dev);
+    sbd = map_dev(dev, (hwaddr[]){ 0x40013000 }, 1);
+    sysbus_connect_irq(sbd, 0, NVIC(GNW_IRQ_SPI1));
+    gnw_spi_connect_dma(m->spi1, m->dma, 37, 38);
+    dev = qdev_new(TYPE_GNW_SDCARD);
+    m->sd = GNW_SDCARD(dev);
+    m->sd->gpio = m->gpio;
+    {
+        DriveInfo *dinfo = drive_get(IF_SD, 0, 0);
+        bool ospi = false;
+
+        if (m->sd_wiring && !strcmp(m->sd_wiring, "ospi")) {
+            ospi = true;
+        } else if (m->sd_wiring && strcmp(m->sd_wiring, "spi1")) {
+            error_report("gnw: sd-wiring must be spi1 or ospi");
+            exit(1);
+        }
+        if (dinfo) {
+            qdev_prop_set_drive_err(dev, "drive", blk_by_legacy_dinfo(dinfo),
+                                    &error_fatal);
+        }
+        qdev_prop_set_bit(dev, "ospi-wiring", ospi);
+        qdev_prop_set_bit(dev, "trace", getenv("GNW_SD_TRACE") != NULL);
+    }
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    gnw_spi_attach(m->spi1, gnw_sdcard_spi_xfer, m->sd);
+    {
+        static const struct { int port, pin; const char *in; int n; } w[] = {
+            { 0, 15, "vcc", 0 },        /* PA15 card power */
+            { 1, 9, "cs", 0 },          /* PB9 CS */
+            { 1, 2, "bitbang", 0 },     /* PB2 OSPI CLK */
+            { 1, 1, "bitbang", 1 },     /* PB1 OSPI IO0 */
+            { 4, 11, "bitbang", 2 },    /* PE11 OSPI nCS */
+        };
+        for (int i = 0; i < ARRAY_SIZE(w); i++) {
+            qdev_connect_gpio_out_named(DEVICE(m->gpio), "pin",
+                                        GNW_PIN(w[i].port, w[i].pin),
+                                        qdev_get_gpio_in_named(dev, w[i].in,
+                                                               w[i].n));
+        }
+    }
+
+    /* Device electronic signature: UID, flash size (KiB), package. */
+    memory_region_init_rom(&m->uid_rom, NULL, "uid", 0x100, &error_fatal);
+    {
+        uint8_t *p = memory_region_get_ram_ptr(&m->uid_rom);
+        uint32_t w[3] = { 0x00470031, 0x3133510b, 0x34313438 };
+
+        memset(p, 0xff, 0x100);
+        if (m->uid) {
+            if (strlen(m->uid) != 24 ||
+                sscanf(m->uid, "%8x%8x%8x", &w[2], &w[1], &w[0]) != 3) {
+                error_report("gnw: uid= needs 24 hex digits");
+                exit(1);
+            }
+        }
+        for (int i = 0; i < 3; i++) {
+            stl_le_p(p + 4 * i, w[i]);
+        }
+        stw_le_p(p + 0x0c, 128);
+        stw_le_p(p + 0x0e, 0x0001);
+    }
+    memory_region_add_subregion(sysmem, 0x08fff800, &m->uid_rom);
+
     g_free(internal);
     g_free(external);
 
@@ -592,6 +678,10 @@ STR_PROP(bank2_path, "bank2")
 STR_PROP(external_path, "external")
 STR_PROP(overlay_path, "overlay")
 STR_PROP(wav_path, "wav")
+STR_PROP(sd_wiring, "sd-wiring")
+STR_PROP(uid, "uid")
+STR_PROP(bank1_overlay, "bank1-overlay")
+STR_PROP(bank2_overlay, "bank2-overlay")
 
 static void gnw_get_battery(Object *obj, Visitor *v, const char *name,
                             void *opaque, Error **errp)
@@ -749,6 +839,16 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_bank2_path);
     object_class_property_set_description(oc, "bank2",
         "Internal flash bank 2 image, mapped at 0x08100000 (e.g. Retro-Go)");
+    object_class_property_add_str(oc, "bank1-overlay", gnw_get_bank1_overlay,
+                                  gnw_set_bank1_overlay);
+    object_class_property_set_description(oc, "bank1-overlay",
+        "Writable copy of bank 1 that keeps flash programming (created from "
+        "internal= if missing)");
+    object_class_property_add_str(oc, "bank2-overlay", gnw_get_bank2_overlay,
+                                  gnw_set_bank2_overlay);
+    object_class_property_set_description(oc, "bank2-overlay",
+        "Writable copy of bank 2 that keeps flash programming (created from "
+        "bank2= if missing)");
     object_class_property_add_str(oc, "external", gnw_get_external_path,
                                   gnw_set_external_path);
     object_class_property_set_description(oc, "external",
@@ -761,6 +861,14 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_wav_path);
     object_class_property_set_description(oc, "wav",
         "Write SAI1 audio output to this WAV file");
+    object_class_property_add_str(oc, "sd-wiring", gnw_get_sd_wiring,
+                                  gnw_set_sd_wiring);
+    object_class_property_set_description(oc, "sd-wiring",
+        "SD card mod wiring: spi1 (SPI1, default) or ospi (bit-banged on the "
+        "external flash pins); card image from -drive if=sd,format=raw");
+    object_class_property_add_str(oc, "uid", gnw_get_uid, gnw_set_uid);
+    object_class_property_set_description(oc, "uid",
+        "96-bit unique device ID, 24 hex digits (most significant first)");
     object_class_property_add(oc, "battery", "uint32", gnw_get_battery,
                               gnw_set_battery, NULL, NULL);
     object_class_property_set_description(oc, "battery",

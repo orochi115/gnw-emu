@@ -11,8 +11,9 @@
 # button is pressed.  RESET = 0 leaves the bench idling so the next run can halt it.  Results land in
 # hwtest/results/NAME.bin plus NAME.log.
 set -eu
-HOST=${GNW_HOST:-sakura@172.16.40.35}
-RDIR='D:/LLM_Work/Game_Watch/hwtest'
+# GNW_HOST=user@windows-host (ssh, required); GNW_REMOTE_DIR = bench directory there.
+HOST=${GNW_HOST:?set GNW_HOST=user@host of the machine with the ST-Link}
+RDIR=${GNW_REMOTE_DIR:-D:/LLM_Work/Game_Watch/hwtest}
 OCD_ARGS='-f interface/stlink.cfg -c "transport select swd; adapter speed 1800; reset_config none" -f target/stm32h7x.cfg'
 HERE=$(cd "$(dirname "$0")" && pwd)
 mkdir -p "$HERE/results"
