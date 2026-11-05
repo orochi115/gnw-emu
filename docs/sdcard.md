@@ -19,35 +19,61 @@
 | HASH | SHA-1、SHA-256、MD5（用 GLib 计算），供核心通过 ABI 调用 `calculate_sha1_*` |
 | OSPI Flash | JEDEC ID 改成真实型号：`C2 25 (0x20+log2 容量)`，64 MiB 为 MX25U51245G（`C2 25 3A`）。新增 SFDP（0x5A），Retro-Go 靠其中的容量字段确定 ROM 缓存有多大，没有它就会报 `flash_alloc: no room` |
 
-## 准备
+## 一键运行
+
+在 `GameWatch_Zelda/` 顶层（或 `gnw-emu/scripts/` 下同名去掉 `_emu` 的脚本）：
 
 ```sh
-# 1. Retro-Go SD 源码（git worktree，不影响原来的 checkout）
-cd ../game-and-watch-retro-go
-git worktree add ../retro-go-sd sylverb-sd/external_cores
-cd ../retro-go-sd && git submodule update --init
-python3 -m venv ../.venv-rgsd && ../.venv-rgsd/bin/pip install -r requirements.txt
-brew install mtools
+./run_sd_emu.sh                  # 直启：实机备份的 Bank 1 + SD 版 Retro-Go（Bank 2）+ SD 卡
+./run_sd_update_emu.sh           # 真实安装流程：补丁原厂 + SD bootloader，从卡上升级 Bank 2
+SD_WIRING=ospi ./run_sd_emu.sh   # 软件 SPI 接法
+FRESH=1 ./run_sd_update_emu.sh   # 回到升级前（清空 Bank 2、重做卡）
+```
 
-# 2. 编译固件、sd_content/、retro-go_update.bin（Zelda，Bank 2）
-cd ../gnw-emu
-scripts/build_retrogo_sd.sh          # GCC_PATH=… 可指定工具链
+缺什么就先准备：QEMU、Retro-Go SD 固件、核心（默认下载 release；`CORES_FROM=source` 时用 `build_cores.sh` 从源码编译）、卡镜像，升级流程还会准备补丁固件。`ROMS=`、`SYSTEMS=nes,gb`、`SDCARD=` 以及 `BATTERY=` 等选项见脚本开头的注释。
 
-# 3. 下载核心与 SD bootloader（gh CLI）
-scripts/fetch_cores.sh               # → out/dl/<core>/x/{cores,bios}/…, out/dl/bootloader/
+## 准备（分步）
 
-# 4. 生成 SD 卡镜像（MBR + FAT32），旧版 Retro-Go 的 roms/ 可以直接用
+依赖都在 `externals/` 下，以子模块形式存放：
+
+| 子模块 | 用途 |
+|---|---|
+| `qemu` | orochi115/qemu `gnw` 分支：v11.1.3 加上 gnw 钩子 |
+| `retro-go-sd` | orochi115/game-and-watch-retro-go-sd `gnw-emu` 分支（基于 sylverb external_cores） |
+| `game-and-watch-patch` | orochi115 fork `gnw-emu` 分支：给原厂固件打 `--sd-bootloader` 补丁 |
+| `cores/*-retro-go-sd`、`cores/game-and-watch-bootloader` | sylverb 上游，固定在 release tag |
+| `game-and-watch-backup`、`gnwmanager`、`stm32h7xx-hal-driver`、`game-and-watch-retro-go` | 备份工具、刷机工具、HAL 参考、旧版 Retro-Go（orochi115 fork，不含 ROM） |
+
+```sh
+git submodule update --init externals/qemu        # 其他子模块由各脚本按需初始化
+brew install mtools keystone
+python3 -m venv ../.venv-rgsd && ../.venv-rgsd/bin/pip install -r externals/retro-go-sd/requirements.txt
+
+scripts/build_retrogo_sd.sh      # 固件、sd_content/、retro-go_update.bin（Zelda，Bank 2）；GCC_PATH=… 可指定工具链
+scripts/fetch_cores.sh           # 下载核心与 SD bootloader → out/dl/<core>/x/{cores,bios}/…, out/dl/bootloader/
+#   或者
+scripts/build_cores.sh           # 从源码编译同一批文件，并逐字节比对 release（见下文）
 scripts/make_sd_image.py out/sd/sdcard.img --roms ../xx/game-and-watch-retro-go/roms
 #   --systems nes,gb    只放部分系统
 #   --with-update       把 retro-go_update.bin 放到根目录，供升级流程使用
+scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升级流程用的 Bank 1 和 ext
 ```
 
-`make_sd_image.py` 的处理：ROM 放到 `/roms/<系统>/`；旧版的 `.img` 封面（就是 JPEG）放到 `/covers/<系统>/`；`.ggcodes` 放到 `/cheats/<系统>/`；跳过预压缩的 `.lzma`。核心按各自 CORE 头里声明的目录名（nes、gb、md……）匹配 ROM 目录。
+`make_sd_image.py` 的处理：ROM 放到 `/roms/<系统>/`；旧版的 `.img` 封面（就是 JPEG）放到 `/covers/<系统>/`；`.ggcodes` 放到 `/cheats/<系统>/`；跳过预压缩的 `.lzma`。核心按各自 CORE 头里声明的目录名（nes、gb、md……）匹配 ROM 目录。ROM 从不进 git。
 
-本地编译的注意事项：
+### 从源码编译核心（`build_cores.sh`）
+
+10 个核心和 SD bootloader 都在 `externals/cores/` 下，固定在 `fetch_cores.sh` 下载的那些 release tag 上。编译环境与上游 CI 完全一致，所以产物和 release 逐字节相同：
+- **核心**：用 `sylverb/retro-go-sd-builder:v1.5`（Arm GNU Toolchain 15.2.rel1，按 digest 固定）执行 `make all CORE_VERSION=<tag>`；blueMSX 还要执行 `make bios`。然后用仓库自带的 `scripts/stage_release.py` 打出和 release 相同的 SD zip 并解开。
+- **bootloader**：用 Arm GNU Toolchain 13.3.rel1（x86_64 Linux，缓存在 `out/toolchains/`），以 `DEBUG=0` 分别编出 0x08000000 版和 0x08032000 版。
+
+两者都在 linux/amd64 容器里运行（Docker Desktop，Apple Silicon 上走 Rosetta）。产物写到 `out/dl`，布局与 `fetch_cores.sh` 相同。`VERIFY=1`（默认）时会把 release 下载到 `out/dl-release`，再逐个文件 `cmp`。只编译部分可以写 `scripts/build_cores.sh fceumm bootloader`。
+
+本地编译 Retro-Go 固件的注意事项：
 - x86 版 GCC 10.3 的可执行文件带 Chrome 下载留下的 quarantine 属性，第一次运行会被 macOS 拦截，需要在系统设置里逐个放行。Homebrew 的 `arm-none-eabi-gcc` 没有 newlib，用不了。
-- GCC 10.3 的 ld 不认识 `--no-warn-rwx-segments`。本地 worktree 的 `Makefile.common` 改成先探测链接器支持再加这个选项（只是本地改动，没有提交到上游）。
+- GCC 10.3 的 ld 不认识 `--no-warn-rwx-segments`，`gnw-emu` 分支的 `Makefile.common` 会先探测链接器再决定是否加这个选项。
 - `make -j` 时 firmware_update 子工程会和编译规则抢着下载 HAL，`build_retrogo_sd.sh` 会先把两边的 SDK 下载好。
+- keystone 的 Python 包不带 arm64 动态库。`build_sd_patch.sh` 会设置 `DYLD_LIBRARY_PATH=/opt/homebrew/lib`，配合 `brew install keystone` 使用。
 
 ## 运行
 
@@ -56,7 +82,7 @@ scripts/make_sd_image.py out/sd/sdcard.img --roms ../xx/game-and-watch-retro-go/
 ```sh
 B=../game-and-watch-backup/backups/full_20261104_1021
 INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin \
-BANK2=../retro-go-sd/build/gw_retro_go_intflash.bin \
+BANK2=externals/retro-go-sd/build/gw_retro_go_intflash.bin \
 OVERLAY=out/sd_ext.bin SDCARD=out/sd/sdcard.img scripts/run.sh zelda
 ```
 
@@ -64,16 +90,11 @@ OVERLAY=out/sd_ext.bin SDCARD=out/sd/sdcard.img scripts/run.sh zelda
 
 ### 从 SD 卡升级（真实安装流程）
 
-先用 game-and-watch-patch 做 `--sd-bootloader` 补丁（和 `gnwmanager flash-patch zelda … --bootloader` 写进机器的内容相同），再拼上 bootloader：
+一键脚本是 `run_sd_update.sh`。手动的等价步骤如下：先用 game-and-watch-patch 做 `--sd-bootloader` 补丁（和 `gnwmanager flash-patch zelda … --bootloader` 写进机器的内容相同），再拼上 bootloader：
 
 ```sh
-cd ../game-and-watch-patch && git worktree add ../gnw-patch-sd HEAD && cd ../gnw-patch-sd
-cp ../firmware/{internal_flash_backup,flash_backup,itcm_backup}_zelda.bin .
-brew install keystone && export DYLD_LIBRARY_PATH=/opt/homebrew/lib   # keystone 的 Python 包不带 arm64 动态库
-../.venv-rgsd/bin/pip install -r requirements.txt setuptools
-PATH=../.venv-rgsd/bin:$PATH make GCC_PATH=… PATCH_PARAMS="--device=zelda --sd-bootloader"
-cd ../gnw-emu
-scripts/make_sd_dualboot.py --patch ../gnw-patch-sd/build out/sd/dualboot
+scripts/build_sd_patch.sh
+scripts/make_sd_dualboot.py out/sd/dualboot
 scripts/make_sd_image.py out/sd/update.img --roms ../xx/game-and-watch-retro-go/roms --with-update
 
 INTERNAL=out/sd/dualboot/bank1.bin EXTERNAL=out/sd/dualboot/ext.bin \
@@ -109,7 +130,7 @@ GnW("zelda", internal=..., bank2=..., sdcard="card.img", sd_snapshot=True,
 - 独立 bootloader 的 SD 升级；
 - 双系统的 SD 升级（需要先生成 `out/sd/dualboot/`）。
 
-依赖：`../retro-go-sd` 的编译产物、`out/dl` 里的核心和 bootloader、旧版 ROM 目录、mtools，以及 arm-none-eabi-nm。
+依赖：`externals/retro-go-sd` 的编译产物、`out/dl` 里的核心和 bootloader、旧版 ROM 目录、mtools，以及 arm-none-eabi-nm。
 
 ## 已知局限
 

@@ -1,0 +1,60 @@
+[submodule "externals/qemu"]
+	path = externals/qemu
+	url = https://github.com/orochi115/qemu.git
+	branch = gnw
+	shallow = true
+[submodule "externals/retro-go-sd"]
+	path = externals/retro-go-sd
+	url = https://github.com/orochi115/game-and-watch-retro-go-sd.git
+	branch = gnw-emu
+[submodule "externals/game-and-watch-patch"]
+	path = externals/game-and-watch-patch
+	url = https://github.com/orochi115/game-and-watch-patch.git
+	branch = gnw-emu
+[submodule "externals/game-and-watch-backup"]
+	path = externals/game-and-watch-backup
+	url = https://github.com/orochi115/game-and-watch-backup.git
+	branch = full-backup-restore
+[submodule "externals/game-and-watch-retro-go"]
+	path = externals/game-and-watch-retro-go
+	url = https://github.com/orochi115/game-and-watch-retro-go.git
+	branch = rabbit-gnw
+[submodule "externals/gnwmanager"]
+	path = externals/gnwmanager
+	url = https://github.com/BrianPugh/gnwmanager.git
+[submodule "externals/stm32h7xx-hal-driver"]
+	path = externals/stm32h7xx-hal-driver
+	url = https://github.com/STMicroelectronics/stm32h7xx-hal-driver.git
+[submodule "externals/cores/fceumm-retro-go-sd"]
+	path = externals/cores/fceumm-retro-go-sd
+	url = https://github.com/sylverb/fceumm-retro-go-sd.git
+[submodule "externals/cores/tgb-dual-retro-go-sd"]
+	path = externals/cores/tgb-dual-retro-go-sd
+	url = https://github.com/sylverb/tgb-dual-retro-go-sd.git
+[submodule "externals/cores/SMSPlusGX-retro-go-sd"]
+	path = externals/cores/SMSPlusGX-retro-go-sd
+	url = https://github.com/sylverb/SMSPlusGX-retro-go-sd.git
+[submodule "externals/cores/gwenesis-retro-go-sd"]
+	path = externals/cores/gwenesis-retro-go-sd
+	url = https://github.com/sylverb/gwenesis-retro-go-sd.git
+[submodule "externals/cores/prosystem-retro-go-sd"]
+	path = externals/cores/prosystem-retro-go-sd
+	url = https://github.com/sylverb/prosystem-retro-go-sd.git
+[submodule "externals/cores/potator-retro-go-sd"]
+	path = externals/cores/potator-retro-go-sd
+	url = https://github.com/sylverb/potator-retro-go-sd.git
+[submodule "externals/cores/caprice32-retro-go-sd"]
+	path = externals/cores/caprice32-retro-go-sd
+	url = https://github.com/sylverb/caprice32-retro-go-sd.git
+[submodule "externals/cores/blueMSX-retro-go-sd"]
+	path = externals/cores/blueMSX-retro-go-sd
+	url = https://github.com/sylverb/blueMSX-retro-go-sd.git
+[submodule "externals/cores/LCD-Game-Emulator-retro-go-sd"]
+	path = externals/cores/LCD-Game-Emulator-retro-go-sd
+	url = https://github.com/sylverb/LCD-Game-Emulator-retro-go-sd.git
+[submodule "externals/cores/pce-go-retro-go-sd"]
+	path = externals/cores/pce-go-retro-go-sd
+	url = https://github.com/sylverb/pce-go-retro-go-sd.git
+[submodule "externals/cores/game-and-watch-bootloader"]
+	path = externals/cores/game-and-watch-bootloader
+	url = https://github.com/sylverb/game-and-watch-bootloader.git

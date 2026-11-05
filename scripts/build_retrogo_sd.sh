@@ -2,14 +2,14 @@
 # Build Retro-Go SD (sylverb/game-and-watch-retro-go-sd) for the emulator:
 # firmware for internal flash bank 2, sd_content/ and retro-go_update.bin.
 #
-#   RETROGO_SD=../retro-go-sd  checkout (git worktree) of the SD branch
+#   RETROGO_SD=...             Retro-Go SD tree (default: externals/retro-go-sd)
 #   GCC_PATH=...               arm-none-eabi toolchain bin directory
 #   PYTHON_VENV=...            venv with the Retro-Go requirements.txt
 #   extra make variables can be given as arguments (e.g. GNW_TARGET=mario)
 set -eu
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-RG=${RETROGO_SD:-$ROOT/../retro-go-sd}
+RG=${RETROGO_SD:-$ROOT/externals/retro-go-sd}
 GCC_PATH=${GCC_PATH:-/opt/gcc-arm-none-eabi-10.3-2021.10/bin}
 PYTHON_VENV=${PYTHON_VENV:-$ROOT/../.venv-rgsd}
 
@@ -17,6 +17,9 @@ PYTHON_VENV=${PYTHON_VENV:-$ROOT/../.venv-rgsd}
 [ -d /opt/homebrew/bin ] && PATH=$PATH:/opt/homebrew/bin
 export PATH
 
+if [ -z "${RETROGO_SD:-}" ]; then
+    git -C "$ROOT" submodule update --init --recursive externals/retro-go-sd
+fi
 cd "$RG"
 # The firmware_update sub-build downloads its own HAL; doing that under -j
 # races with the compile rules, so fetch both SDKs first.

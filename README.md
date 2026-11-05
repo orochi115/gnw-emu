@@ -13,15 +13,17 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 
 | 路径 | 内容 |
 |---|---|
-| `qemu-gnw/hw/arm/gnw/` | 机器与外设源码，构建时以软链接放进 `../qemu/hw/arm/gnw` |
-| `scripts/build.sh` | 克隆或复用 `../qemu`（v11.1.3），挂接 meson/Kconfig，编译 `build/qemu-system-arm` |
+| `qemu-gnw/hw/arm/gnw/` | 机器与外设源码；`externals/qemu/hw/arm/gnw` 是指向这里的软链接 |
+| `externals/` | 子模块：qemu、Retro-Go SD、各核心与 bootloader、game-and-watch-patch/backup、gnwmanager、HAL、旧版 Retro-Go（见 `docs/sdcard.md`） |
+| `scripts/build.sh` | 用 `externals/qemu`（orochi115/qemu 的 `gnw` 分支 = v11.1.3 + 钩子）编译 `build/qemu-system-arm` |
 | `scripts/run.sh` | 带窗口运行 |
 | `scripts/probe.sh` | 调试用：跑 N 秒，打印寄存器、截图，并汇总 `-d unimp` 日志 |
 | `harness/` | Python headless 驱动（QMP），也提供命令行 |
 | `tests/` | pytest 端到端用例；`golden.json` 只记录画面哈希 |
 | `tools/gnwcrypt.py` | 离线 OTFDEC 解密，移植自 `game-and-watch-patch` 的 `crypt()`，测试里用作参照 |
 | `tools/scan_mmio.py` | 结合 SVD 扫描镜像字面量池，列出固件用到的外设 |
-| `scripts/build_retrogo_sd.sh`、`fetch_cores.sh`、`make_sd_image.py`、`make_sd_dualboot.py` | Retro-Go SD：编译固件、下载核心、生成 SD 卡镜像、拼双系统 Bank 1（见 `docs/sdcard.md`） |
+| `scripts/run_sd.sh`、`run_sd_update.sh` | Retro-Go SD 一键运行：直启 / 从 SD 卡升级 |
+| `scripts/build_retrogo_sd.sh`、`fetch_cores.sh`、`build_cores.sh`、`make_sd_image.py`、`build_sd_patch.sh`、`make_sd_dualboot.py` | Retro-Go SD：编译固件、下载或编译核心、生成 SD 卡镜像、打补丁、拼双系统 Bank 1（见 `docs/sdcard.md`） |
 | `hwtest/` | Cortex-M7 时序测试，真机和模拟器都能跑；结果与周期精确化评估见 `docs/cycle-accuracy.md` |
 
 ## 复用的社区代码
@@ -36,12 +38,13 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 ## 构建
 
 ```sh
+git submodule update --init externals/qemu
 brew install ninja meson pkg-config glib pixman jpeg-turbo
 python3 -m venv .venv && .venv/bin/pip install qemu.qmp pytest pillow pycryptodome
 scripts/build.sh
 ```
 
-`build.sh` 会改动 `../qemu` 的两处：在 `hw/arm/meson.build` 里加 `subdir('gnw')`，在 `hw/arm/Kconfig` 里加 `source gnw/Kconfig`。两处都可重复执行。本机 `/opt/devkitpro` 自带的 `pkg-config` 找不到 Homebrew 的 glib，所以脚本固定使用 `/opt/homebrew/bin/pkg-config`。
+qemu 子模块的 `gnw` 分支已经提交了两处钩子：`hw/arm/meson.build` 里的 `subdir('gnw')` 和 `hw/arm/Kconfig` 里的 `source gnw/Kconfig`，`hw/arm/gnw` 是指向 `qemu-gnw/hw/arm/gnw` 的相对软链接。用 `QEMU_SRC=` 指定原版 QEMU 时，`build.sh` 会自动补上这两处。本机 `/opt/devkitpro` 自带的 `pkg-config` 找不到 Homebrew 的 glib，所以脚本固定使用 `/opt/homebrew/bin/pkg-config`。
 
 ## 运行（窗口）
 
@@ -85,9 +88,9 @@ Headless 时用 `--internal/--external/--bank2`，或者 `GnW(internal=..., exte
 支持 sylverb 的 Retro-Go SD 2.x，SD 卡的两种接法都支持：SPI1（默认），以及复用外挂 Flash 引脚的软件 SPI（`SD_WIRING=ospi`）。卡镜像用 `-drive if=sd,format=raw,file=…` 挂载，或者设置 `SDCARD=` 环境变量。核心、ROM、封面、存档都在卡上，ROM 缓存用外挂 Flash。bootloader 能从卡上的 `retro-go_update.bin` 刷写 Bank 2，通过 `BANK2_OVERLAY=` 落盘。
 
 ```sh
-B=../game-and-watch-backup/backups/full_YYYYMMDD_HHMM
-INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin BANK2=../retro-go-sd/build/gw_retro_go_intflash.bin \
-    OVERLAY=out/sd_ext.bin SDCARD=out/sd/sdcard.img scripts/run.sh zelda
+scripts/run_sd.sh [备份目录]        # 直启：备份的 Bank 1 + SD 版 Retro-Go + SD 卡（缺的产物会先准备好）
+scripts/run_sd_update.sh           # 补丁原厂 + SD bootloader，从卡上的 retro-go_update.bin 安装 Retro-Go
+SD_WIRING=ospi scripts/run_sd.sh   # 软件 SPI 接法
 ```
 
 编译、镜像生成、升级流程和调试方法见 `docs/sdcard.md`。

@@ -11,7 +11,7 @@ What `gnwmanager flash-patch zelda ... --bootloader` writes to a device:
 Bank 2 starts erased; the bootloader installs Retro-Go there from
 retro-go_update.bin on the SD card.
 
-  scripts/make_sd_dualboot.py --patch ../gnw-patch-sd/build out/sd/dualboot
+  scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot
 """
 import argparse
 import pathlib
@@ -24,7 +24,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("out", help="output directory (bank1.bin, ext.bin)")
-    ap.add_argument("--patch", required=True,
+    ap.add_argument("--patch", default=str(ROOT / "externals/game-and-watch-patch/build"),
                     help="game-and-watch-patch build/ directory (--sd-bootloader)")
     ap.add_argument("--bootloader",
                     default=str(ROOT / "out/dl/bootloader/gnw_bootloader_0x08032000.bin"))

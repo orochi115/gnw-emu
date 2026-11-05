@@ -1,11 +1,12 @@
 """Retro-Go SD (microSD card mod) end to end.
 
 Needs, and skips without:
-  * a Retro-Go SD build: ../retro-go-sd (or GNW_RETROGO_SD), built with
+  * a Retro-Go SD build: externals/retro-go-sd (or GNW_RETROGO_SD), built with
     scripts/build_retrogo_sd.sh (bank 2, Zelda)
   * cores and the SD bootloader in out/dl (scripts/fetch_cores.sh)
   * mtools, and arm-none-eabi-nm (PATH, GCC_PATH or the 10.3 toolchain)
-  * ROMs: ../xx/game-and-watch-retro-go/roms (or GNW_SD_ROMS)
+  * ROMs: GNW_SD_ROMS, externals/game-and-watch-retro-go/roms or
+    ../xx/game-and-watch-retro-go/roms (ROMs are never committed)
 The dual-boot update test also needs out/sd/dualboot/{bank1,ext}.bin from
 scripts/make_sd_dualboot.py.
 
@@ -24,9 +25,19 @@ import pytest
 from harness import GnW
 
 ROOT = Path(__file__).resolve().parents[1]
-RG = Path(os.environ.get("GNW_RETROGO_SD", ROOT.parent / "retro-go-sd"))
-ROMS = Path(os.environ.get("GNW_SD_ROMS",
-                           ROOT.parent / "xx" / "game-and-watch-retro-go" / "roms"))
+RG = Path(os.environ.get("GNW_RETROGO_SD", ROOT / "externals" / "retro-go-sd"))
+def find_roms():
+    """ROMs are never in git: GNW_SD_ROMS, else the old Retro-Go trees."""
+    if os.environ.get("GNW_SD_ROMS"):
+        return Path(os.environ["GNW_SD_ROMS"])
+    for p in (ROOT / "externals" / "game-and-watch-retro-go" / "roms",
+              ROOT.parent / "xx" / "game-and-watch-retro-go" / "roms"):
+        if any(p.glob("nes/*.nes")):
+            return p
+    return ROOT.parent / "xx" / "game-and-watch-retro-go" / "roms"
+
+
+ROMS = find_roms()
 DL = ROOT / "out" / "dl"
 BOOTLOADER = DL / "bootloader" / "gnw_bootloader.bin"
 INTFLASH = RG / "build" / "gw_retro_go_intflash.bin"

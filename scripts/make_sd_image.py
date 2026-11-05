@@ -70,7 +70,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("image")
-    ap.add_argument("--retrogo", default=str(ROOT.parent / "retro-go-sd"))
+    ap.add_argument("--retrogo", default=str(ROOT / "externals" / "retro-go-sd"))
     ap.add_argument("--dl", default=str(ROOT / "out" / "dl"),
                     help="directory filled by scripts/fetch_cores.sh")
     ap.add_argument("--roms", help="old Retro-Go roms/ tree")
