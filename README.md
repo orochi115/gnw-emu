@@ -64,6 +64,11 @@ scripts/run.sh zelda      # 或 mario
 
 存档写到 `out/<model>_flash.bin`。第一次运行时从 dump 复制，`firmware/` 下的文件不会被改动。
 
+亮度跟随固件已有的设置菜单：原厂 Mario/Zelda、Retro-Go 和 Retro-Go SD 均支持。
+模拟器以 DAC1 通道 1（PA4）作为整屏背光强度，在两层画面合成后按 12 位 DAC 输出值 / 4095 线性缩放 RGB；不修改固件显存。
+PA4 配置为 GPIO 输出时，高电平全亮、低电平关闭。DAC 通道关闭或 LCD 供电关闭时画面全黑，重新开启后恢复。
+窗口和 headless 截图使用相同的亮度处理。默认档位也会按比例变暗；此映射尚未按真机背光电路或视觉曲线校准。
+
 ## 运行改装机的完整备份（原厂 + Retro-Go 双系统）
 
 用 `game-and-watch-backup/gnw_full_backup.py` 做出的备份（`bank1.bin`、`bank2.bin`、`ext.bin`）可以直接运行：
@@ -130,7 +135,7 @@ with GnW("zelda", deterministic=True) as gw:
 测试：
 
 ```sh
-.venv/bin/python -m pytest -q tests            # 22 个用例，约 4 分钟（SD 用例缺依赖时跳过）
+.venv/bin/python -m pytest -q tests            # 33 个用例，约 4 分钟（SD 用例缺依赖时跳过）
 GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后更新哈希
 ```
 
@@ -150,6 +155,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | OCTOSPI1 + MX25U | 间接读写、自动轮询、内存映射；支持 RDID（真实 ID：`C2 25 0x20+log2 容量`）、SFDP、RDSR/WRSR、读、页编程、扇区擦除。写入可落到 overlay 文件 |
 | OTFDEC1 | 区域、nonce、密钥、KEYCRC；`0x90000000` 窗口里放的是已解密的内容，TCG 可以全速执行 |
 | LTDC | 两层，支持 ARGB8888/RGB888/RGB565/ARGB1555/ARGB4444/L8/AL44/AL88 与 CLUT；按 60 Hz 产生行中断和重载中断 |
+| DAC1 / DAC2 与背光 | 通道启停、8 位及左右对齐 12 位数据、双通道写入、DOR 读回、软件触发和复位。背光取 DAC1_OUT1；各固件同步设置背光通道。暂不模拟 DMA、外部触发、校准或波形生成 |
 | DMA2D | M2M、PFC、混合、R2M、前景或背景固定颜色的混合（MODE 4/5），以及 CLUT 加载；前景支持 YCbCr 输入（JPEG 编解码器输出的 MCU 块格式，4:4:4/4:2:2/4:2:0） |
 | JPEG 编解码器 | 只做解码，供 Retro-Go 封面流使用。收集写入 `DIR` 的数据直到 EOI，用 libjpeg 解成原始 YCbCr，按硬件格式（每个 MCU 依次输出 Y 块、Cb、Cr）从 `DOR` 读出；见到 SOS 时填好 `CONFR1–7` 并置 `HPDF` |
 | DMA1/2 + DMAMUX1 + SAI1 | 送往 SAI 的流按 RCC PLL 与 SAI 分频算出的采样率（Zelda 为 44270 Hz）产生 HT/TC 中断，可录成 WAV。存储器到存储器的传输立即完成 |

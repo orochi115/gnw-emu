@@ -153,6 +153,22 @@ void gnw_ospi_load(GnwOspiState *s, const uint8_t *data, uint32_t size,
                    const char *overlay);
 
 /* ------------------------------------------------------------------ */
+/* DAC1/2                                                              */
+
+/* DAC1/2: immediate and software-triggered conversions for backlight. */
+#define TYPE_GNW_DAC "gnw-dac"
+OBJECT_DECLARE_SIMPLE_TYPE(GnwDacState, GNW_DAC)
+
+struct GnwDacState {
+    SysBusDevice parent_obj;
+    MemoryRegion mmio;
+    uint32_t regs[0x400 / 4];
+    uint16_t dhr[2], dor[2];
+};
+
+uint16_t gnw_dac_output(GnwDacState *s, unsigned channel);
+
+/* ------------------------------------------------------------------ */
 /* LTDC + DMA2D                                                         */
 
 #define TYPE_GNW_LTDC "gnw-ltdc"
@@ -180,6 +196,8 @@ struct GnwLtdcState {
     qemu_irq ltdc_irq;
     qemu_irq dma2d_irq;
     bool rail_3v3, rail_1v8_n;  /* PD4, PD1: the panel shows black when off */
+    GnwDacState *backlight_dac; /* DAC1_OUT1 / PA4, representative intensity */
+    GnwGpioState *gpio;        /* PA4 GPIO output overrides analog backlight */
 };
 
 /* ------------------------------------------------------------------ */

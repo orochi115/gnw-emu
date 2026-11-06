@@ -137,6 +137,14 @@ def test_mount_and_play_nes(card, tmp_path, wiring, hw):
 
 
 @needs_sd
+def test_sd_brightness_menu(card, tmp_path, check_brightness_menu):
+    with boot(card, tmp_path) as gw:
+        gw.run(6000)
+        gw.press("pause", 300, 700)  # launcher settings, brightness selected
+        check_brightness_menu(gw, (90, 140, 230, 195))
+
+
+@needs_sd
 def test_genesis_flash_cache_and_savestate(card, tmp_path):
     img = tmp_path / "card.img"
     shutil.copy(card["img"], img)
@@ -165,14 +173,16 @@ def test_power_button_sleeps_and_wakes(card, tmp_path):
     """
     with boot(card, tmp_path) as gw:
         gw.run(6000)
+        brightness = word(gw, 0x4000742c)
         gw.press("power", 300, 3000)
         text = log(gw, card)
         assert "Entering STOP2" in text and "Waking up" not in text
-        assert max(gw.frame().convert("L").getdata()) == 0      # panel off
+        assert gw.frame().convert("L").getextrema()[1] == 0      # panel off
         gw.press("power", 300, 4000)
         assert "Finish waking up" in log(gw, card)
         assert vtor(gw) == "0x08100000"
-        assert max(gw.frame().convert("L").getdata()) > 0
+        assert gw.frame().convert("L").getextrema()[1] > 0
+        assert word(gw, 0x4000742c) == brightness
 
 
 @needs_sd

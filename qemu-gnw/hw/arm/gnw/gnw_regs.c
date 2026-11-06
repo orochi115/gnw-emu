@@ -370,7 +370,6 @@ GnwRegs *gnw_regs_create_stubs(void)
     gnw_regs_create("sai2", 0x40015c00, 0x400, NULL, NULL, NULL);
     gnw_regs_create("i2c1", 0x40005400, 0x400, NULL, NULL, NULL);
     gnw_regs_create("iwdg", 0x58004800, 0x400, NULL, NULL, NULL);
-    gnw_regs_create("dac1", 0x40007400, 0x400, NULL, NULL, NULL);
     gnw_regs_create("lptim1", 0x40002400, 0x400, NULL, NULL, NULL);
     return rcc;
 }

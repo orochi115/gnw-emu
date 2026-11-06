@@ -610,6 +610,13 @@ static void gnw_init(MachineState *machine)
     qdev_connect_gpio_out_named(DEVICE(m->gpio), "pin", GNW_PIN(3, 1),
                                 qdev_get_gpio_in_named(dev, "panel-power", 1));
 
+    /* DAC1/2: stock uses DAC1, Retro-Go sets all backlight channels alike. */
+    dev = qdev_new(TYPE_GNW_DAC);
+    m->ltdc->backlight_dac = GNW_DAC(dev);
+    m->ltdc->gpio = m->gpio;
+    map_dev(dev, (hwaddr[]){ 0x40007400 }, 1);
+    map_dev(qdev_new(TYPE_GNW_DAC), (hwaddr[]){ 0x58003400 }, 1);
+
     /* DMA1, DMA2, DMAMUX1, SAI1 */
     dev = qdev_new(TYPE_GNW_DMA);
     m->dma = GNW_DMA(dev);

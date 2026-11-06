@@ -110,10 +110,24 @@ def test_zelda_audio_has_no_buffer_seam(tmp_path):
 @zelda
 def test_power_button_turns_display_off_and_on():
     with boot("zelda") as gw:
+        brightness = int(gw.hmp("xp /1wx 0x4000742c").split()[-1], 16)
         gw.press("power", 200, 2000)
         assert lit_fraction(gw.frame()) < 0.01
         gw.press("power", 200, 3000)
         assert lit_fraction(gw.frame()) > 0.5
+        assert int(gw.hmp("xp /1wx 0x4000742c").split()[-1], 16) == brightness
+
+
+@pytest.mark.parametrize("model", [
+    pytest.param("zelda", marks=zelda), pytest.param("mario", marks=mario)])
+def test_stock_brightness_menu(model, check_brightness_menu):
+    with boot(model) as gw:
+        gw.press("game", 150, 400)
+        gw.press("pause", 150, 400)
+        gw.press("down", 150, 400)  # volume -> brightness
+        # SET TIME is unchanged as the slider moves, so its intensity
+        # measures backlight rather than a change in the menu's contents.
+        check_brightness_menu(gw, (80, 154, 240, 174))
 
 
 @zelda
@@ -146,12 +160,15 @@ def test_saves_go_to_overlay_only(tmp_path):
     assert (FIRMWARE / "flash_backup_zelda.bin").read_bytes() == original
 
 
-def icon_colours(img):
+def icon_colours(img, brightness):
     """Green / red pixel counts in the stock menu's battery icon."""
     raw = img.convert("RGB").crop((276, 0, 312, 16)).tobytes()
     px = [tuple(raw[i:i + 3]) for i in range(0, len(raw), 3)]
-    green = sum(1 for r, g, b in px if g > 150 and r < 100)
-    red = sum(1 for r, g, b in px if r > 150 and g < 100)
+    # Preserve the original colour thresholds in unscaled RGB units.
+    green = sum(1 for r, g, b in px
+                if g * 4095 > 150 * brightness and r * 4095 < 100 * brightness)
+    red = sum(1 for r, g, b in px
+              if r * 4095 > 150 * brightness and g * 4095 < 100 * brightness)
     return green, red
 
 
@@ -168,10 +185,11 @@ def test_zelda_battery_level(percent, raw, expect):
     with boot("zelda", battery=percent, adc_override=raw) as gw:
         gw.press("game", 150, 1000)
         menu = gw.frame()
+        brightness = int(gw.hmp("xp /1wx 0x4000742c").split()[-1], 16)
     if expect == "off":
         assert lit_fraction(menu) < 0.05
         return
-    green, red = icon_colours(menu)
+    green, red = icon_colours(menu, brightness)
     assert (green > 20 and red == 0) if expect == "green" else (red > 8 and green == 0)
 
 

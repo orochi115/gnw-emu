@@ -337,6 +337,18 @@ static void ltdc_rail_in(void *opaque, int n, int level)
     }
 }
 
+static uint32_t ltdc_backlight(GnwLtdcState *s)
+{
+    GnwGpioPort *pa = &s->gpio->port[0];
+    unsigned mode = extract32(pa->moder, 4 * 2, 2);
+
+    /* PA4 can also drive the backlight as a digital on/off output. */
+    if (mode == 1) {
+        return (pa->odr & (1 << 4)) ? 4095 : 0;
+    }
+    return mode == 3 ? gnw_dac_output(s->backlight_dac, 0) : 0;
+}
+
 static bool ltdc_update_display(void *opaque)
 {
     GnwLtdcState *s = opaque;
@@ -346,6 +358,7 @@ static bool ltdc_update_display(void *opaque)
     int h = extract32(a[L_AWCR], 0, 12) - avbp;
     DisplaySurface *surface;
     uint32_t *fb;
+    uint32_t brightness = ltdc_backlight(s);
 
     if (!(s->regs[L_GCR] & 1) || w <= 0 || h <= 0 || w > 2048 || h > 2048) {
         w = 320;
@@ -364,7 +377,7 @@ static bool ltdc_update_display(void *opaque)
     for (int i = 0; i < w * h; i++) {
         fb[i] = (s->regs[L_GCR] & 1) ? (a[L_BCCR] & 0xffffff) : 0;
     }
-    if (!ltdc_panel_powered(s)) {
+    if (!ltdc_panel_powered(s) || !brightness) {
         memset(fb, 0, w * h * sizeof(*fb));     /* panel off: dark */
     } else if (s->regs[L_GCR] & 1) {
         ltdc_render_layer(s, 0, fb, w, h);
@@ -374,7 +387,12 @@ static bool ltdc_update_display(void *opaque)
         uint32_t *dst = (uint32_t *)((uint8_t *)surface_data(surface) +
                                      y * surface_stride(surface));
         for (int x = 0; x < w; x++) {
-            dst[x] = fb[y * w + x] | 0xff000000;
+            uint32_t c = fb[y * w + x], out = 0xff000000;
+
+            for (int sh = 0; sh < 24; sh += 8) {
+                out |= (((c >> sh) & 0xff) * brightness / 4095) << sh;
+            }
+            dst[x] = out;
         }
     }
     g_free(fb);
