@@ -1,26 +1,27 @@
 #!/bin/sh
-# Run the stock firmware in a window.
+# Run in a window.
 #   scripts/run.sh [zelda|mario] [extra qemu args...]
-# Keys: arrows = D-pad, X = A, Z = B, G = GAME, T = TIME, P = PAUSE,
-#       O = POWER, Return = START, Tab = SELECT (Zelda only).
-# Saves go to out/<model>_flash.bin (created from the dump on first run);
-# the files in firmware/ are never modified.
-# Timing: -icount with realtime=on, so every timer fires at its exact
-# instruction count (~250 MIPS, like the 280 MHz core) at host speed.
-# Env overrides: INTERNAL=, EXTERNAL=, BANK2= (e.g. a full device backup),
-# OVERLAY= (defaults to out/<model>_flash.bin).
-# Retro-Go SD mod: SDCARD=card.img (raw MBR+FAT image), SD_WIRING=spi1|ospi,
-#   BANK1_OVERLAY= / BANK2_OVERLAY= keep internal flash programming (SD
-#   firmware updates) in these files.
-# Battery: BATTERY=0..100 (default 100), USB_POWER=on|off (default off),
-#   BATTERY_LIFE_MIN= (default 480), CHARGE_TIME_MIN= (default 180).
-#   In the window: '-' / '=' change the level by 10 %, C plugs/unplugs USB.
+#   scripts/run.sh path/to/machine.gnw.toml [extra qemu args...]
+#
+# zelda / mario load profiles/zelda.gnw.toml and profiles/mario.gnw.toml.
+# A .gnw.toml profile names the read-only images. Battery, RTC and the
+# writable flash copies live in out/sessions/<name>-<hash>/. See
+# docs/profiles.md.
+#
+# One-run overrides: BATTERY, USB_POWER, BATTERY_LIFE_MIN, CHARGE_TIME_MIN,
+# RTC, DISPLAY_BACKEND. They are not written into the profile.
+#
+# Host-wide audio, display and realtime pacing: settings.toml (created on
+# the first window run). Keys: arrows = D-pad, X = A, Z = B, G = GAME,
+# T = TIME, P = PAUSE, O = POWER, Return = START, Tab = SELECT (Zelda).
+# '-' / '=' change the battery by 10 %, C plugs or unplugs USB.
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-MODEL=${1:-zelda}; [ $# -gt 0 ] && shift
-FW=${FW:-$ROOT/../firmware}
-mkdir -p "$ROOT/out"
-exec "$ROOT/build/qemu-system-arm" \
-    -M gnw-$MODEL,internal=${INTERNAL:-$FW/internal_flash_backup_$MODEL.bin},external=${EXTERNAL:-$FW/flash_backup_$MODEL.bin},overlay=${OVERLAY:-$ROOT/out/${MODEL}_flash.bin}${BANK2:+,bank2=$BANK2}${BANK1_OVERLAY:+,bank1-overlay=$BANK1_OVERLAY}${BANK2_OVERLAY:+,bank2-overlay=$BANK2_OVERLAY}${SD_WIRING:+,sd-wiring=$SD_WIRING},audio=on,realtime=on,battery=${BATTERY:-100},usb-power=${USB_POWER:-off}${BATTERY_LIFE_MIN:+,battery-life-min=$BATTERY_LIFE_MIN}${CHARGE_TIME_MIN:+,charge-time-min=$CHARGE_TIME_MIN} \
-    -icount shift=2,sleep=off \
-    ${SDCARD:+-drive if=sd,format=raw,file=$SDCARD} \
-    -rtc base=localtime -display ${DISPLAY_BACKEND:-cocoa,zoom-to-fit=on} "$@"
+if [ -n "$GNW_PYTHON" ]; then
+    PY=$GNW_PYTHON
+elif [ -x "$ROOT/.venv/bin/python" ]; then
+    PY=$ROOT/.venv/bin/python
+else
+    PY=python3
+fi
+export PYTHONPATH="$ROOT${PYTHONPATH:+:$PYTHONPATH}"
+exec "$PY" -m harness.launch "$@"

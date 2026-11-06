@@ -1,0 +1,4 @@
+version = 1
+model = "zelda"
+internal = "../../firmware/internal_flash_backup_zelda.bin"
+external = "../../firmware/flash_backup_zelda.bin"

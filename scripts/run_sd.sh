@@ -15,8 +15,12 @@
 #                         (default ../xx/game-and-watch-retro-go/roms)
 #   SYSTEMS=nes,gb,...    only these systems on the card
 #   SDCARD=FILE           card image (default out/sd/sdcard.img)
-#   FRESH=1               rebuild the card image and drop the flash overlay
+#   FRESH=1               rebuild the card image and drop this profile's session
 #   BATTERY=, USB_POWER=, ... are passed to scripts/run.sh
+#
+# The script writes out/profiles/sd-<backup name>.gnw.toml and runs it.
+# Saves live in out/sessions/. An old out/sd/<name>_ext.bin is copied into
+# the session the first time.
 #
 # Keys: arrows = D-pad, X = A, Z = B, G = GAME, T = TIME, P = PAUSE,
 #       O = POWER.  Hold LEFT + G on the clock to enter Retro-Go.
@@ -48,14 +52,16 @@ if ! ls "$ROOT"/out/dl/*/x/cores/*.bin >/dev/null 2>&1; then
     fi
 fi
 
-OVERLAY=$ROOT/out/sd/$(basename "$B")_ext.bin
+NAME=$(basename "$B")
+OVERLAY=$ROOT/out/sd/${NAME}_ext.bin
 
 # Retro-Go SD finds the stock firmware (and keeps its ROM cache clear of
 # the stock data in external flash) through a metadata word at bank1+0x1B8,
 # the unused HDMI-CEC vector, which the --sd-bootloader patch writes:
 # ext size in 4 KiB units, must_be_4, is_zelda.  Older patches (e.g. this
 # backup) lack it, so use a copy of bank 1 with the word added.
-BANK1=$ROOT/out/sd/$(basename "$B")_bank1.bin
+BANK1=$ROOT/out/sd/${NAME}_bank1.bin
+mkdir -p "$(dirname "$BANK1")"
 python3 - "$B/bank1.bin" "$BANK1" <<'PY'
 import struct, sys
 b = bytearray(open(sys.argv[1], "rb").read())
@@ -65,8 +71,16 @@ if (word >> 24) & 0xF != 4:
     print("bank1  : added the Retro-Go SD metadata word (4 MiB stock data)")
 open(sys.argv[2], "wb").write(b)
 PY
+PROFILE=$ROOT/out/profiles/sd-$NAME.gnw.toml
+python3 "$ROOT/harness/profile.py" write "$PROFILE" zelda \
+    internal="$BANK1" external="$B/ext.bin" bank2="$FWBIN" \
+    sdcard="$SDCARD" sd-wiring="${SD_WIRING:-spi1}"
+SESS=$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")
 if [ "${FRESH:-0}" = 1 ]; then
-    rm -f "$SDCARD" "$OVERLAY"
+    rm -f "$SDCARD"
+    rm -rf "$SESS"
+else
+    python3 "$ROOT/harness/profile.py" seed "$PROFILE" flash.bin="$OVERLAY"
 fi
 if [ ! -f "$SDCARD" ]; then
     mkdir -p "$(dirname "$SDCARD")"
@@ -74,12 +88,11 @@ if [ ! -f "$SDCARD" ]; then
         ${SYSTEMS:+--systems "$SYSTEMS"}
 fi
 
-echo "backup : $B (bank1 + metadata, ext)"
-echo "bank2  : $FWBIN"
-echo "card   : $SDCARD (${SD_WIRING:-spi1})"
-echo "saves  : $OVERLAY + on the card"
+echo "backup  : $B (bank1 + metadata, ext)"
+echo "bank2   : $FWBIN"
+echo "card    : $SDCARD (${SD_WIRING:-spi1})"
+echo "profile : $PROFILE"
+echo "saves   : $SESS + on the card"
 echo "Hold LEFT + G on the clock to enter Retro-Go SD."
 
-INTERNAL=$BANK1 EXTERNAL=$B/ext.bin BANK2=$FWBIN OVERLAY=$OVERLAY \
-SDCARD=$SDCARD SD_WIRING=${SD_WIRING:-spi1} \
-    exec "$ROOT/scripts/run.sh" zelda "$@"
+exec "$ROOT/scripts/run.sh" "$PROFILE" "$@"

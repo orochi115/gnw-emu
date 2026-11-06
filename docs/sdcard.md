@@ -80,29 +80,28 @@ scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升
 ### 直启：沿用实机的双系统备份，Bank 2 换成 SD 版
 
 ```sh
-B=../game-and-watch-backup/backups/full_20261104_1021
-INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin \
-BANK2=externals/retro-go-sd/build/gw_retro_go_intflash.bin \
-OVERLAY=out/sd_ext.bin SDCARD=out/sd/sdcard.img scripts/run.sh zelda
+scripts/run_sd.sh ../game-and-watch-backup/backups/full_20261104_1021
 ```
 
-开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。
+脚本写 `out/profiles/sd-<备份名>.gnw.toml`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdcard` 指向卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 的可写副本在 `out/sessions/`；以前的 `out/sd/<备份名>_ext.bin` 会在第一次运行时复制过去。
 
 ### 从 SD 卡升级（真实安装流程）
 
 一键脚本是 `run_sd_update.sh`。手动的等价步骤如下：先用 game-and-watch-patch 做 `--sd-bootloader` 补丁（和 `gnwmanager flash-patch zelda … --bootloader` 写进机器的内容相同），再拼上 bootloader：
 
 ```sh
-scripts/build_sd_patch.sh
-scripts/make_sd_dualboot.py out/sd/dualboot
-scripts/make_sd_image.py out/sd/update.img --roms ../xx/game-and-watch-retro-go/roms --with-update
-
-INTERNAL=out/sd/dualboot/bank1.bin EXTERNAL=out/sd/dualboot/ext.bin \
-BANK1_OVERLAY=out/sd/b1.bin BANK2_OVERLAY=out/sd/b2.bin \
-OVERLAY=out/sd/ext_ov.bin SDCARD=out/sd/update.img scripts/run.sh zelda
+scripts/run_sd_update.sh
 ```
 
-流程：原厂时钟 → ← + G → 0x08032000 的 bootloader 在卡上发现 `retro-go_update.bin`，把 firmware_update 载入 RAM（VTOR=0x24000000）→ 解包 tar → 擦写 Bank 2 → 屏幕显示 “Firmware update done” → 按任意键复位 → 原厂 → ← + G → Retro-Go SD。Bank 2 的结果留在 `BANK2_OVERLAY` 里，内容与 `gw_retro_go_intflash.bin` 逐字节相同。原厂固件存在时 bootloader 本身不更新，Bank 1 保持不变。
+它在缺文件时做下面这些准备，再写 `out/profiles/sd-update.gnw.toml` 并启动。profile 里的 Bank 2 是 256 KiB 的空白镜像；刷写结果留在会话的 `bank2.bin`。
+
+```sh
+scripts/build_sd_patch.sh
+scripts/make_sd_dualboot.py out/sd/dualboot
+scripts/make_sd_image.py out/sd/update/card.img --roms ../xx/game-and-watch-retro-go/roms --with-update
+```
+
+流程：原厂时钟 → ← + G → 0x08032000 的 bootloader 在卡上发现 `retro-go_update.bin`，把 firmware_update 载入 RAM（VTOR=0x24000000）→ 解包 tar → 擦写 Bank 2 → 屏幕显示 “Firmware update done” → 按任意键复位 → 原厂 → ← + G → Retro-Go SD。Bank 2 的结果与 `gw_retro_go_intflash.bin` 逐字节相同。原厂固件存在时 bootloader 本身不更新，Bank 1 保持不变。
 
 没有补丁环境时，可以用独立版 `out/dl/bootloader/gnw_bootloader.bin` 当 Bank 1，Bank 2 留空，流程相同，只是不经过原厂固件。
 

@@ -93,6 +93,8 @@ struct GnwMachineState {
     char *external_path;
     char *overlay_path;
     char *wav_path;
+    char *state_path;           /* exit dump of battery / usb-power */
+    Notifier exit_notify;
     bool audio;
     bool realtime;
     uint32_t battery;           /* QOM view of level, percent */
@@ -477,6 +479,8 @@ static SysBusDevice *map_dev(DeviceState *dev, const hwaddr *bases, int n)
     return sbd;
 }
 
+static void gnw_write_state(Notifier *n, void *unused);
+
 static void gnw_init(MachineState *machine)
 {
     GnwMachineState *m = GNW_MACHINE(machine);
@@ -753,8 +757,26 @@ static void gnw_init(MachineState *machine)
     if (m->realtime) {
         gnw_realtime_start(m);
     }
+    if (m->state_path) {
+        m->exit_notify.notify = gnw_write_state;
+        qemu_add_exit_notifier(&m->exit_notify);
+    }
     armv7m_load_kernel(ARM_CPU(first_cpu), NULL, 0, 0);
 #undef NVIC
+}
+
+/* battery= / usb-power= for the session file. Read back after QEMU exits. */
+static void gnw_write_state(Notifier *n, void *unused)
+{
+    GnwMachineState *m = container_of(n, GnwMachineState, exit_notify);
+    g_autofree char *text = NULL;
+
+    if (!m->state_path) {
+        return;
+    }
+    text = g_strdup_printf("battery=%u\nusb-power=%s\n",
+                           m->battery, m->usb ? "true" : "false");
+    g_file_set_contents(m->state_path, text, -1, NULL);
 }
 
 /* ------------------------------------------------------------------ */
@@ -781,6 +803,7 @@ STR_PROP(sd_wiring, "sd-wiring")
 STR_PROP(uid, "uid")
 STR_PROP(bank1_overlay, "bank1-overlay")
 STR_PROP(bank2_overlay, "bank2-overlay")
+STR_PROP(state_path, "state-file")
 
 static void gnw_get_battery(Object *obj, Visitor *v, const char *name,
                             void *opaque, Error **errp)
@@ -956,6 +979,10 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
                                   gnw_set_overlay_path);
     object_class_property_set_description(oc, "overlay",
         "Writable copy of the SPI flash for saves (created if missing)");
+    object_class_property_add_str(oc, "state-file", gnw_get_state_path,
+                                  gnw_set_state_path);
+    object_class_property_set_description(oc, "state-file",
+        "On exit, write battery= and usb-power= lines here");
     object_class_property_add_str(oc, "wav", gnw_get_wav_path,
                                   gnw_set_wav_path);
     object_class_property_set_description(oc, "wav",

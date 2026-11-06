@@ -3,12 +3,14 @@
 # CPU registers, save a screenshot and summarise the -d unimp log.
 #   scripts/probe.sh [seconds] [extra qemu args...]
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
-FW=${FW:-$ROOT/../firmware}
 MODEL=${MODEL:-zelda}
+PROFILE=${PROFILE:-$ROOT/profiles/$MODEL.gnw.toml}
 OUT=${OUT:-/tmp/gnw}
 SECS=${1:-4}; [ $# -gt 0 ] && shift
 mkdir -p "$OUT"; rm -f "$OUT/log.txt" "$OUT/mon.sock"
-"$ROOT/build/qemu-system-arm" -M gnw-$MODEL,internal=$FW/internal_flash_backup_$MODEL.bin,external=$FW/flash_backup_$MODEL.bin \
+# Read the images from the profile. No session: this run does not save.
+eval "$(python3 "$ROOT/harness/profile.py" paths "$PROFILE")"
+"$ROOT/build/qemu-system-arm" -M gnw-$MODEL,internal=$INTERNAL,external=$EXTERNAL \
     -display none -d unimp,guest_errors -D "$OUT/log.txt" \
     -monitor unix:$OUT/mon.sock,server,nowait "$@" &
 PID=$!

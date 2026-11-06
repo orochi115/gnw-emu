@@ -1,0 +1,4 @@
+version = 1
+model = "mario"
+internal = "../../firmware/internal_flash_backup_mario.bin"
+external = "../../firmware/flash_backup_mario.bin"

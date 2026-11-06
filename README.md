@@ -25,6 +25,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 | `scripts/run_sd.sh`、`run_sd_update.sh` | Retro-Go SD 一键运行：直启 / 从 SD 卡升级 |
 | `scripts/build_retrogo_sd.sh`、`fetch_cores.sh`、`build_cores.sh`、`make_sd_image.py`、`build_sd_patch.sh`、`make_sd_dualboot.py` | Retro-Go SD：编译固件、下载或编译核心、生成 SD 卡镜像、打补丁、拼双系统 Bank 1（见 `docs/sdcard.md`） |
 | `hwtest/` | Cortex-M7 时序测试，真机和模拟器都能跑；结果与周期精确化评估见 `docs/cycle-accuracy.md` |
+| `docs/profiles.md` | ROM profile（`.gnw.toml`）、每机会话、`settings.toml`。`scripts/run.sh` 负责加载 |
 
 ## 复用的社区代码
 
@@ -50,7 +51,10 @@ qemu 子模块的 `gnw` 分支已经提交了两处钩子：`hw/arm/meson.build`
 
 ```sh
 scripts/run.sh zelda      # 或 mario
+scripts/run.sh path/to/machine.gnw.toml
 ```
+
+`zelda` / `mario` 分别加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`。`.gnw.toml` 只写机型和只读镜像。电量、RTC 和可写 Flash 在 `out/sessions/<名字>-<哈希>/`，声音、窗口和实时节拍在 `settings.toml`（第一次窗口运行时按默认值生成）。字段见 `docs/profiles.md`。这一次运行可以用 `BATTERY`、`USB_POWER`、`BATTERY_LIFE_MIN`、`CHARGE_TIME_MIN`、`RTC`、`DISPLAY_BACKEND` 覆盖，不写回 profile。
 
 | 键盘 | 按键 |
 |---|---|
@@ -62,7 +66,7 @@ scripts/run.sh zelda      # 或 mario
 | - / = | 电量 −10% / +10% |
 | C | 插上 / 拔掉 USB 电源 |
 
-存档写到 `out/<model>_flash.bin`。第一次运行时从 dump 复制，`firmware/` 下的文件不会被改动。
+原厂镜像的存档在 `out/sessions/zelda-<哈希>/`（Mario 同理）。第一次运行时从 `firmware/` 的 dump 复制，那些文件不会被改动。
 
 亮度跟随固件已有的设置菜单：原厂 Mario/Zelda、Retro-Go 和 Retro-Go SD 均支持。
 模拟器以 DAC1 通道 1（PA4）作为整屏背光强度，在两层画面合成后按 12 位 DAC 输出值 / 4095 线性缩放 RGB；不修改固件显存。
@@ -71,26 +75,24 @@ PA4 配置为 GPIO 输出时，高电平全亮、低电平关闭。DAC 通道关
 
 ## 运行改装机的完整备份（原厂 + Retro-Go 双系统）
 
-用 `game-and-watch-backup/gnw_full_backup.py` 做出的备份（`bank1.bin`、`bank2.bin`、`ext.bin`）可以直接运行：
+用 `game-and-watch-backup/gnw_full_backup.py` 做出的备份（`bank1.bin`、`bank2.bin`、`ext.bin`）由仓库根目录的 `run_backup_emu.sh` 运行。它写一份 `out/profiles/<备份名>.gnw.toml`，再交给 `scripts/run.sh`。备份目录本身不会被改动。
 
 ```sh
-B=../game-and-watch-backup/backups/full_YYYYMMDD_HHMM
-INTERNAL=$B/bank1.bin EXTERNAL=$B/ext.bin BANK2=$B/bank2.bin \
-    OVERLAY=out/device_flash.bin scripts/run.sh zelda
+../run_backup_emu.sh ../game-and-watch-backup/backups/full_YYYYMMDD_HHMM
 ```
 
 开机进入原厂时钟。按住 **← + G**（LEFT + GAME）后，补丁过的引导程序会跳到 Bank 2 的 Retro-Go。
 Retro-Go 里 G 对应游戏的 START，P（PAUSE）打开游戏菜单，T（TIME）对应 SELECT。
-存档写进 `OVERLAY` 指定的文件，备份本身不会被改动。
+存档在 `out/sessions/` 下这份 profile 的目录里。以前写在 `out/<备份名>_flash.bin` 的外挂 Flash 会在第一次使用这份 profile 时复制过去。`FRESH=1` 删掉会话，从备份镜像重新开始。
 
-电池：`BATTERY=30 USB_POWER=on BATTERY_LIFE_MIN=10 scripts/run.sh zelda` 这类环境变量设定开机电量、是否插着 USB、耗电和充电速度；窗口里按 `-`/`=` 调电量，按 `C` 插拔 USB。Headless 用 `GnW(battery=..., usb=..., battery_life_min=..., charge_time_min=...)`，运行中 `gw.set_battery(n)`、`gw.set_usb(True)`。注意 QEMU 在 VM 暂停时会丢弃键盘事件，脚本里要在运行时发键。
+电池：`BATTERY=30 USB_POWER=on BATTERY_LIFE_MIN=10 ../run_backup_emu.sh` 设定这一次的开机电量、是否插着 USB、耗电和充电速度；窗口里按 `-`/`=` 调电量，按 `C` 插拔 USB。Headless 用 `GnW(battery=..., usb=..., battery_life_min=..., charge_time_min=...)`，运行中 `gw.set_battery(n)`、`gw.set_usb(True)`。注意 QEMU 在 VM 暂停时会丢弃键盘事件，脚本里要在运行时发键。
 
 Headless 时用 `--internal/--external/--bank2`，或者 `GnW(internal=..., external=..., bank2=...)`。
 `tests/test_retrogo.py` 会找最新的 `../game-and-watch-backup/backups/full_*`（也可以用 `GNW_FULL_BACKUP` 指定），没有就跳过。
 
 ## Retro-Go SD（microSD 改装）
 
-支持 sylverb 的 Retro-Go SD 2.x，SD 卡的两种接法都支持：SPI1（默认），以及复用外挂 Flash 引脚的软件 SPI（`SD_WIRING=ospi`）。卡镜像用 `-drive if=sd,format=raw,file=…` 挂载，或者设置 `SDCARD=` 环境变量。核心、ROM、封面、存档都在卡上，ROM 缓存用外挂 Flash。bootloader 能从卡上的 `retro-go_update.bin` 刷写 Bank 2，通过 `BANK2_OVERLAY=` 落盘。
+支持 sylverb 的 Retro-Go SD 2.x，SD 卡的两种接法都支持：SPI1（默认），以及复用外挂 Flash 引脚的软件 SPI（`SD_WIRING=ospi`）。`scripts/run_sd.sh` 和 `scripts/run_sd_update.sh` 把 Bank、卡镜像和接线写进 `out/profiles/` 下的 profile 再启动。核心、ROM、封面、存档都在卡上，ROM 缓存用外挂 Flash。升级流程里 bootloader 从卡上的 `retro-go_update.bin` 刷写 Bank 2，结果留在该 profile 的会话里。
 
 ```sh
 scripts/run_sd.sh [备份目录]        # 直启：备份的 Bank 1 + SD 版 Retro-Go + SD 卡（缺的产物会先准备好）

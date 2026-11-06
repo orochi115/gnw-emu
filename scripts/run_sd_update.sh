@@ -13,9 +13,12 @@
 #   2. "Updating firmware" ... "Firmware update done" -> press any button
 #   3. clock again -> hold LEFT + G -> Retro-Go SD
 #
-# Flash and card state live in out/sd/update/ and survive restarts (the
-# update file is gone from the card once installed).  FRESH=1 goes back to
-# before the update: erased bank 2, new card image.
+# The script writes out/profiles/sd-update.gnw.toml. Bank 2 in that profile
+# is a blank 256 KiB image; the installed firmware is the session's
+# bank2.bin. The card image is out/sd/update/card.img (the update file is
+# gone from the card once installed). FRESH=1 deletes the session and the
+# card, which returns to the pre-update state. An old out/sd/update overlay
+# is copied into the session the first time.
 #
 # Prepared when missing: the patched firmware (scripts/build_sd_patch.sh,
 # needs ../firmware/*_zelda.bin and `brew install keystone`), the Retro-Go
@@ -47,23 +50,35 @@ if [ ! -f "$DB/bank1.bin" ]; then
     python3 "$ROOT/scripts/make_sd_dualboot.py" "$DB"
 fi
 
+PROFILE=$ROOT/out/profiles/sd-update.gnw.toml
+BLANK=$D/bank2-blank.bin
+SESS=$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")
 if [ "${FRESH:-0}" = 1 ]; then
-    rm -rf "$D"
+    rm -rf "$D" "$SESS"
 fi
 mkdir -p "$D"
+if [ ! -f "$BLANK" ]; then
+    python3 - "$BLANK" <<'PY'
+import sys
+open(sys.argv[1], "wb").write(b"\xff" * (256 * 1024))
+PY
+fi
 if [ ! -f "$D/card.img" ]; then
     python3 "$ROOT/scripts/make_sd_image.py" "$D/card.img" --roms "$ROMS" \
         ${SYSTEMS:+--systems "$SYSTEMS"} --with-update
-    rm -f "$D/bank1.bin" "$D/bank2.bin" "$D/ext.bin"
 fi
+python3 "$ROOT/harness/profile.py" write "$PROFILE" zelda \
+    internal="$DB/bank1.bin" external="$DB/ext.bin" bank2="$BLANK" \
+    sdcard="$D/card.img" sd-wiring="${SD_WIRING:-spi1}"
+python3 "$ROOT/harness/profile.py" seed "$PROFILE" \
+    flash.bin="$D/ext.bin" bank1.bin="$D/bank1.bin" bank2.bin="$D/bank2.bin"
 
-echo "bank1  : $DB/bank1.bin -> $D/bank1.bin (patched stock + SD bootloader)"
-echo "bank2  : $D/bank2.bin (erased until the update runs)"
-echo "card   : $D/card.img (${SD_WIRING:-spi1}, with retro-go_update.bin)"
+echo "bank1   : $DB/bank1.bin (patched stock + SD bootloader)"
+echo "bank2   : blank, until the update writes the session copy"
+echo "card    : $D/card.img (${SD_WIRING:-spi1}, with retro-go_update.bin)"
+echo "profile : $PROFILE"
+echo "saves   : $SESS"
 echo "LEFT + G: update -> any button -> LEFT + G: Retro-Go SD.  FRESH=1 to redo."
 echo "First boot shows \"PRESS TIME BUTTON\": press T (TIME), or LEFT + G directly."
 
-INTERNAL=$DB/bank1.bin EXTERNAL=$DB/ext.bin OVERLAY=$D/ext.bin \
-BANK1_OVERLAY=$D/bank1.bin BANK2_OVERLAY=$D/bank2.bin \
-SDCARD=$D/card.img SD_WIRING=${SD_WIRING:-spi1} \
-    exec "$ROOT/scripts/run.sh" zelda "$@"
+exec "$ROOT/scripts/run.sh" "$PROFILE" "$@"
