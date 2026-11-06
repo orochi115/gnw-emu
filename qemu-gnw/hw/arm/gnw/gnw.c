@@ -252,21 +252,20 @@ static void gnw_realtime_start(GnwMachineState *m)
  * Battery and charger (BQ24072).
  *
  * The cell voltage reaches ADC12_INP4 (PC4) through a divider.  Retro-Go
- * reads ADC1 channel 4 with a 1.5-cycle sample and maps 11000 -> 0 %,
- * 13000 -> 100 % (Core/Src/bq24072.c).  The stock firmware samples the
- * same pin on ADC2 for 810.5 cycles and sees ~3.3x more (see gnw_adc.c):
- * it shows four bars from ~43000, one red bar below ~39000 and powers off
- * below ~36740, i.e. below about 5 % on this scale.  The level property
- * uses Retro-Go's scale, so Retro-Go shows exactly the configured percent.
+ * reads ADC1 channel 4 and maps 11000 -> 0 %, 13000 -> 100 %
+ * (Core/Src/bq24072.c).  The stock firmware samples the same pin on ADC2
+ * (810.5 cycles, 1024x oversampling) on the same scale: a device on USB
+ * near full read 13165.  On the Zelda board (PC8 strap, see gnw_init) its
+ * thresholds are 10661/10693/11445/11727/12166 on battery, so it keeps
+ * running below Retro-Go's 0 %.  The level property uses Retro-Go's scale.
  * The charger reports on two open-drain, active-low pins:
  *   PA2  PGOOD: USB power present
  *   PE7  CHG:   charging (low while charging, released when full)
  * Both are EXTI sources in Retro-Go, so plugging and unplugging is seen at
  * once; the level is polled about once a second (TIM1).
  */
-#define BAT_RAW_EMPTY   11000   /* Retro-Go's 1.5-cycle readings */
+#define BAT_RAW_EMPTY   11000   /* Retro-Go's 0 % and 100 % */
 #define BAT_RAW_FULL    13000
-#define BAT_SHORT_SAMPLE 0.3023 /* 1 - exp(-1.5 / ADC_TAU_CYCLES) */
 
 static void gnw_battery_apply(GnwMachineState *m)
 {
@@ -275,12 +274,11 @@ static void gnw_battery_apply(GnwMachineState *m)
     m->level = MIN(MAX(m->level, 0.0), 100.0);
     m->battery = (uint32_t)(m->level + 0.5);
     if (m->adc) {
-        double short_raw = BAT_RAW_EMPTY +
-                           (BAT_RAW_FULL - BAT_RAW_EMPTY) * m->level / 100.0;
+        double raw = BAT_RAW_EMPTY +
+                     (BAT_RAW_FULL - BAT_RAW_EMPTY) * m->level / 100.0;
 
-        /* Channel value = settled reading; the ADC applies the sampling. */
-        gnw_adc_set_channel(m->adc, 4, m->adc_override ? m->adc_override :
-                            MIN(short_raw / BAT_SHORT_SAMPLE, 65535.0));
+        gnw_adc_set_channel(m->adc, 4, m->adc_override ? m->adc_override
+                                                       : raw);
     }
     if (m->gpio) {
         gnw_gpio_set_external(m->gpio, 0, 2, !m->usb);    /* PA2 PGOOD */
@@ -583,6 +581,16 @@ static void gnw_init(MachineState *machine)
     sysbus_connect_irq(sbd, 6, NVIC(GNW_IRQ_EXTI15_10));
     gnw_apply_buttons(m);
     m->input = qemu_input_handler_register(dev, &gnw_input_handler);
+    /*
+     * Board strap: PC8 is tied low.  Both stock firmwares sample it with the
+     * pull-up on (Zelda 0x0800ee8e, Mario 0x08006300) and, when it reads
+     * low, take TIME from PC5, use PA2 as the charger's PGOOD and the
+     * battery thresholds on Retro-Go's ADC scale; read high, TIME comes
+     * from PA2.  Measured on a Zelda: the selector byte (0x2000ab92) is 1
+     * and the battery reads ~13000 near full.  Mario is assumed to match:
+     * Retro-Go uses the same pins and battery scale on both.
+     */
+    gnw_gpio_set_external(m->gpio, 2, 8, false);
 
     /* OCTOSPI1 + OTFDEC1 + flash window */
     dev = qdev_new(TYPE_GNW_OSPI);

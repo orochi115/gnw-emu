@@ -239,7 +239,7 @@ static uint32_t spi_read(GnwRegs *s, hwaddr off, uint32_t v)
 
 static void dbgmcu_reset(GnwRegs *s)
 {
-    s->regs[0] = 0x10036480;            /* STM32H7B0, rev Z */
+    s->regs[0] = 0x10016480;            /* STM32H7B0, REV_ID 0x1001 as read on the device */
 }
 
 /* ------------------------------------------------------------------ */

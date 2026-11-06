@@ -54,7 +54,8 @@ class GnW:
                  sdcard: str | None = None, sd_wiring: str | None = None,
                  sd_snapshot: bool = False,
                  bank1_overlay: str | None = None,
-                 bank2_overlay: str | None = None, uid: str | None = None):
+                 bank2_overlay: str | None = None, uid: str | None = None,
+                 adc_override: int | None = None):
         firmware = Path(firmware)
         self.model = model
         self.tmp = Path(tempfile.mkdtemp(prefix="gnw-"))
@@ -72,6 +73,8 @@ class GnW:
             opts.append(f"sd-wiring={sd_wiring}")
         if uid:
             opts.append(f"uid={uid}")
+        if adc_override:
+            opts.append(f"adc-override={adc_override}")
         if audio:
             opts.append("audio=on")
         if battery is not None:

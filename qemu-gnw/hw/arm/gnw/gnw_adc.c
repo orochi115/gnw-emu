@@ -8,13 +8,11 @@
  * value the machine set through gnw_adc_set_channel(); unknown channels
  * read mid-scale.
  *
- * The battery divider has a high source impedance, so the sample-and-hold
- * capacitor does not settle within a short sampling time: on the real
- * board Retro-Go (1.5 cycles) reads about 30 % of what the stock firmware
- * (810.5 cycles) reads from the same pin -- full charge is 13000 in
- * Retro-Go and ~43000 for the stock firmware.  The channel value set by
- * the machine is the settled reading; each conversion scales it by
- * 1 - exp(-cycles / ADC_TAU_CYCLES), with tau fitted to that 30 %.
+ * The sampling time does not change the reading: on a device the stock
+ * firmware (810.5 cycles) reads the battery on the same scale as Retro-Go
+ * (1.5 cycles), ~13000 when full.  (An earlier model scaled short samples
+ * down to fit the stock firmware's other set of thresholds, which it only
+ * uses on boards without the PC8 strap.)
  *
  * Register subset per ADC: ISR, IER, CR (ADEN/ADDIS/ADSTART/ADSTP/ADCAL),
  * CFGR (RES, CONT), CFGR2 (oversampling), SMPR1/2, SQR1 (first conversion
@@ -23,7 +21,6 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "qemu/osdep.h"
-#include <math.h>
 #include "qemu/timer.h"
 #include "hw/core/irq.h"
 #include "hw/core/sysbus.h"
@@ -51,7 +48,6 @@
 #define CR_ADCAL    (1u << 31)
 
 #define CONV_NS     (5 * SCALE_US)
-#define ADC_TAU_CYCLES  4.17    /* 1.5 cycles -> 30.2 % of the settled value */
 #define NCHAN       20
 
 OBJECT_DECLARE_SIMPLE_TYPE(GnwAdcState, GNW_ADC)
@@ -83,13 +79,7 @@ static void adc_update_irq(GnwAdcState *s)
 static uint32_t adc_convert(GnwAdcState *s, GnwAdcUnit *u)
 {
     int ch = extract32(u->regs[R_SQR1], 6, 5);
-    static const double smp_cycles[8] = {
-        1.5, 2.5, 8.5, 16.5, 32.5, 64.5, 387.5, 810.5
-    };
-    uint32_t smpr = u->regs[R_SMPR1 + (ch >= 10)];
-    double cycles = smp_cycles[extract32(smpr, 3 * (ch % 10), 3)];
-    uint32_t v = (ch < NCHAN ? s->chan[ch] : 0x8000) *
-                 (1.0 - exp(-cycles / ADC_TAU_CYCLES));
+    uint32_t v = ch < NCHAN ? s->chan[ch] : 0x8000;
     static const int res_bits[8] = { 16, 14, 12, 12, 12, 10, 8, 8 };
     int bits = res_bits[extract32(u->regs[R_CFGR], 2, 3)];
     uint32_t cfgr2 = u->regs[R_CFGR2];

@@ -156,10 +156,16 @@ def icon_colours(img):
 
 
 @zelda
-@pytest.mark.parametrize("percent, expect", [(100, "green"), (20, "red"), (3, "off")])
-def test_zelda_battery_level(percent, expect):
-    """ADC2 channel 4 follows battery=; the stock firmware powers off when empty."""
-    with boot("zelda", battery=percent) as gw:
+@pytest.mark.parametrize("percent, raw, expect", [
+    (100, None, "green"), (20, None, "red"),
+    # Below the stock cutoff (10661 on the Zelda board), under Retro-Go's 0 %.
+    (0, 10500, "off")])
+def test_zelda_battery_level(percent, raw, expect):
+    """ADC2 channel 4 follows battery=; the stock firmware powers off when empty.
+
+    Same scale as Retro-Go (a device near full reads ~13000 in both).
+    """
+    with boot("zelda", battery=percent, adc_override=raw) as gw:
         gw.press("game", 150, 1000)
         menu = gw.frame()
     if expect == "off":

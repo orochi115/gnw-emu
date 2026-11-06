@@ -146,7 +146,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | RCC、PWR | 寄存器可读回；就绪位跟随使能位。上电模拟「电源键从待机唤醒」（`SBF`、`WKUPF1`）；待机时按电源键会触发唤醒复位。深度睡眠：QEMU 的 NVIC 不保存 `SCR.SLEEPDEEP`，机器自己保存一份；内核在深度睡眠（STOP/STANDBY）里时屏蔽 SysTick，电源键经 WKUP1 把内核从 STOP 唤醒（Retro-Go SD 的睡眠）。LCD 供电（PD4、PD1）关闭时画面全黑 |
 | SPI1 + microSD 卡 | STM32H7 SPI v2 主机，支持 DMA（DMAMUX 37/38）；SPI 模式 SDHC 卡，也可以接在 OSPI 引脚上走软件 SPI。见 `docs/sdcard.md` |
 | HASH、器件 UID | SHA-1/SHA-256/MD5；`0x08FFF800` 处的 UID（`uid=`） |
-| GPIO A–K、EXTI、SYSCFG | 实现。按键低电平有效，边沿经 `EXTICR` 路由到 EXTI 中断 |
+| GPIO A–K、EXTI、SYSCFG | 实现。Zelda 板上 PC8 接地（板型识别脚，原厂据此从 PC5 读 TIME、把 PA2 当充电 PGOOD）。按键低电平有效，边沿经 `EXTICR` 路由到 EXTI 中断 |
 | OCTOSPI1 + MX25U | 间接读写、自动轮询、内存映射；支持 RDID（真实 ID：`C2 25 0x20+log2 容量`）、SFDP、RDSR/WRSR、读、页编程、扇区擦除。写入可落到 overlay 文件 |
 | OTFDEC1 | 区域、nonce、密钥、KEYCRC；`0x90000000` 窗口里放的是已解密的内容，TCG 可以全速执行 |
 | LTDC | 两层，支持 ARGB8888/RGB888/RGB565/ARGB1555/ARGB4444/L8/AL44/AL88 与 CLUT；按 60 Hz 产生行中断和重载中断 |
@@ -156,7 +156,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 | CRYP | AES-ECB/CBC/CTR/GCM，加密和解密都支持。算出的存档 GCM tag 与 dump 里两份 NVRAM 的 tag 一致 |
 | TIM2–7、TIM15–17 | 计数、更新中断 |
 | RTC + TAMP | 日历、亚秒、唤醒定时器、闹钟 A/B、备份寄存器 |
-| ADC1/ADC2 | 转换（软件启动、连续模式、EOC/EOS 中断）、分辨率、过采样、SMPR 采样时间。通道 4 接电池分压：采样时间短时电容充不满，读数按 1−e^(−周期/4.17) 打折，所以 Retro-Go（1.5 周期）和原厂（810.5 周期）读到的数值与真机一致 |
+| ADC1/ADC2 | 转换（软件启动、连续模式、EOC/EOS 中断）、分辨率、过采样。通道 4 接电池分压，读数与采样时间无关：实测原厂（810.5 周期、1024 倍过采样）和 Retro-Go 用同一刻度，接近满电约 13000 |
 | 电池与充电（BQ24072） | 机器属性 `battery`（0–100，默认 100）、`usb-power`、`battery-life-min`（默认 480）、`charge-time-min`（默认 180），运行中可用 `qom-set` 修改；PA2（PGOOD）、PE7（CHG）低电平有效并触发 EXTI。原厂固件：≥约 75% 显示 4 格，≤约 25% 变红，低于约 5% 开机即关机。百分比用 Retro-Go 的尺度，Retro-Go 显示的就是设定值 |
 | TIM1 | 只有更新中断（Retro-Go 用它每秒读一次电量） |
 | SPI2（LCD 初始化）、HSEM、CRC、DBGMCU 等 | 桩：可读回，状态位恒为就绪 |
