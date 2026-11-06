@@ -19,8 +19,9 @@
 #   BATTERY=, USB_POWER=, ... are passed to scripts/run.sh
 #
 # The script writes out/profiles/sd-<backup name>.gnw.toml and runs it.
-# Saves live in out/sessions/. An old out/sd/<name>_ext.bin is copied into
-# the session the first time.
+# Saves live in UserData/sessions/<profile id>/. The SD card is copied
+# there on first launch; the source image is left unchanged. An old
+# out/sd/<name>_ext.bin is copied into the session the first time.
 #
 # Keys: arrows = D-pad, X = A, Z = B, G = GAME, T = TIME, P = PAUSE,
 #       O = POWER.  Hold LEFT + G on the clock to enter Retro-Go.

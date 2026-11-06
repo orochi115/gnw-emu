@@ -15,10 +15,11 @@
 #
 # The script writes out/profiles/sd-update.gnw.toml. Bank 2 in that profile
 # is a blank 256 KiB image; the installed firmware is the session's
-# bank2.bin. The card image is out/sd/update/card.img (the update file is
-# gone from the card once installed). FRESH=1 deletes the session and the
-# card, which returns to the pre-update state. An old out/sd/update overlay
-# is copied into the session the first time.
+# bank2.bin under UserData/sessions/<profile id>/. The source card stays
+# out/sd/update/card.img; the running copy is the session's sdcard.img.
+# FRESH=1 deletes the session and the source card, which returns to the
+# pre-update state. An old out/sd/update overlay is copied into the session
+# the first time.
 #
 # Prepared when missing: the patched firmware (scripts/build_sd_patch.sh,
 # needs ../firmware/*_zelda.bin and `brew install keystone`), the Retro-Go
@@ -52,9 +53,11 @@ fi
 
 PROFILE=$ROOT/out/profiles/sd-update.gnw.toml
 BLANK=$D/bank2-blank.bin
-SESS=$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")
 if [ "${FRESH:-0}" = 1 ]; then
-    rm -rf "$D" "$SESS"
+    if [ -f "$PROFILE" ]; then
+        rm -rf "$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")"
+    fi
+    rm -rf "$D"
 fi
 mkdir -p "$D"
 if [ ! -f "$BLANK" ]; then
@@ -70,6 +73,7 @@ fi
 python3 "$ROOT/harness/profile.py" write "$PROFILE" zelda \
     internal="$DB/bank1.bin" external="$DB/ext.bin" bank2="$BLANK" \
     sdcard="$D/card.img" sd-wiring="${SD_WIRING:-spi1}"
+SESS=$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")
 python3 "$ROOT/harness/profile.py" seed "$PROFILE" \
     flash.bin="$D/ext.bin" bank1.bin="$D/bank1.bin" bank2.bin="$D/bank2.bin"
 

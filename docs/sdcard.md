@@ -83,7 +83,7 @@ scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升
 scripts/run_sd.sh ../game-and-watch-backup/backups/full_20261104_1021
 ```
 
-脚本写 `out/profiles/sd-<备份名>.gnw.toml`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdcard` 指向卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 的可写副本在 `out/sessions/`；以前的 `out/sd/<备份名>_ext.bin` 会在第一次运行时复制过去。
+脚本写 `out/profiles/sd-<备份名>.gnw.toml`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdcard` 指向源卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 和 SD 卡的工作副本在 `UserData/sessions/<profile id>/`，源卡不被写入。以前的 `out/sd/<备份名>_ext.bin` 会在第一次运行时复制过去。
 
 ### 从 SD 卡升级（真实安装流程）
 
@@ -93,7 +93,7 @@ scripts/run_sd.sh ../game-and-watch-backup/backups/full_20261104_1021
 scripts/run_sd_update.sh
 ```
 
-它在缺文件时做下面这些准备，再写 `out/profiles/sd-update.gnw.toml` 并启动。profile 里的 Bank 2 是 256 KiB 的空白镜像；刷写结果留在会话的 `bank2.bin`。
+它在缺文件时做下面这些准备，再写 `out/profiles/sd-update.gnw.toml` 并启动。profile 里的 Bank 2 是 256 KiB 的空白镜像；刷写结果留在 `UserData/sessions/<profile id>/bank2.bin`。运行中的卡是会话里的 `sdcard.img`。
 
 ```sh
 scripts/build_sd_patch.sh

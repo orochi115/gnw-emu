@@ -25,7 +25,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 | `scripts/run_sd.sh`、`run_sd_update.sh` | Retro-Go SD 一键运行：直启 / 从 SD 卡升级 |
 | `scripts/build_retrogo_sd.sh`、`fetch_cores.sh`、`build_cores.sh`、`make_sd_image.py`、`build_sd_patch.sh`、`make_sd_dualboot.py` | Retro-Go SD：编译固件、下载或编译核心、生成 SD 卡镜像、打补丁、拼双系统 Bank 1（见 `docs/sdcard.md`） |
 | `hwtest/` | Cortex-M7 时序测试，真机和模拟器都能跑；结果与周期精确化评估见 `docs/cycle-accuracy.md` |
-| `docs/profiles.md` | ROM profile（`.gnw.toml`）、每机会话、`settings.toml`。`scripts/run.sh` 负责加载 |
+| `docs/profiles.md` | ROM profile（`.gnw.toml`）、`UserData/` 里的会话和 `settings.toml`。`scripts/run.sh` 负责加载 |
 
 ## 复用的社区代码
 
@@ -54,7 +54,7 @@ scripts/run.sh zelda      # 或 mario
 scripts/run.sh path/to/machine.gnw.toml
 ```
 
-`zelda` / `mario` 分别加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`。`.gnw.toml` 只写机型和只读镜像。电量、RTC 和可写 Flash 在 `out/sessions/<名字>-<哈希>/`，声音、窗口和实时节拍在 `settings.toml`（第一次窗口运行时按默认值生成）。字段见 `docs/profiles.md`。这一次运行可以用 `BATTERY`、`USB_POWER`、`BATTERY_LIFE_MIN`、`CHARGE_TIME_MIN`、`RTC`、`DISPLAY_BACKEND` 覆盖，不写回 profile。
+`zelda` / `mario` 分别加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`。`.gnw.toml` 只写机型、`id` 和只读镜像，镜像路径相对这份文件。电量、RTC、可写 Flash 和 SD 卡工作副本在 `UserData/sessions/<id>/`。声音、窗口、实时节拍和最近打开的列表在 `UserData/settings.toml`（第一次窗口运行时按默认值生成；macOS 的默认窗口是 Cocoa，其他系统是 GTK）。字段见 `docs/profiles.md`。这一次运行可以用 `BATTERY`、`USB_POWER`、`BATTERY_LIFE_MIN`、`CHARGE_TIME_MIN`、`RTC`、`DISPLAY_BACKEND` 覆盖，不写回 profile。
 
 | 键盘 | 按键 |
 |---|---|
@@ -66,7 +66,7 @@ scripts/run.sh path/to/machine.gnw.toml
 | - / = | 电量 −10% / +10% |
 | C | 插上 / 拔掉 USB 电源 |
 
-原厂镜像的存档在 `out/sessions/zelda-<哈希>/`（Mario 同理）。第一次运行时从 `firmware/` 的 dump 复制，那些文件不会被改动。
+原厂镜像的存档在 `UserData/sessions/11111111-1111-4111-8111-111111111111/`（Mario 用它自己的 `id`）。第一次运行时从 `firmware/` 的 dump 复制，那些文件不会被改动。
 
 亮度跟随固件已有的设置菜单：原厂 Mario/Zelda、Retro-Go 和 Retro-Go SD 均支持。
 模拟器以 DAC1 通道 1（PA4）作为整屏背光强度，在两层画面合成后按 12 位 DAC 输出值 / 4095 线性缩放 RGB；不修改固件显存。
@@ -83,7 +83,7 @@ PA4 配置为 GPIO 输出时，高电平全亮、低电平关闭。DAC 通道关
 
 开机进入原厂时钟。按住 **← + G**（LEFT + GAME）后，补丁过的引导程序会跳到 Bank 2 的 Retro-Go。
 Retro-Go 里 G 对应游戏的 START，P（PAUSE）打开游戏菜单，T（TIME）对应 SELECT。
-存档在 `out/sessions/` 下这份 profile 的目录里。以前写在 `out/<备份名>_flash.bin` 的外挂 Flash 会在第一次使用这份 profile 时复制过去。`FRESH=1` 删掉会话，从备份镜像重新开始。
+存档在 `UserData/sessions/<profile id>/`。以前写在 `out/<备份名>_flash.bin` 的外挂 Flash 会在第一次使用这份 profile 时复制过去。`FRESH=1` 删掉会话，从备份镜像重新开始。
 
 电池：`BATTERY=30 USB_POWER=on BATTERY_LIFE_MIN=10 ../run_backup_emu.sh` 设定这一次的开机电量、是否插着 USB、耗电和充电速度；窗口里按 `-`/`=` 调电量，按 `C` 插拔 USB。Headless 用 `GnW(battery=..., usb=..., battery_life_min=..., charge_time_min=...)`，运行中 `gw.set_battery(n)`、`gw.set_usb(True)`。注意 QEMU 在 VM 暂停时会丢弃键盘事件，脚本里要在运行时发键。
 

@@ -1,6 +1,6 @@
 # 启动文件：ROM profile、会话、全局设置
 
-一次可运行的机器由多份镜像组成（片内 Bank 1、外挂 SPI NOR，改装机还有 Bank 2 和 SD 卡）。这些路径现在拆在 `scripts/run.sh` 的环境变量和 `-M gnw-…` 属性里，SD 卡又单独走 `-drive`。本文把它们收成三个文本文件。格式是 TOML。窗口运行走 `scripts/run.sh`。参数 `zelda` / `mario` 加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`；其他参数是一份 `.gnw.toml`。宿主选项在 `settings.toml`，第一次窗口运行时生成。`run_backup_emu.sh`、`scripts/run_sd.sh`、`scripts/run_sd_update.sh` 都是先写 profile 再调用它。
+一次可运行的机器由多份镜像组成（片内 Bank 1、外挂 SPI NOR，改装机还有 Bank 2 和 SD 卡）。这些路径现在拆在 `scripts/run.sh` 的环境变量和 `-M gnw-…` 属性里，SD 卡又单独走 `-drive`。本文把它们收成三个文本文件。格式是 TOML。窗口运行走 `scripts/run.sh`。参数 `zelda` / `mario` 加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`；其他参数是一份 `.gnw.toml`。宿主选项和最近打开的列表在 `UserData/settings.toml`，第一次窗口运行时生成。`run_backup_emu.sh`、`scripts/run_sd.sh`、`scripts/run_sd_update.sh` 都是先写 profile 再调用它。
 
 三个文件各管一层：
 
@@ -21,6 +21,7 @@
 | 字段 | 必须 | 含义 | 对应现有参数 |
 |---|---|---|---|
 | `version` | 是 | 文件版本，目前为 `1` | — |
+| `id` | 是 | 这份 ROM 文件的 UUID。制作或 `write_profile` 时生成，重写文件时保持不变。和器件 `uid` 不是一回事 | 会话目录名 |
 | `model` | 是 | `zelda` 或 `mario` | `-M gnw-$MODEL` |
 | `internal` | 是 | 片内 Flash Bank 1，128 或 256 KiB，映射到 `0x08000000` | `internal=` |
 | `external` | 是 | 外挂 SPI NOR，1 或 4 MiB，经 OCTOSPI1 / OTFDEC 映射到 `0x90000000` | `external=` |
@@ -33,6 +34,7 @@
 
 ```toml
 version = 1
+id = "11111111-1111-4111-8111-111111111111"
 model = "zelda"
 internal = "internal_flash_backup_zelda.bin"
 external = "flash_backup_zelda.bin"
@@ -42,6 +44,7 @@ external = "flash_backup_zelda.bin"
 
 ```toml
 version = 1
+id = "33333333-3333-4333-8333-333333333333"
 model = "zelda"
 internal = "bank1.bin"
 external = "ext.bin"
@@ -52,6 +55,7 @@ Retro-Go SD 再加卡镜像和接线：
 
 ```toml
 version = 1
+id = "44444444-4444-4444-8444-444444444444"
 model = "zelda"
 internal = "bank1.bin"
 external = "ext.bin"
@@ -61,32 +65,34 @@ sd-wiring = "spi1"
 uid = "00112233445566778899aabb"
 ```
 
+镜像路径相对 profile 文件。把 profile 和镜像一起搬走，路径仍然有效。同一份 `id` 共用一块用户数据；另存一份 ROM 时要换新的 `id`。
+
 profile 里不写电量、RTC、音频、窗口，也不写 `overlay`、`bank1-overlay`、`bank2-overlay`。后三个文件会被固件改写，属于会话。
 
 ## 会话
 
-每份 profile 一份会话，按 profile 的绝对路径区分。目录是：
+每份 profile 一份会话，目录名是 profile 的 `id`。profile 换位置后仍用同一块存档。
 
 ```text
-gnw-emu/out/sessions/<profile 主文件名>-<路径哈希前 8 位十六进制>/
+gnw-emu/UserData/sessions/<profile id>/
 ```
-
-主文件名去掉 `.gnw.toml`。哈希用来区分不同目录下的同名 profile，避免两台备份共用存档。目录里是：
 
 | 文件 | 内容 |
 |---|---|
-| `session.toml` | 下面的标量，以及三个存档文件的路径 |
+| `session.toml` | 下面的标量，以及存档文件的路径。`profile` 是这份 ROM 的绝对路径，每次打开都更新 |
 | `flash.bin` | 外挂 SPI NOR 的可写副本。缺文件时从 profile 的 `external` 复制 |
 | `bank1.bin` | Bank 1 编程落盘。缺文件时从 `internal` 复制 |
 | `bank2.bin` | Bank 2 编程落盘。profile 写了 `bank2` 时，缺文件就从它复制；没写 `bank2` 时不建这个文件 |
+| `sdcard.img` | SD 卡工作副本。profile 写了 `sdcard` 时，缺文件就从源镜像复制。QEMU 只打开这份副本 |
 
-这三个二进制文件就是存档本体，对应现在的 `overlay=`、`bank1-overlay=`、`bank2-overlay=`。`session.toml` 只记录它们的路径和运行选项，不把 Flash 内容嵌进去。
+这些二进制文件就是存档本体，对应 `overlay=`、`bank1-overlay=`、`bank2-overlay=` 和 `-drive if=sd`。`session.toml` 只记录路径和运行选项，不把 Flash 内容嵌进去。
 
 `session.toml` 的字段：
 
 | 字段 | 内建默认 | 含义 | 对应现有参数 |
 |---|---|---|---|
 | `version` | `1` | 文件版本 | — |
+| `profile` | 这次打开的 profile 绝对路径 | 从会话找回 ROM。启动时写回 | — |
 | `battery` | `100` | 电量百分比，0–100。退出时写成当时的值 | `battery=` |
 | `usb-power` | `false` | 是否插着 USB。退出时写回 | `usb-power=` |
 | `battery-life-min` | `480` | 电池从 100% 放到 0% 的分钟数。`0` 表示电量保持不变 | `battery-life-min=` |
@@ -95,8 +101,9 @@ gnw-emu/out/sessions/<profile 主文件名>-<路径哈希前 8 位十六进制>/
 | `overlay` | 本目录的 `flash.bin` | 外挂 Flash 可写副本 | `overlay=` |
 | `bank1-overlay` | 本目录的 `bank1.bin` | Bank 1 编程落盘 | `bank1-overlay=` |
 | `bank2-overlay` | 本目录的 `bank2.bin`，或空 | Bank 2 编程落盘。profile 没有 `bank2` 时留空 | `bank2-overlay=` |
+| `sdcard` | 本目录的 `sdcard.img`，或空 | SD 卡工作副本。profile 没有 `sdcard` 时留空 | `-drive if=sd` |
 
-`overlay`、`bank1-overlay`、`bank2-overlay` 相对会话目录解析。把它们改到别处，存档就离开 `out/sessions/`。profile 所在目录保持只读，因此可以把 `.gnw.toml` 直接放进备份目录。
+`overlay`、`bank1-overlay`、`bank2-overlay`、`sdcard` 相对会话目录解析。profile 所在目录保持只读，因此可以把 `.gnw.toml` 直接放进备份目录。以前的 `out/sessions/<名字>-<哈希>/` 不会自动迁过来；要沿用旧档就把里面的文件拷进新的 `UserData/sessions/<id>/`，否则从源镜像重新开始。
 
 首次打开某份 profile 时创建会话目录和 `session.toml`，并按上表准备尚不存在的 overlay。之后每次退出更新 `battery` 和 `usb-power`。删除整个会话目录即从这份 profile 的初始镜像重新开始；profile 和备份都还在。
 
@@ -104,13 +111,14 @@ gnw-emu/out/sessions/<profile 主文件名>-<路径哈希前 8 位十六进制>/
 
 ## 全局设置
 
-路径固定为 `gnw-emu/settings.toml`。文件不存在时按内建默认值运行，并在第一次窗口运行时写出这份文件。测试和 headless 只读它，不因为缺文件而创建。
+路径固定为 `gnw-emu/UserData/settings.toml`，各平台都用这个相对模拟器目录的位置。文件不存在时按内建默认值运行，并在第一次窗口运行时写出这份文件。测试和 headless 只读它，不因为缺文件而创建。
 
 | 字段 | 内建默认 | 含义 | 对应现有参数 |
 |---|---|---|---|
 | `version` | `1` | 文件版本 | — |
 | `audio` | `true` | 用宿主播放 SAI1。headless 仍可用单独的 `wav=` 录音，那是调试输出，不进这个文件 | `audio=` |
-| `display` | `"cocoa,zoom-to-fit=on"` | QEMU 显示后端。无窗口运行为 `"none"` | `-display` |
+| `display` | macOS 为 `"cocoa,zoom-to-fit=on"`，其他系统为 `"gtk,zoom-to-fit=on"` | QEMU 显示后端。无窗口运行为 `"none"`。文件里已经写过的值不会被改掉 | `-display` |
+| `recent` | `[]` | 最近打开的 profile 绝对路径，最新在前，最多 10 条。文件不在了就在下次写回时去掉 | — |
 | `realtime` | `true` | 与 `-icount shift=2,sleep=off` 一起使用：定时器按指令数触发，虚拟时间对齐宿主时钟 | `realtime=on` |
 
 按键、电量曲线和板级差异不放在这里。按键仍是现在的键盘映射；板级差异由 profile 的 `model` 决定。
@@ -122,16 +130,17 @@ version = 1
 audio = true
 display = "cocoa,zoom-to-fit=on"
 realtime = true
+recent = ["/path/to/zelda.gnw.toml"]
 ```
 
 ## 一次启动怎么拼
 
 以「备份目录里的 `zelda.gnw.toml`」为例。`scripts/run.sh` 做这些事，QEMU 机器属性仍只接收已经展开的绝对路径：
 
-1. 读 `gnw-emu/settings.toml`，缺了就用内建默认。
-2. 读 profile，把 `internal`、`external`、`bank2`、`sdcard` 解成绝对路径。
-3. 用 profile 绝对路径算出 `out/sessions/zelda-<哈希>/`。没有 `session.toml` 就生成，并备好 overlay。
-4. 拼出现在的命令行：`-M gnw-<model>,internal=…,external=…,overlay=…`，有 SD 卡时加 `-drive if=sd,format=raw,file=…`，RTC 和显示后端来自会话与全局设置。
+1. 读 `UserData/settings.toml`，缺了就用内建默认。窗口运行会把这份 profile 的绝对路径放进 `recent` 并写回。
+2. 读 profile，把 `internal`、`external`、`bank2`、`sdcard` 按相对 profile 文件的路径解成绝对路径。
+3. 用 profile 的 `id` 找到 `UserData/sessions/<id>/`。没有 `session.toml` 就生成，并备好 overlay 和 SD 卡工作副本。`profile` 字段写成这次打开的绝对路径。
+4. 拼出现在的命令行：`-M gnw-<model>,internal=…,external=…,overlay=…`，有 SD 卡时 `-drive` 指向会话里的 `sdcard.img`，RTC 和显示后端来自会话与全局设置。
 5. 退出时把当时的电量和 USB 状态写回 `session.toml`。机器属性 `state-file` 指向会话目录里的 `state.txt`，QEMU 退出时写下这两项；启动器读完后删掉 `state.txt`。overlay 文件在运行期间已经由机器模型落盘。
 
 命令行上的一次性覆盖（例如这次用 `battery=30`）加在第 4 步，优先级高于会话和全局设置，并且不写回 `session.toml`，除非这个量本来就会在退出时保存。

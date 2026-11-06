@@ -3,5 +3,6 @@ __pycache__/
 .venv/
 *.pyc
 /out/
+/UserData/
 build/
 .cache/

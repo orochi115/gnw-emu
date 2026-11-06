@@ -5,14 +5,15 @@
 #
 # zelda / mario load profiles/zelda.gnw.toml and profiles/mario.gnw.toml.
 # A .gnw.toml profile names the read-only images. Battery, RTC and the
-# writable flash copies live in out/sessions/<name>-<hash>/. See
-# docs/profiles.md.
+# writable flash copies and the SD card working copy live in
+# UserData/sessions/<profile id>/. See docs/profiles.md.
 #
 # One-run overrides: BATTERY, USB_POWER, BATTERY_LIFE_MIN, CHARGE_TIME_MIN,
 # RTC, DISPLAY_BACKEND. They are not written into the profile.
 #
-# Host-wide audio, display and realtime pacing: settings.toml (created on
-# the first window run). Keys: arrows = D-pad, X = A, Z = B, G = GAME,
+# Host-wide audio, display, realtime pacing and the recent list:
+# UserData/settings.toml (created on the first window run).
+# Keys: arrows = D-pad, X = A, Z = B, G = GAME,
 # T = TIME, P = PAUSE, O = POWER, Return = START, Tab = SELECT (Zelda).
 # '-' / '=' change the battery by 10 %, C plugs or unplugs USB.
 ROOT=$(cd "$(dirname "$0")/.." && pwd)

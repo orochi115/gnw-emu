@@ -4,21 +4,25 @@ See docs/profiles.md. A profile names the read-only images. A session
 holds battery, RTC, and the paths of the writable flash copies. Settings
 hold audio, the display backend, and realtime pacing.
 
-Image paths in a profile are relative to the profile file. Overlay paths
-in a session are relative to the session directory. The session directory
-is out/sessions/<stem>-<8 hex chars of SHA-256(absolute profile path)>/.
+Image paths in a profile are relative to the profile file. Writable
+copies live under UserData/sessions/<profile id>/. The same directory is
+used on every platform; it sits next to the emulator, not in a
+platform-specific settings folder.
 """
 from __future__ import annotations
 
-import hashlib
 import os
 import shutil
+import sys
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-SETTINGS_PATH = ROOT / "settings.toml"
-SESSIONS = ROOT / "out" / "sessions"
+USERDATA = ROOT / "UserData"
+SETTINGS_PATH = USERDATA / "settings.toml"
+SESSIONS = USERDATA / "sessions"
+RECENT_LIMIT = 10
 
 PROFILE_VERSION = 1
 SESSION_VERSION = 1
@@ -29,8 +33,24 @@ class ProfileError(Exception):
     pass
 
 
+def _parse_array(value: str, path: Path, lineno: int) -> list[str]:
+    if not value.endswith("]"):
+        raise ProfileError(f"{path}:{lineno}: unclosed array")
+    inner = value[1:-1].strip()
+    if not inner:
+        return []
+    items = []
+    for part in inner.split(","):
+        part = part.strip()
+        if len(part) >= 2 and part[0] == part[-1] and part[0] in "\"'":
+            items.append(part[1:-1])
+        else:
+            raise ProfileError(f"{path}:{lineno}: array items must be strings")
+    return items
+
+
 def _parse(text: str, path: Path) -> dict:
-    """Subset of TOML: comments, key = string | int | bool. No tables."""
+    """Subset of TOML: comments, key = string | int | bool | string array."""
     values: dict = {}
     for lineno, raw in enumerate(text.splitlines(), 1):
         line = raw.split("#", 1)[0].strip()
@@ -41,7 +61,9 @@ def _parse(text: str, path: Path) -> dict:
         key, value = (part.strip() for part in line.split("=", 1))
         if not key:
             raise ProfileError(f"{path}:{lineno}: missing key")
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        if value.startswith("["):
+            values[key] = _parse_array(value, path, lineno)
+        elif len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
             values[key] = value[1:-1]
         elif value in ("true", "false"):
             values[key] = value == "true"
@@ -57,7 +79,22 @@ def _quote(value) -> str:
         return "true" if value else "false"
     if isinstance(value, int):
         return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(_quote(item) for item in value) + "]"
     return '"' + str(value).replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def default_display() -> str:
+    if sys.platform == "darwin":
+        return "cocoa,zoom-to-fit=on"
+    return "gtk,zoom-to-fit=on"
+
+
+def _check_id(value: str, path: Path) -> str:
+    try:
+        return str(uuid.UUID(str(value)))
+    except ValueError as exc:
+        raise ProfileError(f"{path}: id must be a UUID") from exc
 
 
 def _dump(values: dict) -> str:
@@ -87,6 +124,7 @@ def _resolve(base: Path, value: str, path: Path, key: str) -> Path:
 @dataclass
 class Profile:
     path: Path
+    id: str
     model: str
     internal: Path
     external: Path
@@ -115,6 +153,8 @@ class Session:
     overlay: Path | None = None
     bank1_overlay: Path | None = None
     bank2_overlay: Path | None = None
+    sdcard: Path | None = None
+    profile_path: str = ""
     # Paths as written in session.toml (may be relative).
     _raw: dict = field(default_factory=dict, repr=False)
 
@@ -126,21 +166,14 @@ class Session:
 @dataclass
 class Settings:
     audio: bool = True
-    display: str = "cocoa,zoom-to-fit=on"
+    display: str = field(default_factory=default_display)
     realtime: bool = True
+    recent: list[str] = field(default_factory=list)
     path: Path = SETTINGS_PATH
 
 
-def session_directory(profile_path: Path, sessions: Path = SESSIONS) -> Path:
-    absolute = str(profile_path.resolve())
-    digest = hashlib.sha256(absolute.encode()).hexdigest()[:8]
-    stem = profile_path.name
-    suffix = ".gnw.toml"
-    if stem.endswith(suffix):
-        stem = stem[: -len(suffix)]
-    else:
-        stem = profile_path.stem
-    return sessions / f"{stem}-{digest}"
+def session_directory(profile_id: str, sessions: Path = SESSIONS) -> Path:
+    return sessions / _check_id(profile_id, sessions)
 
 
 def load_profile(path: Path) -> Profile:
@@ -183,8 +216,20 @@ def load_profile(path: Path) -> Profile:
     if uid is not None:
         if len(uid) != 24 or any(c not in "0123456789abcdefABCDEF" for c in uid):
             raise ProfileError(f"{path}: uid must be 24 hex digits")
-    return Profile(path, model, internal, external, bank2, sdcard,
-                   wiring or None, uid)
+    if not data.get("id"):
+        raise ProfileError(f"{path}: missing id")
+    return Profile(path, _check_id(str(data["id"]), path), model, internal,
+                   external, bank2, sdcard, wiring or None, uid)
+
+
+def _settings_text(settings: Settings) -> dict:
+    return {
+        "version": SETTINGS_VERSION,
+        "audio": settings.audio,
+        "display": settings.display,
+        "realtime": settings.realtime,
+        "recent": list(settings.recent),
+    }
 
 
 def load_settings(path: Path = SETTINGS_PATH, *, write: bool = False) -> Settings:
@@ -200,14 +245,33 @@ def load_settings(path: Path = SETTINGS_PATH, *, write: bool = False) -> Setting
             settings.display = str(data["display"])
         if "realtime" in data:
             settings.realtime = bool(data["realtime"])
+        recent = data.get("recent", [])
+        if isinstance(recent, str):
+            recent = [recent]
+        if not isinstance(recent, list):
+            raise ProfileError(f"{path}: recent must be an array of paths")
+        settings.recent = [str(item) for item in recent]
     elif write:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(_dump({
-            "version": SETTINGS_VERSION,
-            "audio": settings.audio,
-            "display": settings.display,
-            "realtime": settings.realtime,
-        }))
+        path.write_text(_dump(_settings_text(settings)))
+    return settings
+
+
+def remember_profile(settings: Settings, profile_path: Path) -> Settings:
+    """Put this profile at the front of the recent list and drop missing files."""
+    absolute = str(Path(profile_path).resolve())
+    kept = []
+    for item in [absolute, *settings.recent]:
+        if item in kept:
+            continue
+        if item != absolute and not Path(item).is_file():
+            continue
+        kept.append(item)
+        if len(kept) == RECENT_LIMIT:
+            break
+    settings.recent = kept
+    settings.path.parent.mkdir(parents=True, exist_ok=True)
+    settings.path.write_text(_dump(_settings_text(settings)))
     return settings
 
 
@@ -231,6 +295,8 @@ def _session_from_data(directory: Path, data: dict) -> Session:
         overlay=image("overlay"),
         bank1_overlay=image("bank1-overlay"),
         bank2_overlay=image("bank2-overlay"),
+        sdcard=image("sdcard"),
+        profile_path=str(data.get("profile") or ""),
         _raw=dict(data),
     )
 
@@ -243,15 +309,17 @@ def _default_session_text(profile: Profile) -> dict:
         "battery-life-min": 480,
         "charge-time-min": 180,
         "rtc": "host",
+        "profile": str(profile.path.resolve()),
         "overlay": "flash.bin",
         "bank1-overlay": "bank1.bin",
         "bank2-overlay": "bank2.bin" if profile.bank2 else "",
+        "sdcard": "sdcard.img" if profile.sdcard else "",
     }
     return data
 
 
 def prepare_session(profile: Profile, sessions: Path = SESSIONS) -> Session:
-    directory = session_directory(profile.path, sessions)
+    directory = session_directory(profile.id, sessions)
     directory.mkdir(parents=True, exist_ok=True)
     session_path = directory / "session.toml"
     if not session_path.is_file():
@@ -259,11 +327,17 @@ def prepare_session(profile: Profile, sessions: Path = SESSIONS) -> Session:
     data = _load_file(session_path)
     if data.get("version") != SESSION_VERSION:
         raise ProfileError(f"{session_path}: version must be {SESSION_VERSION}")
+    data["profile"] = str(profile.path.resolve())
+    if profile.sdcard and not data.get("sdcard"):
+        data["sdcard"] = "sdcard.img"
+    session_path.write_text(_dump(data))
     session = _session_from_data(directory, data)
     copies = [(session.overlay, profile.external),
               (session.bank1_overlay, profile.internal)]
     if profile.bank2 and session.bank2_overlay:
         copies.append((session.bank2_overlay, profile.bank2))
+    if profile.sdcard and session.sdcard:
+        copies.append((session.sdcard, profile.sdcard))
     for dest, source in copies:
         if dest is None or dest.is_file():
             continue
@@ -276,7 +350,8 @@ def save_runtime_state(session: Session, battery: int, usb_power: bool) -> None:
     """Write battery and USB back. Other session fields stay as on disk."""
     path = session.directory / "session.toml"
     data = _load_file(path) if path.is_file() else _default_session_text(
-        Profile(Path("."), "zelda", Path("."), Path(".")))
+        Profile(Path("."), "00000000-0000-4000-8000-000000000000",
+                "zelda", Path("."), Path(".")))
     data["battery"] = battery
     data["usb-power"] = usb_power
     path.write_text(_dump(data))
@@ -301,9 +376,10 @@ def apply_env(session: Session, settings: Settings, env: dict | None = None
     session = Session(**{k: getattr(session, k) for k in (
         "directory", "battery", "usb_power", "battery_life_min",
         "charge_time_min", "rtc", "overlay", "bank1_overlay",
-        "bank2_overlay")})
+        "bank2_overlay", "sdcard", "profile_path")})
     settings = Settings(audio=settings.audio, display=settings.display,
-                        realtime=settings.realtime, path=settings.path)
+                        realtime=settings.realtime, recent=list(settings.recent),
+                        path=settings.path)
     if "BATTERY" in env and env["BATTERY"] != "":
         session.battery = int(env["BATTERY"])
     if "USB_POWER" in env and env["USB_POWER"] != "":
@@ -353,7 +429,15 @@ def write_profile(dest: Path, model: str, fields: dict) -> Path:
     if model not in ("zelda", "mario"):
         raise ProfileError(f"model must be zelda or mario, got {model!r}")
     dest.parent.mkdir(parents=True, exist_ok=True)
-    lines = [f"version = {PROFILE_VERSION}", f'model = "{model}"']
+    ident = fields.get("id")
+    if not ident and dest.is_file():
+        try:
+            ident = _load_file(dest).get("id")
+        except ProfileError:
+            ident = None
+    ident = _check_id(str(ident), dest) if ident else str(uuid.uuid4())
+    lines = [f"version = {PROFILE_VERSION}", f'id = "{ident}"',
+             f'model = "{model}"']
     for key in ("internal", "external", "bank2", "sdcard", "sd-wiring", "uid"):
         value = fields.get(key)
         if not value:
@@ -370,6 +454,15 @@ def write_profile(dest: Path, model: str, fields: dict) -> Path:
     return dest
 
 
+def profile_id(path: Path) -> str:
+    """Read the profile id without requiring the image files to exist."""
+    path = Path(path)
+    data = _load_file(path if path.is_file() else path.resolve())
+    if not data.get("id"):
+        raise ProfileError(f"{path}: missing id")
+    return _check_id(str(data["id"]), path)
+
+
 def seed_session_files(profile_path: Path, copies: dict[str, Path],
                       sessions: Path = SESSIONS) -> None:
     """Copy old save files into the session directory when those names are absent.
@@ -379,7 +472,7 @@ def seed_session_files(profile_path: Path, copies: dict[str, Path],
     are left alone, so this only matters the first time a script moves
     off the old overlay path.
     """
-    directory = session_directory(Path(profile_path), sessions)
+    directory = session_directory(profile_id(Path(profile_path)), sessions)
     for name, source in copies.items():
         source = Path(source)
         dest = directory / name
@@ -394,7 +487,7 @@ def main(argv: list[str] | None = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     try:
         if len(args) >= 2 and args[0] == "session-dir":
-            print(session_directory(Path(args[1])))
+            print(session_directory(profile_id(Path(args[1]))))
             return 0
         if len(args) >= 2 and args[0] == "paths":
             import shlex
@@ -434,8 +527,8 @@ def qemu_argv(qemu: Path, profile: Profile, session: Session, settings: Settings
                 profile, session, settings, state_file=session.state_file))]
     if settings.realtime:
         argv += ["-icount", "shift=2,sleep=off"]
-    if profile.sdcard:
-        argv += ["-drive", f"if=sd,format=raw,file={profile.sdcard}"]
+    if session.sdcard:
+        argv += ["-drive", f"if=sd,format=raw,file={session.sdcard}"]
     if session.rtc == "host":
         argv += ["-rtc", "base=localtime"]
     else:

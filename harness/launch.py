@@ -16,7 +16,7 @@ from pathlib import Path
 
 from .profile import (ROOT, SETTINGS_PATH, ProfileError, apply_env,
                       load_settings, load_profile, prepare_session, qemu_argv,
-                      read_state_file, save_runtime_state)
+                      read_state_file, remember_profile, save_runtime_state)
 
 QEMU = ROOT / "build" / "qemu-system-arm"
 
@@ -37,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
         profile = load_profile(Path(target))
         session = prepare_session(profile)
         session, settings = apply_env(session, settings)
+        remember_profile(settings, profile.path)
         command = qemu_argv(QEMU, profile, session, settings, extra)
     except (ProfileError, ValueError) as exc:
         print(f"gnw: {exc}", file=sys.stderr)

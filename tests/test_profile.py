@@ -1,14 +1,15 @@
 """ROM profile, session directory and settings file. No QEMU."""
-import hashlib
 from pathlib import Path
 
 import pytest
 
 from harness.profile import (ProfileError, apply_env, load_profile,
                              load_settings, machine_options, prepare_session,
-                             qemu_argv, read_state_file, save_runtime_state,
-                             seed_session_files, session_directory,
-                             write_profile)
+                             qemu_argv, read_state_file, remember_profile,
+                             save_runtime_state, seed_session_files,
+                             session_directory, write_profile)
+
+ID = "33333333-3333-4333-8333-333333333333"
 
 
 def _images(tmp: Path, bank2: bool = False, sd: bool = False) -> None:
@@ -24,6 +25,7 @@ def _profile(tmp: Path, extra: str = "") -> Path:
     path = tmp / "zelda.gnw.toml"
     path.write_text(
         "version = 1\n"
+        f'id = "{ID}"\n'
         'model = "zelda"\n'
         'internal = "bank1.bin"\n'
         'external = "ext.bin"\n'
@@ -31,17 +33,26 @@ def _profile(tmp: Path, extra: str = "") -> Path:
     return path
 
 
-def test_session_dir_uses_absolute_path_hash(tmp_path: Path):
-    profile = tmp_path / "zelda.gnw.toml"
-    digest = hashlib.sha256(str(profile.resolve()).encode()).hexdigest()[:8]
-    assert session_directory(profile, tmp_path / "sessions") == (
-        tmp_path / "sessions" / f"zelda-{digest}")
+def test_session_dir_is_the_profile_id(tmp_path: Path):
+    assert session_directory(ID, tmp_path / "sessions") == (
+        tmp_path / "sessions" / ID)
 
 
-def test_same_stem_in_two_directories_do_not_share_a_session(tmp_path: Path):
-    a = tmp_path / "a" / "zelda.gnw.toml"
-    b = tmp_path / "b" / "zelda.gnw.toml"
-    assert session_directory(a) != session_directory(b)
+def test_same_id_shares_a_session_after_the_file_moves(tmp_path: Path):
+    _images(tmp_path)
+    first = _profile(tmp_path)
+    profile = load_profile(first)
+    session = prepare_session(profile, tmp_path / "sessions")
+    (session.directory / "flash.bin").write_bytes(b"saved")
+    moved = tmp_path / "elsewhere" / "zelda.gnw.toml"
+    moved.parent.mkdir()
+    moved.write_text(first.read_text().replace(
+        'internal = "bank1.bin"', f'internal = "{tmp_path / "bank1.bin"}"').replace(
+        'external = "ext.bin"', f'external = "{tmp_path / "ext.bin"}"'))
+    again = prepare_session(load_profile(moved), tmp_path / "sessions")
+    assert again.directory == session.directory
+    assert again.overlay.read_bytes() == b"saved"
+    assert again.profile_path == str(moved.resolve())
 
 
 def test_prepare_copies_images_and_leaves_the_profile_directory(tmp_path: Path):
@@ -123,13 +134,19 @@ def test_write_profile_stores_paths_relative_to_the_file(tmp_path: Path):
     })
     text = dest.read_text()
     assert 'internal = "../../backup/bank1.bin"' in text
+    assert "id = " in text
     loaded = load_profile(dest)
     assert loaded.internal == (images / "bank1.bin").resolve()
+    again = write_profile(dest, "zelda", {
+        "internal": images / "bank1.bin",
+        "external": images / "ext.bin",
+    })
+    assert load_profile(again).id == loaded.id
     old = tmp_path / "old_flash.bin"
     old.write_bytes(b"saved")
     sessions = tmp_path / "sessions"
     seed_session_files(dest, {"flash.bin": old}, sessions)
-    flash = session_directory(dest, sessions) / "flash.bin"
+    flash = session_directory(loaded.id, sessions) / "flash.bin"
     assert flash.read_bytes() == b"saved"
     seed_session_files(dest, {"flash.bin": tmp_path / "missing.bin"}, sessions)
     assert flash.read_bytes() == b"saved"
@@ -146,8 +163,31 @@ def test_qemu_argv_uses_settings_and_sd_drive(tmp_path: Path):
     assert argv[0] == "qemu-system-arm"
     assert any(part.startswith("gnw-zelda,") for part in argv)
     assert "-drive" in argv
-    assert f"file={profile.sdcard}" in argv[argv.index("-drive") + 1]
+    assert f"file={session.sdcard}" in argv[argv.index("-drive") + 1]
+    assert session.sdcard.read_bytes() == b"sd"
+    assert profile.sdcard.read_bytes() == b"sd"
     assert settings.realtime
     assert "-icount" in argv
     assert argv[-2:] == ["-d", "unimp"]
     assert (tmp_path / "settings.toml").read_text().startswith("version = 1\n")
+
+
+def test_recent_keeps_existing_files_and_drops_missing_ones(tmp_path: Path):
+    _images(tmp_path)
+    path = _profile(tmp_path)
+    settings = load_settings(tmp_path / "settings.toml", write=True)
+    gone = tmp_path / "gone.gnw.toml"
+    settings.recent = [str(gone)]
+    remember_profile(settings, path)
+    text = (tmp_path / "settings.toml").read_text()
+    assert f'recent = ["{path.resolve()}"]' in text
+    assert "gone.gnw.toml" not in text
+
+
+def test_load_rejects_a_profile_without_an_id(tmp_path: Path):
+    _images(tmp_path)
+    path = tmp_path / "zelda.gnw.toml"
+    path.write_text('version = 1\nmodel = "zelda"\n'
+                    'internal = "bank1.bin"\nexternal = "ext.bin"\n')
+    with pytest.raises(ProfileError, match="id"):
+        load_profile(path)
