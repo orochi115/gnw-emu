@@ -522,7 +522,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def qemu_argv(qemu: Path, profile: Profile, session: Session, settings: Settings,
-              extra: list[str] | None = None) -> list[str]:
+              extra: list[str] | None = None, *,
+              display: str | None = None) -> list[str]:
     argv = [str(qemu), "-M", ",".join(machine_options(
                 profile, session, settings, state_file=session.state_file))]
     if settings.realtime:
@@ -533,7 +534,7 @@ def qemu_argv(qemu: Path, profile: Profile, session: Session, settings: Settings
         argv += ["-rtc", "base=localtime"]
     else:
         argv += ["-rtc", f"base={session.rtc},clock=vm"]
-    argv += ["-display", settings.display]
+    argv += ["-display", display if display is not None else settings.display]
     argv += extra or []
     return argv
 
