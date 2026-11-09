@@ -1,0 +1,22 @@
+appId: org.gnw-emu.desktop
+productName: gnw-emu
+asar: true
+directories:
+  output: release
+files:
+  - out/**
+  - dist-cli/**
+  - package.json
+extraResources:
+  - from: resources/qemu
+    to: qemu
+mac:
+  icon: build/icon.icns
+  identity: null
+  target: dir
+linux:
+  icon: build/icon.png
+  target: dir
+win:
+  icon: build/icon.ico
+  target: dir

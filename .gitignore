@@ -6,3 +6,17 @@ __pycache__/
 /UserData/
 build/
 .cache/
+/desktop/node_modules/
+/desktop/out/
+/desktop/dist-cli/
+/desktop/release/
+/desktop/test-results/
+/desktop/playwright-report/
+/task_plan.md
+/findings.md
+/progress.md
+
+/desktop/resources/
+/.venv
+
+!/desktop/build/
