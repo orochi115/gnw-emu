@@ -41,7 +41,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 ```sh
 git submodule update --init externals/qemu
 brew install ninja meson pkg-config glib pixman jpeg-turbo
-python3 -m venv .venv && .venv/bin/pip install qemu.qmp pytest pillow pycryptodome PySide6 jeepney
+python3 -m venv .venv && .venv/bin/pip install qemu.qmp pytest pillow pycryptodome
 scripts/build.sh
 ```
 
@@ -50,12 +50,9 @@ qemu 子模块的 `gnw` 分支已经提交了两处钩子：`hw/arm/meson.build`
 ## 运行（窗口）
 
 ```sh
-scripts/ui.sh             # Open、Open Recent、Make
 scripts/run.sh zelda      # 或 mario
 scripts/run.sh path/to/machine.gnw.toml
 ```
-
-`scripts/ui.sh` 是模拟器外壳。Open、Open Recent 和 Make 在这个窗口里，QEMU 用 `-display dbus,p2p=yes` 把画面交回来，画在同一个窗口里，不另开 Cocoa 窗口。Open Recent 读 `UserData/settings.toml` 的 `recent`。Make 里每个字段一行：`model`、`internal`、`external`、可选的 `bank2` 和 `sdcard`、有卡时才可选的 `sd-wiring`，以及打开表单时生成、不可编辑的 `uid`。保存和保存并启动都弹出系统保存对话框。会话仍在 `UserData`。键盘焦点在画面上时，按键送给模拟器。`scripts/run.sh` 仍然单独开 QEMU 窗口。
 
 `zelda` / `mario` 分别加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`。`.gnw.toml` 只写机型、`id` 和只读镜像，镜像路径相对这份文件。电量、RTC、可写 Flash 和 SD 卡工作副本在 `UserData/sessions/<id>/`。声音、窗口、实时节拍和最近打开的列表在 `UserData/settings.toml`（第一次窗口运行时按默认值生成；macOS 的默认窗口是 Cocoa，其他系统是 GTK）。字段见 `docs/profiles.md`。这一次运行可以用 `BATTERY`、`USB_POWER`、`BATTERY_LIFE_MIN`、`CHARGE_TIME_MIN`、`RTC`、`DISPLAY_BACKEND` 覆盖，不写回 profile。
 
