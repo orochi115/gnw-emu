@@ -26,7 +26,12 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
     resolve("release/mac-arm64/gnw-emu.app/Contents/MacOS/gnw-emu");
   const app = await electron.launch({
     executablePath: binary,
-    args: ["--automation", `--user-data-dir=${root}`, profile],
+    args: [
+      "--language=zh-CN",
+      "--automation",
+      `--user-data-dir=${root}`,
+      profile,
+    ],
   });
   try {
     const page = await app.firstWindow();

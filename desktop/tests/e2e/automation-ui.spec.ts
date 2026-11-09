@@ -16,6 +16,7 @@ test("RPC operates real form, saves, loads pixels, preserves game on invalid ROM
   const app = await electron.launch({
     args: [
       resolve("."),
+      "--language=zh-CN",
       "--automation",
       "--test-dialogs",
       `--user-data-dir=${root}`,

@@ -7,7 +7,9 @@ test("application lease is exclusive and can only release its owner", async () =
   const root = await mkdtemp(join(tmpdir(), "gnw-lease-"));
   try {
     const first = await acquireLease(root, "one");
-    await expect(acquireLease(root, "two")).rejects.toThrow(/占用/);
+    await expect(acquireLease(root, "two")).rejects.toMatchObject({
+      code: expect.stringMatching(/^error.lease/),
+    });
     await first.release();
     const second = await acquireLease(root, "two");
     await second.release();
@@ -43,7 +45,9 @@ test("concurrent recovery of a dead owner grants one lease and preserves a live 
         token: "orphan",
       }),
     );
-    await expect(acquireLease(root, "new")).rejects.toThrow(/占用/);
+    await expect(acquireLease(root, "new")).rejects.toMatchObject({
+      code: expect.stringMatching(/^error.lease/),
+    });
   } finally {
     await rm(root, { recursive: true, force: true });
   }

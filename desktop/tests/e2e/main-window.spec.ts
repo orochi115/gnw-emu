@@ -7,6 +7,7 @@ test("native menu opens real maker controls and save cancellation preserves form
   const app = await electron.launch({
     args: [
       resolve("."),
+      "--language=zh-CN",
       "--automation",
       "--test-dialogs",
       `--user-data-dir=${root}`,

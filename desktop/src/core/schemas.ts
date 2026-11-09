@@ -46,6 +46,7 @@ export const sessionSchema = z
 export const settingsSchema = z
   .object({
     formatVersion: z.literal(1),
+    language: z.enum(["system", "zh-CN", "en"]).default("system"),
     audio: z.boolean().default(true),
     realtime: z.boolean().default(true),
   })

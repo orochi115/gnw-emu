@@ -1,4 +1,15 @@
-import { ZodError } from "zod";
+import {
+  initializeLocale,
+  chooseLocale,
+  t,
+  userMessage,
+  errorMessage,
+  type Locale,
+} from "../shared/locale";
+import { UserError } from "../shared/user-error";
+import { loadSettings } from "../core/settings-store";
+import { menuTemplate } from "./menu";
+import type { AppState } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -42,8 +53,20 @@ let active: Promise<unknown> | undefined;
 let observedActivity: Promise<unknown> | undefined;
 const uiEvents = new EventEmitter();
 let bridgeDropped = 0;
+let locale: Locale = "en";
 let closeLogs: () => Promise<void> = async () => {};
 async function main() {
+  const settings = await loadSettings(paths.userData);
+  locale = chooseLocale(
+    app.getLocale(),
+    settings.language,
+    argv.find((v) => v.startsWith("--language="))?.slice(11),
+  );
+  initializeLocale(locale);
+  app.setAboutPanelOptions({
+    applicationName: "gnw-emu",
+    applicationVersion: app.getVersion(),
+  });
   const rotation = pino.transport({
     target: "pino-roll",
     options: {
@@ -125,7 +148,7 @@ async function main() {
   );
   controller.on("state", (state) => {
     if (!window.isDestroyed()) {
-      window.webContents.send("app.state", state);
+      window.webContents.send("app.state", stateForUi(state));
       window.setTitle(
         state.profileName ? `gnw-emu — ${state.profileName}` : "gnw-emu",
       );
@@ -183,38 +206,31 @@ function updateMenu() {
     }
 }
 function createMenu() {
-  const template: Electron.MenuItemConstructorOptions[] = [];
-  if (process.platform === "darwin") template.push({ role: "appMenu" });
-  template.push({
-    label: "文件",
-    submenu: [
-      {
-        id: "file.open",
-        label: "加载 ROM…",
-        accelerator: "CmdOrCtrl+O",
-        click: () => {
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      menuTemplate(process.platform, {
+        open: () => {
           void openRom().catch(showError);
         },
-      },
-      {
-        id: "file.make",
-        label: "制作 ROM…",
-        accelerator: "CmdOrCtrl+N",
-        click: () => makeRom(),
-      },
-      ...(process.platform === "darwin"
-        ? []
-        : [{ type: "separator" as const }, { role: "quit" as const }]),
-    ],
-  });
-  template.push(
-    { role: "editMenu" },
-    ...(process.platform === "darwin" ? [{ role: "windowMenu" as const }] : []),
+        make: () => makeRom(),
+      }),
+    ),
   );
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+}
+function stateForUi(state: AppState): AppState {
+  return {
+    ...state,
+    ...(state.error
+      ? {
+          error: state.errorCode
+            ? errorMessage(state.errorCode, state.errorParams)
+            : userMessage(new Error(state.error)),
+        }
+      : {}),
+  };
 }
 async function perform<T>(work: () => Promise<T>): Promise<T> {
-  if (active) throw new Error("busy: 正在处理另一个操作");
+  if (active) throw new UserError("error.busy");
   const promise = work();
   active = promise;
   observedActivity = promise;
@@ -226,7 +242,7 @@ async function perform<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 async function native<T>(work: () => Promise<T>) {
-  if (nativeDialog) throw new Error("busy: 文件对话框已打开");
+  if (nativeDialog) throw new UserError("error.dialogBusy");
   nativeDialog = true;
   controller.releaseInput();
   updateMenu();
@@ -239,7 +255,7 @@ async function native<T>(work: () => Promise<T>) {
   }
 }
 async function openRom() {
-  if (makerOpen) throw new Error("请先关闭制作 ROM 对话框");
+  if (makerOpen) throw new UserError("error.makerOpen");
   return perform(async () => {
     const path = await native(() => dialogs.open(true));
     if (path) await controller.load(path);
@@ -252,37 +268,6 @@ function makeRom() {
   updateMenu();
   window.webContents.send("ui.make");
 }
-function userMessage(error: unknown) {
-  if (error instanceof ZodError) {
-    const names: Record<string, string> = {
-      model: "机型",
-      internalFlash: "内部 Flash",
-      externalFlash: "外部 Flash",
-      bank2Flash: "Bank 2",
-      sdCard: "SD 卡镜像",
-      deviceUid: "器件 UID",
-      sdWiring: "SD 接线",
-      formatVersion: "配置版本",
-      id: "配置身份",
-    };
-    return error.issues
-      .map(
-        (issue) =>
-          `${names[String(issue.path[0])] ?? "ROM 配置"}：内容不合法，请检查后重试`,
-      )
-      .join("；");
-  }
-  return (error as Error).message.replace(
-    /\b(internalFlash|externalFlash|bank2Flash|sdCard):/g,
-    (field) =>
-      ({
-        "internalFlash:": "内部 Flash：",
-        "externalFlash:": "外部 Flash：",
-        "bank2Flash:": "Bank 2：",
-        "sdCard:": "SD 卡镜像：",
-      })[field] ?? field,
-  );
-}
 function showError(error: Error) {
   logger
     .child("app")
@@ -290,6 +275,11 @@ function showError(error: Error) {
   if (!window.isDestroyed())
     window.webContents.send("app.state", {
       ...controller.state,
+      status:
+        controller.state.status === "idle" ||
+        controller.state.status === "error"
+          ? "error"
+          : controller.state.status,
       error: userMessage(error),
     });
 }
@@ -301,15 +291,19 @@ function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) {
     throw new Error("Unauthorized renderer");
 }
 function registerIpc() {
+  ipcMain.handle("app.locale", (event) => {
+    trusted(event);
+    return locale;
+  });
   ipcMain.handle("app.state", (event) => {
     trusted(event);
-    return controller.state;
+    return stateForUi(controller.state);
   });
   ipcMain.handle("rom.open", (event) => {
     trusted(event);
     return openRom().catch((error) => {
       showError(error);
-      throw error;
+      throw new Error(userMessage(error));
     });
   });
   ipcMain.handle("rom.make", (event) => {
@@ -458,7 +452,7 @@ async function dispatch(method: string, params: any) {
     case "ui.screenshot":
       return ui.screenshot(params.path);
     case "app.getState":
-      return controller.state;
+      return stateForUi(controller.state);
     case "app.getDiagnostics":
       return {
         ...controller.diagnostics(),
@@ -563,9 +557,9 @@ async function shutdown() {
   } catch (error) {
     await dialog.showMessageBox(window, {
       type: "warning",
-      message: "无法确认本次状态保存",
-      detail: (error as Error).message,
-      buttons: ["退出"],
+      message: t("error.saveTitle"),
+      detail: userMessage(error),
+      buttons: [t("menu.quit")],
     });
   } finally {
     for (const cancel of waiters.values()) cancel();

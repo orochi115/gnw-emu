@@ -7,6 +7,7 @@ test("dark theme, narrow dialog, optional fields and recoverable errors remain u
   const app = await electron.launch({
     args: [
       resolve("."),
+      "--language=zh-CN",
       "--automation",
       "--test-dialogs",
       `--user-data-dir=${root}`,
@@ -31,12 +32,12 @@ test("dark theme, narrow dialog, optional fields and recoverable errors remain u
     await page
       .getByLabel("外部 Flash", { exact: true })
       .fill(resolve("../../firmware/flash_backup_zelda.bin"));
-    await page.getByText("高级选项", { exact: true }).click();
-    await page.getByLabel("器件 UID", { exact: false }).fill("bad");
-    await page.getByRole("button", { name: "保存…", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("器件 UID");
+    await expect(page.locator('[data-ui="rom.deviceUid"]')).toHaveCount(0);
+    await expect(page.getByLabel("SD 卡接线", { exact: true })).toBeDisabled();
+    await page.locator('[data-ui="rom.sdCard"]').fill("/tmp/card.img");
+    await page.getByLabel("SD 卡接线", { exact: true }).selectOption("ospi");
     await page.screenshot({
-      path: resolve("../out/ui-validation/dark-narrow-error.png"),
+      path: resolve("../out/ui-validation/dark-narrow-form.png"),
     });
     await page.getByRole("button", { name: "取消", exact: true }).click();
     await page.emulateMedia({ colorScheme: "light" });
@@ -72,7 +73,7 @@ test("dark theme, narrow dialog, optional fields and recoverable errors remain u
     });
     await page.getByRole("button", { name: "保存…", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText(
-      "内部 Flash： 无法读取文件",
+      "内部 Flash：无法读取文件",
     );
 
     await expect(page.getByLabel("内部 Flash", { exact: true })).toBeFocused();

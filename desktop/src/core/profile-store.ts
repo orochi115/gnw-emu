@@ -1,3 +1,4 @@
+import { UserError } from "../shared/user-error";
 import { stat } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -14,7 +15,7 @@ export async function validateImages(profile: Profile) {
     const path = profile[key];
     if (!path) continue;
     const file = await stat(path).catch(() => {
-      throw new Error(`${key}: 无法读取文件 ${path}`);
+      throw new UserError("error.imageRead", { field: key, path });
     });
     const limit =
       key === "bank2Flash"
@@ -25,12 +26,12 @@ export async function validateImages(profile: Profile) {
             ? 256 * 1024 * 1024
             : Number.MAX_SAFE_INTEGER;
     if (!file.isFile() || !file.size || file.size > limit)
-      throw new Error(`${key}: 镜像为空或超出支持范围`);
+      throw new UserError("error.imageSize", { field: key });
   }
 }
 export async function loadProfile(path: string): Promise<Profile> {
   if (!path.endsWith(".gnw.json"))
-    throw new Error("请选择 .gnw.json ROM 配置文件");
+    throw new UserError("error.profileExtension");
   const data = profileSchema.parse(await readJson(path));
   const profile: Profile = { ...data, path: resolve(path) };
   for (const key of imageFields)
@@ -43,7 +44,8 @@ export async function createProfile(
   path: string,
   fields: ProfileFields,
 ): Promise<Profile> {
-  if (!path.endsWith(".gnw.json")) throw new Error("文件扩展名应为 .gnw.json");
+  if (!path.endsWith(".gnw.json"))
+    throw new UserError("error.profileExtension");
   const data = profileSchema.parse({
     ...fields,
     formatVersion: 1,
@@ -88,8 +90,6 @@ export async function ensureProfile(
     if (requested[key]) requested[key] = resolve(requested[key]!);
   for (const key of ["model", ...imageFields, "sdWiring", "deviceUid"] as const)
     if (existing[key] !== requested[key])
-      throw new Error(
-        "现有 ROM 配置与输入不同；使用 --fresh 创建新身份，原存档会保留",
-      );
+      throw new UserError("error.profileChanged");
   return existing;
 }

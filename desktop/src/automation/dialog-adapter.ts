@@ -1,3 +1,4 @@
+import { t } from "../shared/locale";
 import { dialog, type BrowserWindow } from "electron";
 import { RpcError } from "./server";
 export class DialogAdapter {
@@ -26,10 +27,10 @@ export class DialogAdapter {
       return next.path;
     }
     const result = await dialog.showOpenDialog(this.window, {
-      title: profile ? "加载 ROM" : "选择镜像",
+      title: t(profile ? "dialog.open" : "dialog.image"),
       properties: ["openFile"],
       ...(profile
-        ? { filters: [{ name: "ROM 配置", extensions: ["gnw.json"] }] }
+        ? { filters: [{ name: t("rom.profile"), extensions: ["gnw.json"] }] }
         : {}),
     });
     return result.canceled ? null : result.filePaths[0];
@@ -42,9 +43,9 @@ export class DialogAdapter {
       return next.path;
     }
     const result = await dialog.showSaveDialog(this.window, {
-      title: "保存 ROM 配置",
+      title: t("dialog.save"),
       defaultPath: "game.gnw.json",
-      filters: [{ name: "ROM 配置", extensions: ["gnw.json"] }],
+      filters: [{ name: t("rom.profile"), extensions: ["gnw.json"] }],
     });
     return result.canceled ? null : (result.filePath ?? null);
   }

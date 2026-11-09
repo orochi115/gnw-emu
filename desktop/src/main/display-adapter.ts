@@ -1,3 +1,4 @@
+import { UserError } from "../shared/user-error";
 import {
   utilityProcess,
   MessageChannelMain,
@@ -67,7 +68,9 @@ export async function startDisplay(
   });
   child.on("exit", (code) => {
     if (!closed) {
-      const e = new Error(`画面接收进程退出 (${code})`);
+      const e = new UserError("error.displayExited", {
+        code: code ?? "signal",
+      });
       portReject(e);
       readyReject(e);
       events.emit("failure", e);
@@ -79,7 +82,7 @@ export async function startDisplay(
     port1,
   ]);
   try {
-    const port = await deadline(portPromise, 10000, "准备画面端点");
+    const port = await deadline(portPromise, 10000, "prepareDisplay");
     return {
       port,
       ready,
@@ -96,7 +99,7 @@ export async function startDisplay(
         await deadline(
           new Promise<void>((r) => child.once("exit", () => r())),
           2000,
-          "关闭画面接收端",
+          "closeDisplay",
         ).catch(() => child.kill());
       },
     };

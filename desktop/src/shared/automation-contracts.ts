@@ -20,7 +20,25 @@ const schemas: Record<string, z.ZodType> = {
   "app.getDiagnostics": empty,
   "automation.capabilities": empty,
   "logging.getConfig": empty,
-  "ui.menu": z.object({ id: z.enum(["file.open", "file.make"]) }).strict(),
+  "ui.menu": z
+    .object({
+      id: z.enum([
+        "file.open",
+        "file.make",
+        "app.quit",
+        "edit.undo",
+        "edit.redo",
+        "edit.cut",
+        "edit.copy",
+        "edit.paste",
+        "edit.selectAll",
+        "window.minimize",
+        "window.zoom",
+        "window.front",
+        "window.close",
+      ]),
+    })
+    .strict(),
   "ui.click": z.object({ id }).strict(),
   "ui.fill": z.object({ id, value: z.string().max(8192) }).strict(),
   "ui.select": z.object({ id, value: z.string().max(128) }).strict(),

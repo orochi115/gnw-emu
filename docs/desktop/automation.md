@@ -21,8 +21,8 @@ ui.menu/click/fill/select/key 返回 operationId。用 `automation.getOperation 
 
 | 方法                             | 参数与读取                                                                              |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
-| ui.inspect                       | 实际 DOM 控件、可见/禁用/错误状态、表单值、原生菜单、窗口、Canvas最后收到/呈现帧        |
-| ui.menu                          | id=file.open / file.make；执行真实原生 Menu handler                                     |
+| ui.inspect                       | 实际语言、DOM 控件、可见/禁用/错误/单选状态、表单值、原生菜单、窗口、Canvas最后收到/呈现帧        |
+| ui.menu                          | id=file.open / file.make / app.quit / edit.* / window.*；执行自定义 Menu handler 或对应 Electron 原生 role 命令                                     |
 | ui.click                         | id=真实 data-ui 控件；发送 Electron 鼠标事件                                            |
 | ui.fill                          | id/value；真实点击、选择文本、insertText触发输入                                        |
 | ui.select                        | id/value；真实 select DOM 的 input/change事件                                           |
@@ -34,9 +34,9 @@ ui.menu/click/fill/select/key 返回 operationId。用 `automation.getOperation 
 | app.getDiagnostics               | 帧/队列/丢弃、输入掩码、进程及内存；非普通用户界面                                      |
 | logging.getConfig/configure/tail | 见 logging.md                                                                           |
 
-动作可附 runtimeSessionId；不匹配时报 stale。失效窗口、不可见/禁用、模态阻挡均明确报错。原生菜单测试的边界是 Menu click handler，不能替代逐平台真实菜单弹出/键盘导航检查。
+动作可附 runtimeSessionId；不匹配时报 stale。失效窗口、不可见/禁用、模态阻挡均明确报错。原生菜单测试的边界是自定义 Menu click handler / 对应原生 role 命令，不能替代逐平台真实菜单弹出/键盘导航检查。
 
-控件：app.open/app.make、rom.dialog、rom.model、rom.internalFlash/externalFlash/bank2Flash/sdCard/deviceUid/sdWiring、rom.browse.<字段>、rom.save/saveAndLoad/cancel、game.canvas。游戏按键经过真实 keyboard event 与默认映射；自动化不直接改 core 按钮状态。
+控件：app.open/app.make、rom.dialog、rom.model（radiogroup）、rom.model.zelda/mario（radio）、rom.internalFlash/externalFlash/bank2Flash/sdCard/sdWiring、rom.browse.<字段>、rom.save/saveAndLoad/cancel、game.canvas。游戏按键经过真实 keyboard event 与默认映射；自动化不直接改 core 按钮状态。
 
 等待由业务/模态事件驱动，DOM/Canvas还提供200ms条件复核；不会把某个固定 sleep当作业务完成。截图返回图片尺寸，最后呈现序号仅说明绘制完成，不代表输入已被固件响应。
 
@@ -45,3 +45,5 @@ ui.menu/click/fill/select/key 返回 operationId。用 `automation.getOperation 
 错误码：-32600请求、-32601方法、-32602参数、-32000业务失败、-32001忙、-32002超时、-32003受阻/禁用、-32004对象不存在、-32005陈旧会话、-32006等待取消。无正确 token 返回 HTTP401。
 
 测试：`npm run test:e2e` 包含独立 Playwright UI 测试与 RPC 完整制作/加载场景；失败保留trace。截图、inspect/state/log材料写本地 out/ui-validation；不提交用户镜像。后续 MCP 可调用这一契约，不另建应用状态。
+
+机型用 ui.click 选择 rom.model.zelda/mario，ui.inspect 的 checked 返回真实选中状态；ui.fill 仅接受文本输入框。app.quit/window.close 会结束应用，退出后无法查询 operationId，应等待进程结束/endpoint 清理并读取存档。阶段和业务错误分别有稳定 stage/errorCode/errorParams，不用翻译文本作测试断言。

@@ -1,3 +1,4 @@
+import { t } from "../../shared/locale";
 import { useEffect, useRef } from "react";
 export function GameScreen({
   runtimeSessionId,
@@ -97,7 +98,7 @@ export function GameScreen({
         ref={canvas}
         width={320}
         height={240}
-        aria-label="游戏画面"
+        aria-label={t("app.game")}
         data-ui="game.canvas"
       />
     </div>

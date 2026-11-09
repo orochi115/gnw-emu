@@ -14,11 +14,11 @@ UTF-8 标准 JSON；`formatVersion: 1`。拒绝未知字段、错误类型和未
 
 文件名必须以 `.gnw.json` 结尾。UUID 是存档身份；model 为 zelda/mario。镜像路径相对配置文件目录，也接受绝对路径。制作时尽量保存相对路径，可整体移动。
 
-可选 bank2Flash（≤256 KiB）、sdCard、sdWiring（spi1/ospi，要求有 sdCard，省略为 spi1）、deviceUid（24 位十六进制；不同于 UUID）。文件必须可读、非空。内部 Flash 应 ≤1 MiB，外部 Flash ≤256 MiB；外部 Flash 不要求固定 1/4 MiB，也不校验为某一游戏固件。尺寸边界用于阻止明显无效输入；固件行为仍由 QEMU 判断。
+可选 bank2Flash（≤256 KiB）、sdCard、sdWiring（spi1/ospi，要求有 sdCard，省略为 spi1）、deviceUid（24 位十六进制；不同于 UUID）。制作 UI 不提供 deviceUid 输入；高级用户仍可手改 JSON。ospi 指外部 Flash 引脚上的软件 SPI。文件必须可读、非空。内部 Flash 应 ≤1 MiB，外部 Flash ≤256 MiB；外部 Flash 不要求固定 1/4 MiB，也不校验为某一游戏固件。尺寸边界用于阻止明显无效输入；固件行为仍由 QEMU 判断。
 
 `session.json` 保存 formatVersion、电量 battery（整数0..100）、usbPower（boolean）、rtc（host 或 YYYY-MM-DDTHH:mm:ss）、batteryLifeMinutes、chargeTimeMinutes（非负整数，0 禁用相应变化）。默认100、false、host、480、180。
 
-`settings.json` 保存 formatVersion、audio、realtime；后两项默认 true。缺文件按默认写入，损坏文件报错而不是静默覆盖。
+`settings.json` 保存 formatVersion、language（system/zh-CN/en，默认 system）、audio、realtime；后两项默认 true。缺文件按默认写入，损坏文件报错而不是静默覆盖。
 
 开发默认 `<项目>/UserData`；打包默认系统应用数据目录下的 UserData；`--user-data-dir=/绝对/可写路径` 显式指定便携数据目录。Electron 自己的缓存位于该目录的 electron-host，和业务 JSON 分开。
 

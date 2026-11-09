@@ -1,3 +1,4 @@
+import { UserError } from "../shared/user-error";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { writeJson } from "./atomic-file";
@@ -20,21 +21,21 @@ export async function acquireLease(directory: string, token: string) {
     try {
       await mkdir(recovery);
     } catch {
-      throw new Error("存档被占用：另一个启动器正在核验租约");
+      throw new UserError("error.leaseRecovery");
     }
     try {
       let owner: { pid: number; childPid?: number; token: string };
       try {
         owner = JSON.parse(await readFile(join(path, "owner.json"), "utf8"));
       } catch {
-        throw new Error("存档被占用：租约归属未知，请确认所有模拟器进程退出");
+        throw new UserError("error.leaseUnknown");
       }
       if (
         !Number.isInteger(owner.pid) ||
         alive(owner.pid) ||
         (owner.childPid && alive(owner.childPid))
       )
-        throw new Error("存档被另一个模拟器占用");
+        throw new UserError("error.leaseOccupied");
       // Recovery itself is serialized. Re-read under that guard before
       // removal, so a second recovery cannot remove the new owner's lease.
       await rm(path, { recursive: true });

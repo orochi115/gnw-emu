@@ -7,9 +7,12 @@ export interface AppState {
   profileName?: string;
   profilePath?: string;
   error?: string;
+  errorCode?: string;
+  errorParams?: Record<string, string | number>;
   saveUncertain?: boolean;
 }
 export interface DesktopApi {
+  locale(): Promise<"zh-CN" | "en">;
   state(): Promise<AppState>;
   onState(callback: (state: AppState) => void): () => void;
   openRom(): Promise<void>;

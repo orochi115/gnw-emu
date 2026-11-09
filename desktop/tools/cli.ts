@@ -1,3 +1,4 @@
+import { userMessage } from "../src/shared/locale";
 import { resolve, join } from "node:path";
 import {
   createProfile,
@@ -111,6 +112,6 @@ try {
       "Usage: cli.js create FILE.gnw.json JSON | session-dir FILE | paths FILE | launch [FILE]",
     );
 } catch (error) {
-  process.stderr.write((error as Error).message + "\n");
+  process.stderr.write(userMessage(error) + "\n");
   process.exitCode = 1;
 }

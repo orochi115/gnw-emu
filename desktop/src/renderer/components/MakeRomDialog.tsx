@@ -1,13 +1,13 @@
+import { t, fieldLabel } from "../../shared/locale";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { ProfileFields } from "../../core/schemas";
-const labels: Record<string, string> = {
-  internalFlash: "内部 Flash",
-  externalFlash: "外部 Flash",
-  bank2Flash: "Bank 2",
-  sdCard: "SD 卡镜像",
-  deviceUid: "器件 UID",
-};
 export function MakeRomDialog({ close }: { close: () => void }) {
+  const labels = Object.fromEntries(
+    ["internalFlash", "externalFlash", "bank2Flash", "sdCard"].map((key) => [
+      key,
+      fieldLabel(key),
+    ]),
+  );
   const dialog = useRef<HTMLDialogElement>(null);
   const focusTarget = useRef<string | null>(null);
   const [fields, setFields] = useState<ProfileFields>({
@@ -59,7 +59,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
       );
       if (key) {
         setInvalid((v) => ({ ...v, [key]: message }));
-        focusTarget.current = key === "deviceUid" ? "uid" : `field-${key}`;
+        focusTarget.current = `field-${key}`;
       }
     } finally {
       setBusy(false);
@@ -69,7 +69,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
     <div className="field" key={key}>
       <label htmlFor={`field-${key}`}>
         {labels[key]}
-        {!required && <span className="optional">可选</span>}
+        {!required && <span className="optional">{t("rom.optional")}</span>}
       </label>
       <div className="file-input">
         <input
@@ -77,7 +77,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
           data-ui={`rom.${key}`}
           value={fields[key] ?? ""}
           title={fields[key] ?? ""}
-          placeholder="选择镜像文件"
+          placeholder={t("rom.chooseImage")}
           spellCheck={false}
           disabled={busy}
           aria-invalid={!!invalid[key]}
@@ -85,12 +85,12 @@ export function MakeRomDialog({ close }: { close: () => void }) {
           onChange={(e) => update(key, e.target.value)}
           onBlur={() => {
             if (required && !String(fields[key]).trim())
-              setInvalid((v) => ({ ...v, [key]: "请选择镜像文件" }));
+              setInvalid((v) => ({ ...v, [key]: t("rom.chooseImage") }));
           }}
         />
         <button
           type="button"
-          aria-label={`浏览${labels[key]}`}
+          aria-label={t("rom.browseField", { field: labels[key] })}
           data-ui={`rom.browse.${key}`}
           disabled={busy}
           onClick={async () => {
@@ -102,7 +102,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
             }
           }}
         >
-          浏览…
+          {t("rom.browse")}
         </button>
       </div>
       {invalid[key] && (
@@ -124,73 +124,68 @@ export function MakeRomDialog({ close }: { close: () => void }) {
       }}
     >
       <header className="dialog-header">
-        <h1 id="maker-title">制作 ROM</h1>
-        <p>组合已有镜像，保存为可直接加载的 ROM 配置。</p>
+        <h1 id="maker-title">{t("rom.title")}</h1>
+        <p>{t("rom.description")}</p>
       </header>
       <div className="dialog-body">
         <section>
           <div className="field">
-            <label htmlFor="model">机型</label>
-            <select
-              id="model"
+            <span id="model-label" className="field-label">
+              {t("rom.model")}
+            </span>
+            <div
+              className="model-selector"
+              role="radiogroup"
+              aria-labelledby="model-label"
               data-ui="rom.model"
-              value={fields.model}
-              disabled={busy}
-              onChange={(e) => update("model", e.target.value)}
             >
-              <option value="zelda">Game & Watch · Zelda</option>
-              <option value="mario">Game & Watch · Mario</option>
-            </select>
+              {(["zelda", "mario"] as const).map((model) => (
+                <label className="model-option" key={model}>
+                  <input
+                    type="radio"
+                    name="model"
+                    value={model}
+                    data-ui={`rom.model.${model}`}
+                    checked={fields.model === model}
+                    disabled={busy}
+                    onChange={() => update("model", model)}
+                  />
+                  <span>{model === "zelda" ? "Zelda" : "Mario"}</span>
+                </label>
+              ))}
+            </div>
           </div>
           {file("internalFlash", true)}
           {file("externalFlash", true)}
         </section>
         <section className="optional-section">
-          <h2>可选镜像</h2>
+          <h2>{t("rom.optionalImages")}</h2>
           {file("bank2Flash")}
           {file("sdCard")}
-          {fields.sdCard && (
+          {
             <div className="field">
-              <label htmlFor="sd-wiring">SD 接线</label>
+              <label htmlFor="sd-wiring">{t("rom.sdWiring")}</label>
               <select
                 id="sd-wiring"
                 data-ui="rom.sdWiring"
                 value={fields.sdWiring ?? "spi1"}
-                disabled={busy}
+                disabled={busy || !fields.sdCard?.trim()}
+                aria-describedby={
+                  !fields.sdCard?.trim() ? "sd-wiring-hint" : undefined
+                }
                 onChange={(e) => update("sdWiring", e.target.value)}
               >
-                <option value="spi1">SPI1</option>
-                <option value="ospi">OSPI</option>
+                <option value="spi1">{t("rom.spi1")}</option>
+                <option value="ospi">{t("rom.ospi")}</option>
               </select>
+              {!fields.sdCard?.trim() && (
+                <p id="sd-wiring-hint" className="hint">
+                  {t("rom.wiringHint")}
+                </p>
+              )}
             </div>
-          )}
+          }
         </section>
-        <details>
-          <summary>高级选项</summary>
-          <div className="field">
-            <label htmlFor="uid">
-              器件 UID<span className="optional">可选</span>
-            </label>
-            <input
-              id="uid"
-              aria-invalid={!!invalid.deviceUid}
-              aria-describedby={
-                invalid.deviceUid ? "error-deviceUid" : undefined
-              }
-              data-ui="rom.deviceUid"
-              value={fields.deviceUid ?? ""}
-              placeholder="24 位十六进制，留空使用默认值"
-              disabled={busy}
-              onChange={(e) => update("deviceUid", e.target.value)}
-            />
-            <p className="hint">仅用于需要特定设备身份的固件。</p>
-            {invalid.deviceUid && (
-              <p id="error-deviceUid" className="field-error">
-                {invalid.deviceUid}
-              </p>
-            )}
-          </div>
-        </details>
         {error && (
           <p role="alert" className="form-error">
             {error}
@@ -204,7 +199,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
           disabled={busy}
           onClick={close}
         >
-          取消
+          {t("rom.cancel")}
         </button>
         <div className="save-actions">
           <button
@@ -213,7 +208,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
             disabled={!ready}
             onClick={() => save(false)}
           >
-            保存…
+            {t("rom.save")}
           </button>
           <button
             type="button"
@@ -222,7 +217,7 @@ export function MakeRomDialog({ close }: { close: () => void }) {
             disabled={!ready}
             onClick={() => save(true)}
           >
-            {busy ? "正在保存…" : "保存并加载…"}
+            {t(busy ? "rom.saving" : "rom.saveAndLoad")}
           </button>
         </div>
       </footer>

@@ -33,9 +33,9 @@ test("relative profile paths survive moving as a unit and each creation gets a n
   expect((await loadProfile(join(root, "one.gnw.json"))).internalFlash).toBe(
     join(root, "bank1.bin"),
   );
-  await expect(loadProfile(join(root, "one.gnw.toml"))).rejects.toThrow(
-    /gnw.json/,
-  );
+  await expect(loadProfile(join(root, "one.gnw.toml"))).rejects.toMatchObject({
+    code: "error.profileExtension",
+  });
 });
 test("session copies are isolated, never replace a save, and persist only device state", async () => {
   const root = await fixture();
@@ -87,6 +87,6 @@ test("script profile ensure reuses only the same JSON configuration and refresh 
   expect((await ensureProfile(path, fields)).id).toBe(first.id);
   await expect(
     ensureProfile(path, { ...fields, model: "mario" }),
-  ).rejects.toThrow(/不同/);
+  ).rejects.toMatchObject({ code: "error.profileChanged" });
   expect((await ensureProfile(path, fields, true)).id).not.toBe(first.id);
 });

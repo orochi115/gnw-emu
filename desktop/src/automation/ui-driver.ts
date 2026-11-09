@@ -1,4 +1,4 @@
-import { BrowserWindow, Menu } from "electron";
+import { app, BrowserWindow, Menu } from "electron";
 import { writeFile } from "node:fs/promises";
 import { RpcError } from "./server";
 export class UiDriver {
@@ -9,7 +9,7 @@ export class UiDriver {
   async inspect() {
     this.check();
     const dom = await this.window.webContents.executeJavaScript(
-      `({dialogOpen:!!document.querySelector('dialog[open]'),status:document.querySelector('main')?.dataset.status,controls:Array.from(document.querySelectorAll('[data-ui]')).map(e=>({id:e.dataset.ui,role:e.getAttribute('role')||e.tagName.toLowerCase(),label:e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText?.slice(0,160),value:e.value,disabled:!!e.disabled,visible:!!e.getClientRects().length,invalid:e.getAttribute('aria-invalid')})),canvas:(()=>{const e=document.querySelector('canvas');return e?{...e.dataset,width:e.width,height:e.height,displayWidth:e.clientWidth,displayHeight:e.clientHeight}:null})()})`,
+      `({locale:document.documentElement.lang,dialogOpen:!!document.querySelector('dialog[open]'),status:document.querySelector('main')?.dataset.status,controls:Array.from(document.querySelectorAll('[data-ui]')).map(e=>({id:e.dataset.ui,role:e.getAttribute('role')||e.tagName.toLowerCase(),label:e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText?.slice(0,160),value:e.value,checked:e.type==="radio"?e.checked:undefined,disabled:!!e.disabled,visible:!!e.getClientRects().length,invalid:e.getAttribute('aria-invalid')})),canvas:(()=>{const e=document.querySelector('canvas');return e?{...e.dataset,width:e.width,height:e.height,displayWidth:e.clientWidth,displayHeight:e.clientHeight}:null})()})`,
     );
     return {
       ...dom,
@@ -33,7 +33,7 @@ export class UiDriver {
     if (!/^[a-zA-Z0-9.]+$/.test(id))
       throw new RpcError(-32602, "Invalid control ID");
     const info = await this.window.webContents.executeJavaScript(
-      `(()=>{const e=document.querySelector(${JSON.stringify('[data-ui="')}+${JSON.stringify(id)}+${JSON.stringify('"]')});if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,visible:!!e.getClientRects().length,disabled:!!e.disabled,tag:e.tagName,insideModal:!!e.closest('dialog[open]'),modal:!!document.querySelector('dialog[open]')};})()`,
+      `(()=>{const e=document.querySelector(${JSON.stringify('[data-ui="')}+${JSON.stringify(id)}+${JSON.stringify('"]')});if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,visible:!!e.getClientRects().length,disabled:!!e.disabled,tag:e.tagName,inputType:e.type,insideModal:!!e.closest('dialog[open]'),modal:!!document.querySelector('dialog[open]')};})()`,
     );
     if (!info || !info.visible)
       throw new RpcError(-32004, "Control not visible");
@@ -71,7 +71,12 @@ export class UiDriver {
     if (typeof value !== "string" || value.length > 8192)
       throw new RpcError(-32602, "Invalid field value");
     const info = await this.control(id);
-    if (info.tag !== "INPUT")
+    if (
+      info.tag !== "INPUT" ||
+      !["text", "search", "url", "email", "tel", "password"].includes(
+        info.inputType,
+      )
+    )
       throw new RpcError(-32602, "Control is not a text input");
     await this.click(id);
     this.window.webContents.sendInputEvent({
@@ -105,8 +110,52 @@ export class UiDriver {
     const item = menu?.getMenuItemById(id);
     if (!item || !item.enabled)
       throw new RpcError(-32003, "Menu disabled or missing");
-    item.click(undefined, this.window, undefined);
-    return { menu: id, boundary: "native Menu handler" };
+    // macOS executes built-in roles in native code; MenuItem.click alone
+    // only invokes JavaScript handlers. Use the corresponding Electron
+    // native command without bypassing window close/before-quit lifecycle.
+    switch (item.role?.toLowerCase()) {
+      case "quit":
+        app.quit();
+        break;
+      case "close":
+        this.window.close();
+        break;
+      case "minimize":
+        this.window.minimize();
+        break;
+      case "zoom":
+        this.window.isMaximized()
+          ? this.window.unmaximize()
+          : this.window.maximize();
+        break;
+      case "front":
+        for (const window of BrowserWindow.getAllWindows()) window.show();
+        break;
+      case "undo":
+        this.window.webContents.undo();
+        break;
+      case "redo":
+        this.window.webContents.redo();
+        break;
+      case "cut":
+        this.window.webContents.cut();
+        break;
+      case "copy":
+        this.window.webContents.copy();
+        break;
+      case "paste":
+        this.window.webContents.paste();
+        break;
+      case "selectall":
+        this.window.webContents.selectAll();
+        break;
+      default:
+        item.click(undefined, this.window, undefined);
+    }
+    return {
+      menu: id,
+      boundary: item.role ? "native role command" : "native Menu handler",
+    };
   }
   async key(key: string, down: boolean) {
     this.check();

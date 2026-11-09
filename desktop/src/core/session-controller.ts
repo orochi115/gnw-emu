@@ -1,3 +1,4 @@
+import { UserError, errorState } from "../shared/user-error";
 import { EventEmitter } from "node:events";
 import { spawn, type ChildProcess } from "node:child_process";
 import { access, mkdir } from "node:fs/promises";
@@ -25,7 +26,10 @@ export async function deadline<T>(
     return await Promise.race([
       promise,
       new Promise<never>((_r, j) => {
-        timer = setTimeout(() => j(new Error(`${label}超时`)), ms);
+        timer = setTimeout(
+          () => j(new UserError("error.timeout", { action: label })),
+          ms,
+        );
       }),
     ]);
   } finally {
@@ -67,7 +71,7 @@ export class SessionController extends EventEmitter {
     this.emit("state", update);
   }
   async load(path: string) {
-    if (this.busy) throw new Error("busy: 模拟器正在切换，请稍候");
+    if (this.busy) throw new UserError("error.busy");
     this.busy = true;
     try {
       // Validate all immutable inputs before stopping the old machine.
@@ -77,7 +81,7 @@ export class SessionController extends EventEmitter {
       const id = randomUUID();
       this.publish({
         status: "starting",
-        stage: "正在准备镜像",
+        stage: "prepare",
         runtimeSessionId: id,
         profileName: basename(path, ".gnw.json"),
         profilePath: path,
@@ -148,9 +152,10 @@ export class SessionController extends EventEmitter {
           );
         });
         const startupFailure = runtime.exit.then((code) => {
-          throw new Error(
-            `模拟器启动失败 (${code})：${stderr || "进程已退出"}`,
-          );
+          throw new UserError("error.startup", {
+            code: code ?? "signal",
+            detail: stderr,
+          });
         });
         qmp.on("disconnect", () => {
           if (
@@ -158,7 +163,7 @@ export class SessionController extends EventEmitter {
             !runtime.stopping &&
             this.state.status === "running"
           )
-            void this.failed(new Error("模拟器控制连接已断开"));
+            void this.failed(new UserError("error.controlDisconnected"));
         });
         display.events.on("failure", (error) => {
           if (
@@ -174,16 +179,18 @@ export class SessionController extends EventEmitter {
             !runtime.stopping &&
             this.state.status === "running"
           )
-            void this.failed(new Error(`模拟器意外退出 (${code})`));
+            void this.failed(
+              new UserError("error.exited", { code: code ?? "signal" }),
+            );
         });
-        this.publish({ ...this.state, stage: "正在连接模拟器" });
+        this.publish({ ...this.state, stage: "connect" });
         await deadline(
           Promise.race([
             Promise.all([qmp.ready, display.ready]),
             startupFailure,
           ]),
           this.options.timeout ?? 10000,
-          "连接模拟器",
+          "connect",
         );
         await qmp.command("qom-set", {
           path: "/machine",
@@ -192,11 +199,11 @@ export class SessionController extends EventEmitter {
         });
         const frame = display.waitForFrame();
         await qmp.command("cont");
-        this.publish({ ...this.state, stage: "正在启动游戏" });
+        this.publish({ ...this.state, stage: "start" });
         await deadline(
           Promise.race([frame, startupFailure]),
           this.options.timeout ?? 10000,
-          "接收游戏画面",
+          "frame",
         );
         this.publish({ ...this.state, status: "running", stage: undefined });
       } catch (error) {
@@ -206,7 +213,7 @@ export class SessionController extends EventEmitter {
           await display?.close();
           await lease?.release();
         }
-        this.publish({ status: "error", error: (error as Error).message });
+        this.publish({ status: "error", ...errorState(error) });
         throw error;
       }
     } finally {
@@ -221,7 +228,7 @@ export class SessionController extends EventEmitter {
     await this.stop().catch(() => {});
     this.publish({
       status: "error",
-      error: error.message,
+      ...errorState(error),
       saveUncertain: true,
     });
   }
@@ -295,12 +302,12 @@ export class SessionController extends EventEmitter {
     this.publish({
       ...this.state,
       status: "stopping",
-      stage: "正在保存并退出",
+      stage: "stop",
     });
     let error: Error | undefined;
     try {
       runtime.input.releaseAll();
-      await deadline(runtime.input.flush(), 1000, "释放按键").catch(() => {});
+      await deadline(runtime.input.flush(), 1000, "release").catch(() => {});
       if (
         runtime.child &&
         runtime.child.exitCode === null &&
@@ -308,11 +315,11 @@ export class SessionController extends EventEmitter {
       ) {
         await runtime.qmp.command("quit", undefined, 1000).catch(() => {});
         try {
-          await deadline(runtime.exit!, 5000, "退出模拟器");
+          await deadline(runtime.exit!, 5000, "quit");
         } catch (e) {
           runtime.child.kill("SIGKILL");
-          await deadline(runtime.exit!, 3000, "终止模拟器");
-          throw new Error("模拟器未正常退出，无法确认状态保存");
+          await deadline(runtime.exit!, 3000, "kill");
+          throw new UserError("error.saveUncertain");
         }
       }
       if (runtime.child) {
@@ -334,7 +341,7 @@ export class SessionController extends EventEmitter {
     if (error) {
       this.publish({
         status: "error",
-        error: error.message,
+        ...errorState(error),
         saveUncertain: true,
       });
       throw error;
