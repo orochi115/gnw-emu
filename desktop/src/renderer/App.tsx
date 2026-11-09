@@ -33,6 +33,13 @@ export function App() {
     clockMode: false,
     pixelPerfect: false,
     scaleFactor: 1,
+    pixelScale: 4,
+    renderScale: null,
+    normalScale: 4,
+    clockScale: 1,
+    preferredClockMode: false,
+    transitioning: false,
+    controlWidth: 960,
     focused: true,
     maximized: false,
   });
@@ -129,8 +136,7 @@ export function App() {
           runtimeSessionId={running ? state.runtimeSessionId : undefined}
           model={state.model}
           showChassis={preferences.showChassis}
-          compact={host.clockMode}
-          pixelPerfect={host.pixelPerfect}
+          renderScale={host.renderScale}
           mask={desiredMask}
           disabled={state.status !== "running" || maker}
           resetGeneration={

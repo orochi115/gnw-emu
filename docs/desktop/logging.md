@@ -21,3 +21,5 @@ node desktop/dist-cli/ui-cli.js UserData/automation.json logging.tail '{"limit":
 窗口模式：view 模块 `window.mode`（info）记录桌面时钟进入/返回与运行 ID；`window.state`（debug）记录焦点/最大化/模式变化。renderer 的 `window.action.failure`（error）记录窗口控制失败，不记录拖动位置或逐帧画面。
 
 view 的 `window.actualSize`（info）记录恢复像素 1:1；`window.state`（debug）新增 pixelPerfect/scaleFactor，手动离开 1:1 或显示密度变化时发布。重复不变状态被去重，拖动不逐坐标记录。
+
+倍率与持久化：view 的 `window.scale`（info）记录预设选择，携带 pixelScale/renderScale、normalScale/clockScale、scaleFactor 与当前模式；`window.mode` 的 reason=preference 标识启动/加载后的自动恢复。`window.state`（debug）也包含 preferredClockMode/transitioning，避免将暂时返回误判为用户关闭。`view.settings.saved`（debug）记录合并后的倍率/位置/模式设置写入，`view.settings.failure`（error）记录原始错误；拖动/缩放按 250ms 合并写入，非逐指针事件。正常退出等待 flush，磁盘失败不暂停或重启游戏。

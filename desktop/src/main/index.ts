@@ -9,8 +9,10 @@ import {
 import { UserError } from "../shared/user-error";
 import { loadSettings, updateSettings } from "../core/settings-store";
 import { ChassisPreference } from "../core/chassis-preference";
+import { ViewSettings } from "../core/view-settings";
+import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { WindowMode } from "./window-mode";
-import { menuTemplate } from "./menu";
+import { menuTemplate, scaleMenuTemplate } from "./menu";
 import type { AppState, ViewPreferences } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join, resolve } from "node:path";
@@ -61,6 +63,7 @@ let preferences: ViewPreferences = { showChassis: true };
 let preferenceChange: Promise<void> = Promise.resolve();
 let viewPreference: ChassisPreference;
 let windowMode: WindowMode;
+let viewSettings: ViewSettings;
 let fittedModel: AppState["model"];
 async function main() {
   const settings = await loadSettings(paths.userData);
@@ -147,6 +150,26 @@ async function main() {
     },
   });
   window.setMenuBarVisibility(false);
+  viewSettings = new ViewSettings(
+    async (patch) => {
+      await updateSettings(paths.userData, patch);
+      logger
+        .child("view")
+        .debug(
+          { event: "view.settings.saved", ...patch },
+          "Display preferences saved",
+        );
+    },
+    (error) => {
+      logger
+        .child("view")
+        .error(
+          { event: "view.settings.failure", err: error },
+          "Could not save display preferences",
+        );
+      if (!shuttingDown && !window.isDestroyed()) showError(error);
+    },
+  );
   windowMode = new WindowMode(
     window,
     (value) => {
@@ -159,7 +182,10 @@ async function main() {
     },
     () => controller?.releaseInput(),
     () => controller.state.status === "running" && !shuttingDown,
+    settings,
+    (patch) => viewSettings.update(patch),
   );
+  windowMode.setGameAvailable(false);
   controller = new SessionController({
     ...paths,
     logger: logger.child("session"),
@@ -172,9 +198,9 @@ async function main() {
       const id = controller.state.runtimeSessionId;
       if (id) controller.releaseChassis(id);
     },
-    publish: (value) => {
+    publish: async (value) => {
       preferences = value;
-      windowMode.fit(controller.state.model, value.showChassis);
+      await windowMode.fit(controller.state.model, value.showChassis);
       if (!window.isDestroyed())
         window.webContents.send("view.preferences", preferences);
       logger.child("view").info(
@@ -193,16 +219,22 @@ async function main() {
   );
   controller.on("state", (state) => {
     if (!window.isDestroyed()) {
+      windowMode.setGameAvailable(
+        ["starting", "running", "stopping"].includes(state.status),
+      );
       if (state.model && state.model !== fittedModel) {
         fittedModel = state.model;
-        windowMode.fit(state.model, preferences.showChassis);
+        void windowMode
+          .fit(state.model, preferences.showChassis)
+          .catch(showError);
       }
       if (
         !shuttingDown &&
         windowMode.state.clockMode &&
         ["idle", "error"].includes(state.status)
       )
-        void toggleClock().catch(showError);
+        void windowMode.toggle(false).catch(showError);
+      else restorePreferredClock();
       window.webContents.send("app.state", stateForUi(state));
       window.webContents.send("input.state", controller.inputState());
       window.setTitle(
@@ -227,8 +259,17 @@ async function main() {
         },
         {
           label: t("menu.actualSize"),
-          click: restoreActualSize,
+          click: () => {
+            void restoreActualSize().catch(showError);
+          },
         },
+        scaleMenuTemplate({
+          pixelScale: windowMode.state.pixelScale,
+          canScale: (factor) => canSetScale(factor),
+          setScale: (factor) => {
+            void setScale(factor).catch(showError);
+          },
+        }),
         {
           label: t("menu.quit"),
           click: () => {
@@ -287,11 +328,31 @@ function updateMenu() {
       if (item) item.enabled = !blocked;
     }
   const chassis = menu?.getMenuItemById("view.chassis");
-  if (chassis) chassis.checked = preferences.showChassis;
+  if (chassis) {
+    chassis.checked = preferences.showChassis;
+    chassis.enabled =
+      !makerOpen && !nativeDialog && !active && !windowMode.transitioning;
+  }
   const actualSize = menu?.getMenuItemById("view.actualSize");
-  if (actualSize)
-    actualSize.enabled =
-      windowMode.state.clockMode && !windowMode.transitioning;
+  if (actualSize) actualSize.enabled = canSetScale(1);
+  for (const factor of SCALE_PRESETS) {
+    const item = menu?.getMenuItemById(scaleMenuId(factor));
+    if (item) {
+      item.enabled = canSetScale(factor);
+      // Electron radio setters select their item even when assigned false.
+      // Select only the matching item; the native group clears the others.
+      if (Math.abs(windowMode.state.pixelScale - factor) < 0.000001)
+        item.checked = true;
+    }
+  }
+  if (
+    !SCALE_PRESETS.some(
+      (factor) => Math.abs(windowMode.state.pixelScale - factor) < 0.000001,
+    )
+  ) {
+    const custom = menu?.getMenuItemById("view.scale.custom");
+    if (custom) custom.checked = true;
+  }
   const zoom = menu?.getMenuItemById("window.zoom");
   if (zoom)
     zoom.enabled = !windowMode.state.clockMode && !windowMode.transitioning;
@@ -316,8 +377,53 @@ function toggleChassis() {
   observedActivity = work;
   return work;
 }
-function restoreActualSize() {
-  windowMode.restoreActualSize();
+function restorePreferredClock() {
+  if (
+    !shuttingDown &&
+    !active &&
+    !makerOpen &&
+    !nativeDialog &&
+    controller.state.status === "running" &&
+    windowMode.state.preferredClockMode &&
+    !windowMode.state.clockMode &&
+    !windowMode.transitioning
+  )
+    void windowMode
+      .toggle(false)
+      .then(() => {
+        logger
+          .child("view")
+          .info(
+            { event: "window.mode", reason: "preference", ...windowMode.state },
+            "Restored preferred clock mode",
+          );
+      })
+      .catch(showError);
+}
+function canSetScale(factor: number) {
+  return (
+    !makerOpen &&
+    !nativeDialog &&
+    !active &&
+    !shuttingDown &&
+    !windowMode.transitioning &&
+    controller.state.status === "running" &&
+    windowMode.canSetScale(factor)
+  );
+}
+async function setScale(factor: number) {
+  if (!canSetScale(factor)) throw new UserError("error.busy");
+  await perform(() => windowMode.setScale(factor));
+  await viewSettings.flush();
+  logger
+    .child("view")
+    .info(
+      { event: "window.scale", ...windowMode.state },
+      "Pixel scale changed",
+    );
+}
+async function restoreActualSize() {
+  await setScale(1);
   logger
     .child("view")
     .info(
@@ -332,6 +438,7 @@ async function toggleClock() {
     throw new UserError("error.busy");
   try {
     await perform(() => windowMode.toggle());
+    await viewSettings.flush();
     logger.child("view").info(
       {
         event: "window.mode",
@@ -354,7 +461,14 @@ function createMenu() {
         make: () => makeRom(),
         showChassis: preferences.showChassis,
         clockMode: windowMode.state.clockMode,
-        actualSize: restoreActualSize,
+        actualSize: () => {
+          void restoreActualSize().catch(showError);
+        },
+        pixelScale: windowMode.state.pixelScale,
+        setScale: (factor) => {
+          void setScale(factor).catch(showError);
+        },
+        canScale: (factor) => canSetScale(factor),
         toggleClock: () => {
           void toggleClock().catch(showError);
         },
@@ -388,6 +502,7 @@ async function perform<T>(work: () => Promise<T>): Promise<T> {
   } finally {
     if (active === promise) active = undefined;
     updateMenu();
+    restorePreferredClock();
   }
 }
 async function native<T>(work: () => Promise<T>) {
@@ -459,7 +574,7 @@ function registerIpc() {
           window.isMaximized() ? window.unmaximize() : window.maximize();
         break;
       case "actualSize":
-        restoreActualSize();
+        await restoreActualSize();
         break;
       case "normal":
         if (windowMode.state.clockMode) await toggleClock();
@@ -580,6 +695,8 @@ function registerIpc() {
     trusted(event);
     if (typeof open === "boolean") {
       makerOpen = open;
+      windowMode.setModal(open);
+      if (!open) restorePreferredClock();
       controller.releaseInput();
       updateMenu();
       uiEvents.emit("changed");
@@ -779,6 +896,8 @@ async function shutdown() {
   try {
     await active?.catch(() => {});
     await preferenceChange.catch(() => {});
+    windowMode.flushPreferences();
+    await viewSettings.flush();
     await controller.stop();
   } catch (error) {
     await dialog.showMessageBox(window, {
@@ -788,6 +907,7 @@ async function shutdown() {
       buttons: [t("menu.quit")],
     });
   } finally {
+    await viewSettings.flush();
     for (const cancel of waiters.values()) cancel();
     await automation?.close();
     await closeLogs();

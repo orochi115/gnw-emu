@@ -18,7 +18,9 @@ test("hiding releases presses received while persistence is pending before publi
       return disk;
     },
     release: () => input.releaseSources("pointer:"),
-    publish: () => snapshots.push(input.buttons),
+    publish: () => {
+      snapshots.push(input.buttons);
+    },
   });
   const toggle = view.toggle();
   await pending;

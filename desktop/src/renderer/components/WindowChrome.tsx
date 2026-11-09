@@ -18,14 +18,12 @@ export function WindowChrome({
       aria-label={label}
       title={label}
       onClick={() => {
-        void window.desktop
-          .windowAction(action)
-          .catch((error) =>
-            window.desktop.log("error", "window.action.failure", {
-              action,
-              message: error.message,
-            }),
-          );
+        void window.desktop.windowAction(action).catch((error) =>
+          window.desktop.log("error", "window.action.failure", {
+            action,
+            message: error.message,
+          }),
+        );
       }}
     >
       <span aria-hidden="true">{symbol}</span>
@@ -35,6 +33,7 @@ export function WindowChrome({
     <>
       <header
         className="window-titlebar"
+        style={{ maxWidth: state.controlWidth }}
         hidden={state.clockMode}
         onDoubleClick={() => {
           void window.desktop.windowAction("maximize");
@@ -56,7 +55,11 @@ export function WindowChrome({
         </div>
       </header>
       {state.clockMode && (
-        <div className="clock-controls" aria-label={t("menu.clock")}>
+        <div
+          className="clock-controls"
+          aria-label={t("menu.clock")}
+          style={{ right: `calc(100% - ${state.controlWidth}px + 6px)` }}
+        >
           {control("normal", t("window.normal"), "↗")}
           {control("close", t("menu.close"), "×")}
         </div>

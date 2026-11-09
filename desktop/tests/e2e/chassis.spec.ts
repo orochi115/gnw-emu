@@ -130,8 +130,9 @@ async function actualPixels(page: Page) {
   expect(origin.y).toBeCloseTo(Math.round(origin.y), 1);
 }
 
-async function pixelPattern(app: ElectronApplication, page: Page) {
-  await page.evaluate(() => {
+async function pixelPattern(app: ElectronApplication, page: Page, factor = 1) {
+  const block = factor < 1 ? 2 : 1;
+  await page.evaluate((block) => {
     const canvas = document.querySelector("canvas")!,
       context = canvas.getContext("2d")!;
     const original = context.putImageData.bind(context);
@@ -139,7 +140,7 @@ async function pixelPattern(app: ElectronApplication, page: Page) {
     for (let y = 0; y < canvas.height; y++)
       for (let x = 0; x < canvas.width; x++) {
         const i = (y * canvas.width + x) * 4,
-          v = (x + y) % 2 ? 255 : 0;
+          v = (Math.floor(x / block) + Math.floor(y / block)) % 2 ? 255 : 0;
         pixels[i] = pixels[i + 1] = pixels[i + 2] = v;
         pixels[i + 3] = 255;
       }
@@ -153,7 +154,7 @@ async function pixelPattern(app: ElectronApplication, page: Page) {
       context.putImageData = original;
       if (controls) controls.style.visibility = visibility;
     };
-  });
+  }, block);
   try {
     const rect = await page.locator("canvas").evaluate((c) => {
       const r = c.getBoundingClientRect(),
@@ -162,16 +163,21 @@ async function pixelPattern(app: ElectronApplication, page: Page) {
     });
     const png = (await page.screenshot({ scale: "device" })).toString("base64");
     const checked = await app.evaluate(
-      ({ nativeImage }, { png, rect }) => {
+      ({ nativeImage }, { png, rect, factor, block }) => {
         const im = nativeImage.createFromBuffer(Buffer.from(png, "base64")),
           width = im.getSize().width,
           bytes = im.toBitmap();
         let wrong = 0,
           first: any;
-        for (let y = 0; y < 240; y++)
-          for (let x = 0; x < 320; x++) {
+        for (let y = 0; y < 240 * factor; y++)
+          for (let x = 0; x < 320 * factor; x++) {
             const i = ((rect.y + y) * width + rect.x + x) * 4,
-              expected = (x + y) % 2 ? 255 : 0;
+              expected =
+                (Math.floor(x / (factor * block)) +
+                  Math.floor(y / (factor * block))) %
+                2
+                  ? 255
+                  : 0;
             if (
               bytes[i] !== expected ||
               bytes[i + 1] !== expected ||
@@ -183,7 +189,7 @@ async function pixelPattern(app: ElectronApplication, page: Page) {
           }
         return { wrong, first };
       },
-      { png, rect },
+      { png, rect, factor, block },
     );
     expect(checked).toEqual({ wrong: 0, first: undefined });
   } finally {
@@ -501,6 +507,241 @@ test("chassis preference survives restart and failed writes restore the checkbox
   }
 });
 
+for (const model of ["zelda", "mario"]) {
+  test(`${model} pixel presets preserve LCD through frame toggles and restart clock preferences`, async () => {
+    test.setTimeout(60000);
+    const root = await mkdtemp(join(tmpdir(), "gnw-scales-"));
+    let live = await launch(root, model);
+    let liveProcess = live.app.process();
+    const size = async () =>
+      live.page.locator("canvas").evaluate((c) => {
+        const r = c.getBoundingClientRect(),
+          d = window.devicePixelRatio;
+        return { width: r.width * d, height: r.height * d };
+      });
+    const preset = async (factor: number) => {
+      await live.action("ui.menu", {
+        id: `view.scale.${factor === 0.5 ? "half" : factor}`,
+      });
+      await expect
+        .poll(size)
+        .toEqual({ width: 320 * factor, height: 240 * factor });
+    };
+    const quit = async () => {
+      const host = live.app.process();
+      await live.rpc("ui.menu", { id: "app.quit" }).catch(() => {});
+      await expect.poll(() => host.exitCode).toBe(0);
+    };
+    try {
+      await live.rpc("ui.waitFor", {
+        condition: "app.status",
+        value: "running",
+        timeoutMs: 15000,
+      });
+      await live.rpc("ui.waitFor", {
+        condition: "ui.lastPresented",
+        value: "2",
+      });
+      const session = await live.rpc("app.getState");
+      await preset(2);
+      expect(
+        (await live.rpc("ui.inspect")).menus.find(
+          (i: any) => i.id === "view.scale.2",
+        ),
+      ).toMatchObject({ type: "radio", checked: true });
+      await pixelPattern(live.app, live.page, 2);
+      const before = await live.rpc("ui.inspect");
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 640, height: 480 });
+      expect((await live.rpc("ui.inspect")).window.bounds.width).toBeLessThan(
+        before.window.bounds.width,
+      );
+      await preset(0.5);
+      await pixelPattern(live.app, live.page, 0.5);
+      await mkdir(resolve("../out/ui-validation"), { recursive: true });
+      await live.page.screenshot({
+        path: resolve(`../out/ui-validation/normal-half-${model}.png`),
+      });
+      for (const id of ["window.menu", "window.close"])
+        expect(
+          await live.page.locator(`[data-ui="${id}"]`).evaluate((e) => {
+            const r = e.getBoundingClientRect();
+            return r.x >= 0 && r.right <= innerWidth;
+          }),
+        ).toBe(true);
+      // Maker uses a usable size without replacing the game preference.
+      await live.action("ui.menu", { id: "file.make" });
+      await expect(live.page.locator("dialog")).toBeVisible();
+      await live.action("ui.click", { id: "rom.cancel" });
+      await expect.poll(size).toEqual({ width: 160, height: 120 });
+      await preset(3);
+      const area = await live.app.evaluate(({ BrowserWindow, screen }) => {
+        const w = BrowserWindow.getAllWindows()[0],
+          area = screen.getDisplayMatching(w.getBounds()).workArea;
+        w.setBounds({ ...w.getBounds(), x: area.x, y: area.y });
+        return area;
+      });
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 960, height: 720 });
+      expect(
+        (await live.rpc("ui.inspect")).window.bounds.y,
+      ).toBeGreaterThanOrEqual(area.y);
+      await live.app.evaluate(({ BrowserWindow }, area) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w.setBounds({
+          x: area.x,
+          y: area.y,
+          width: area.width + 120,
+          height: area.height + 120,
+        });
+      }, area);
+      await expect
+        .poll(() =>
+          live.page
+            .locator('[data-ui="window.close"]')
+            .evaluate((e) => e.getBoundingClientRect().right),
+        )
+        .toBeLessThanOrEqual(area.width);
+      await preset(3);
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 960, height: 720 });
+      await live.action("ui.menu", { id: "view.clock" });
+      await preset(0.5);
+      await live.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].setContentSize(100, 75),
+      );
+      await expect.poll(size).toEqual({ width: 200, height: 150 });
+      expect(
+        (await live.rpc("ui.inspect")).menus
+          .filter((i: any) => i.type === "radio" && i.checked)
+          .map((i: any) => i.id),
+      ).toEqual(["view.scale.custom"]);
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 200, height: 150 });
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 200, height: 150 });
+      await preset(0.5);
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 160, height: 120 });
+      await pixelPattern(live.app, live.page, 0.5);
+      await live.page.screenshot({
+        path: resolve(`../out/ui-validation/clock-half-${model}.png`),
+      });
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 160, height: 120 });
+      await live.app.evaluate(({ BrowserWindow }) => {
+        const w = BrowserWindow.getAllWindows()[0];
+        w.setBounds({ ...w.getBounds(), x: 120, y: 180 });
+      });
+      const placed = (await live.rpc("ui.inspect")).window.bounds;
+      expect((await live.rpc("app.getState")).runtimeSessionId).toBe(
+        session.runtimeSessionId,
+      );
+      await quit();
+      const settings = JSON.parse(
+        await readFile(join(root, "settings.json"), "utf8"),
+      );
+      expect(settings).toMatchObject({
+        normalScale: 3,
+        clockScale: 0.5,
+        clockMode: true,
+        showChassis: false,
+        clockBounds: placed,
+      });
+
+      live = await launch(root, model);
+      liveProcess = live.app.process();
+      await expect(live.page.locator("main")).toHaveClass("desktop-clock", {
+        timeout: 15000,
+      });
+      await expect.poll(size).toEqual({ width: 160, height: 120 });
+      await expect
+        .poll(async () => (await live.rpc("ui.inspect")).window.bounds)
+        .toEqual(placed);
+      await live.action("ui.menu", { id: "view.clock" });
+      await expect.poll(size).toEqual({ width: 960, height: 720 });
+      await live.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].setContentSize(300, 257),
+      );
+      await expect.poll(size).toEqual({ width: 600, height: 450 });
+      await live.action("ui.menu", { id: "view.chassis" });
+      await expect.poll(size).toEqual({ width: 600, height: 450 });
+      await live.action("ui.menu", { id: "view.clock" });
+      await expect.poll(size).toEqual({ width: 160, height: 120 });
+      await quit();
+
+      live = await launch(root);
+      liveProcess = live.app.process();
+      await expect(live.page.locator("main")).toHaveClass("normal-window");
+      expect((await live.rpc("ui.inspect")).window.preferredClockMode).toBe(
+        true,
+      );
+      if (model === "zelda") {
+        await live.rpc("automation.queueDialogResponse", {
+          kind: "open",
+          path: join(root, "missing.gnw.json"),
+        });
+        await expect(
+          live.action("ui.menu", { id: "file.open" }),
+        ).rejects.toThrow();
+        expect((await live.rpc("ui.inspect")).window.preferredClockMode).toBe(
+          true,
+        );
+        expect(
+          JSON.parse(await readFile(join(root, "settings.json"), "utf8"))
+            .clockMode,
+        ).toBe(true);
+        await live.rpc("automation.queueDialogResponse", {
+          kind: "open",
+          path: resolve(`../profiles/${model}.gnw.json`),
+        });
+        await live.action("ui.menu", { id: "file.open" });
+      } else {
+        await live.action("ui.menu", { id: "file.make" });
+        await expect(live.page.locator("dialog")).toBeVisible();
+        await live.action("ui.click", { id: "rom.model.mario" });
+        await live.action("ui.fill", {
+          id: "rom.internalFlash",
+          value: resolve("../../firmware/internal_flash_backup_mario.bin"),
+        });
+        await live.action("ui.fill", {
+          id: "rom.externalFlash",
+          value: resolve("../../firmware/flash_backup_mario.bin"),
+        });
+        await live.rpc("automation.queueDialogResponse", {
+          kind: "save",
+          path: join(root, "made.gnw.json"),
+        });
+        await live.action("ui.click", { id: "rom.saveAndLoad" });
+      }
+      await expect(live.page.locator("main")).toHaveClass("desktop-clock", {
+        timeout: 15000,
+      });
+      await expect.poll(size).toEqual({ width: 160, height: 120 });
+      await live.action("ui.menu", { id: "view.clock" });
+      await expect.poll(size).toEqual({ width: 600, height: 450 });
+      // Quit immediately after a final manual resize: do not wait for debounce.
+      await live.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].setContentSize(333, 231),
+      );
+      const finalScale = (await live.rpc("ui.inspect")).canvas.pixelScale;
+      await quit();
+      const finalSettings = JSON.parse(
+        await readFile(join(root, "settings.json"), "utf8"),
+      );
+      expect(finalSettings.normalScale).toBeCloseTo(finalScale, 3);
+      expect(finalSettings).toMatchObject({
+        clockScale: 0.5,
+        clockMode: false,
+        showChassis: true,
+      });
+    } finally {
+      if (liveProcess.exitCode === null) await live.app.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
 test("desktop clock preserves session and canvas, fits artwork, restores bounds and refuses unfocused input", async () => {
   test.setTimeout(60000);
   const root = await mkdtemp(join(tmpdir(), "gnw-clock-"));
@@ -699,6 +940,18 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
     await expect
       .poll(async () => (await rpc("ui.inspect")).window.maximized)
       .toBe(true);
+    expect({
+      scale: (await rpc("ui.inspect")).window.normalScale,
+      normalBounds: await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getNormalBounds(),
+      ),
+    }).toMatchObject({
+      scale: before.window.normalScale,
+      normalBounds: {
+        width: before.window.bounds.width,
+        height: before.window.bounds.height,
+      },
+    });
     await action("ui.menu", { id: "view.clock" });
     expect((await rpc("ui.inspect")).window).toMatchObject({
       maximized: false,

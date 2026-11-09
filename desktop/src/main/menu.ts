@@ -1,5 +1,36 @@
 import type { MenuItemConstructorOptions as Item } from "electron";
 import { t } from "../shared/locale";
+import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
+
+export function scaleMenuTemplate(actions: {
+  pixelScale?: number;
+  setScale?: (value: number) => void;
+  canScale?: (value: number) => boolean;
+}): Item {
+  return {
+    id: "view.scale",
+    label: t("menu.scale"),
+    submenu: [
+      ...SCALE_PRESETS.map((factor) => ({
+        id: scaleMenuId(factor),
+        label: `${factor}× (${320 * factor} × ${240 * factor})`,
+        type: "radio" as const,
+        checked: Math.abs((actions.pixelScale ?? 0) - factor) < 0.000001,
+        enabled: actions.canScale?.(factor) ?? true,
+        click: () => actions.setScale?.(factor),
+      })),
+      {
+        id: "view.scale.custom",
+        label: t("menu.customScale"),
+        type: "radio",
+        enabled: false,
+        checked: !SCALE_PRESETS.some(
+          (factor) => Math.abs((actions.pixelScale ?? 0) - factor) < 0.000001,
+        ),
+      },
+    ],
+  };
+}
 /** Explicit role lists keep Electron's default extra menus out of the product. */
 export function menuTemplate(
   platform: string,
@@ -11,6 +42,9 @@ export function menuTemplate(
     clockMode?: boolean;
     toggleClock?: () => void;
     actualSize?: () => void;
+    pixelScale?: number;
+    setScale?: (value: number) => void;
+    canScale?: (value: number) => boolean;
   },
 ): Item[] {
   const separator: Item = { type: "separator" };
@@ -84,10 +118,11 @@ export function menuTemplate(
           checked: actions.clockMode ?? false,
           click: actions.toggleClock,
         },
+        scaleMenuTemplate(actions),
         {
           id: "view.actualSize",
           label: t("menu.actualSize"),
-          enabled: actions.clockMode ?? false,
+          enabled: true,
           click: actions.actualSize,
         },
       ],

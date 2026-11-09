@@ -6,8 +6,7 @@ export function GameScreen({
   runtimeSessionId,
   model,
   showChassis,
-  compact,
-  pixelPerfect,
+  renderScale,
   mask,
   disabled,
   resetGeneration,
@@ -15,8 +14,7 @@ export function GameScreen({
   runtimeSessionId?: string;
   model?: "zelda" | "mario";
   showChassis: boolean;
-  compact: boolean;
-  pixelPerfect: boolean;
+  renderScale: number | null;
   mask: number;
   disabled: boolean;
   resetGeneration: number;
@@ -27,16 +25,14 @@ export function GameScreen({
   const layout = useRef<HTMLDivElement>(null);
   const skin =
     showChassis && model && runtimeSessionId ? skins[model] : undefined;
-  const actualRef = useRef(pixelPerfect);
-  actualRef.current = pixelPerfect;
-  const compactRef = useRef(compact);
-  compactRef.current = compact;
+  const scaleRef = useRef(renderScale);
+  scaleRef.current = renderScale;
   const skinRef = useRef<Skin | undefined>(skin);
   skinRef.current = skin;
   const resizeRef = useRef<() => void>(() => {});
   useEffect(() => {
     resizeRef.current();
-  }, [skin, runtimeSessionId, compact, pixelPerfect]);
+  }, [skin, runtimeSessionId, renderScale]);
   useEffect(() => {
     let port: MessagePort | undefined;
     let animation = 0;
@@ -49,11 +45,12 @@ export function GameScreen({
       if (!container.current || !canvas.current) return;
       const box = container.current.getBoundingClientRect();
       const chassis = skinRef.current;
-      const actual = compactRef.current && actualRef.current;
+      const factor = scaleRef.current ?? 1;
+      const actual = scaleRef.current !== null;
       if (frameImage.current) frameImage.current.style.clipPath = "";
       const density = window.devicePixelRatio;
       const c = canvas.current;
-      c.style.transform = actual ? `scale(${1 / density})` : "";
+      c.style.transform = actual ? `scale(${factor / density})` : "";
       c.style.transformOrigin = "top left";
       c.style.maxWidth = actual ? "none" : "";
       c.style.maxHeight = actual ? "none" : "";
@@ -72,7 +69,7 @@ export function GameScreen({
         const availableWidth = Math.max(1, box.width),
           availableHeight = Math.max(1, box.height);
         const scale = actual
-          ? sourceWidth / (chassis.screen.width * density)
+          ? (sourceWidth * factor) / (chassis.screen.width * density)
           : Math.min(
               availableWidth / chassis.size.width,
               availableHeight / chassis.size.height,
@@ -81,7 +78,7 @@ export function GameScreen({
         layout.current.style.height = `${chassis.size.height * scale}px`;
         const aperture = chassis.screen;
         const lcdScale = actual
-          ? 1 / density
+          ? factor / density
           : Math.min(
               aperture.width / sourceWidth,
               aperture.height / sourceHeight,
@@ -99,8 +96,8 @@ export function GameScreen({
           const r = layout.current.getBoundingClientRect();
           const x = parseFloat(c.style.left),
             y = parseFloat(c.style.top),
-            w = sourceWidth / density,
-            h = sourceHeight / density;
+            w = (sourceWidth * factor) / density,
+            h = (sourceHeight * factor) / density;
           frameImage.current.style.clipPath = `path(evenodd, "M0 0 H${r.width} V${r.height} H0 Z M${x} ${y} h${w} v${h} h${-w} Z")`;
         }
 
@@ -112,17 +109,17 @@ export function GameScreen({
       }
       c.style.position = actual ? "absolute" : "";
       if (actual) {
-        sizeCanvas(1 / density);
+        sizeCanvas(factor / density);
         placeCanvas(
-          (box.width - sourceWidth / density) / 2,
-          (box.height - sourceHeight / density) / 2,
+          (box.width - (sourceWidth * factor) / density) / 2,
+          (box.height - (sourceHeight * factor) / density) / 2,
         );
         return;
       }
       canvas.current.style.left = "";
       canvas.current.style.top = "";
       const fit = Math.min(box.width / sourceWidth, box.height / sourceHeight);
-      const scale = !compactRef.current && fit >= 1 ? Math.floor(fit) : fit;
+      const scale = fit;
       canvas.current.style.width = `${sourceWidth * scale}px`;
       canvas.current.style.height = `${sourceHeight * scale}px`;
     };

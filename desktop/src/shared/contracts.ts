@@ -10,6 +10,13 @@ export interface WindowState {
   clockMode: boolean;
   pixelPerfect: boolean;
   scaleFactor: number;
+  pixelScale: number;
+  renderScale: number | null;
+  normalScale: number;
+  clockScale: number;
+  preferredClockMode: boolean;
+  transitioning: boolean;
+  controlWidth: number;
   focused: boolean;
   maximized: boolean;
 }

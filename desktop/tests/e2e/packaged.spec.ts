@@ -119,6 +119,20 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
     expect(await page.evaluate(() => window.desktop.state())).toMatchObject({
       runtimeSessionId: runtimeId,
     });
+    await app.evaluate(({ Menu }) =>
+      Menu.getApplicationMenu()!.getMenuItemById("view.scale.half")!.click(),
+    );
+    await expect
+      .poll(() =>
+        page.locator("canvas").evaluate((c) => {
+          const r = c.getBoundingClientRect();
+          return Math.round(r.width * devicePixelRatio);
+        }),
+      )
+      .toBe(160);
+    await expect
+      .poll(() => page.evaluate(() => window.desktop.windowState()))
+      .toMatchObject({ clockScale: 0.5, preferredClockMode: true });
     await page.evaluate(() => window.desktop.windowAction("normal"));
     await expect(page.locator("main")).toHaveClass("normal-window");
     await expect(page.locator("canvas")).toHaveAttribute(

@@ -48,10 +48,24 @@ export const settingsSchema = z
     formatVersion: z.literal(1),
     language: z.enum(["system", "zh-CN", "en"]).default("system"),
     showChassis: z.boolean().default(true),
+    normalScale: z.number().finite().min(0.05).max(64).default(4),
+    clockScale: z.number().finite().min(0.05).max(64).default(1),
+    clockMode: z.boolean().default(false),
+    clockBounds: z
+      .object({
+        x: z.number().int(),
+        y: z.number().int(),
+        width: z.number().int().positive(),
+        height: z.number().int().positive(),
+        displayId: z.number().int().optional(),
+      })
+      .strict()
+      .optional(),
     audio: z.boolean().default(true),
     realtime: z.boolean().default(true),
   })
   .strict();
+export type Settings = z.infer<typeof settingsSchema>;
 export const exitStateSchema = z
   .object({
     formatVersion: z.literal(1),

@@ -25,3 +25,15 @@ test("density changes and fractional density never round the source LCD down", (
     expect(plain.height - 240 / density).toBeLessThan(1);
   }
 });
+
+test("half and integer factors size the same LCD with or without either frame", () => {
+  for (const model of ["mario", "zelda"] as const)
+    for (const factor of [0.5, 1, 2, 3, 6]) {
+      const plain = clockGeometry(model, false, 2, factor);
+      expect(plain.width).toBe(160 * factor);
+      expect(plain.height).toBe(120 * factor);
+      const framed = clockGeometry(model, true, 2, factor);
+      expect(framed.width).toBeGreaterThan(plain.width);
+      expect(framed.scale).toBe(factor / 2);
+    }
+});

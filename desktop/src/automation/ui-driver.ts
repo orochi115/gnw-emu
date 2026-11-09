@@ -1,6 +1,23 @@
 import { app, BrowserWindow, Menu } from "electron";
 import { writeFile } from "node:fs/promises";
 import { RpcError } from "./server";
+function menuItems(menu?: Electron.Menu): Record<string, unknown>[] {
+  return (
+    menu?.items.flatMap((item) => [
+      {
+        id: item.id,
+        label: item.label,
+        enabled: item.enabled,
+        type: item.type,
+        checked:
+          item.type === "checkbox" || item.type === "radio"
+            ? item.checked
+            : undefined,
+      },
+      ...menuItems(item.submenu),
+    ]) ?? []
+  );
+}
 export class UiDriver {
   constructor(private window: BrowserWindow) {}
   private check() {
@@ -20,19 +37,7 @@ export class UiDriver {
         alwaysOnTop: this.window.isAlwaysOnTop(),
         focused: this.window.isFocused(),
       },
-      menus: Menu.getApplicationMenu()?.items.flatMap(
-        (item) =>
-          item.submenu?.items.map((v) => ({
-            id: v.id,
-            label: v.label,
-            enabled: v.enabled,
-            type: v.type,
-            checked:
-              v.type === "checkbox" || v.type === "radio"
-                ? v.checked
-                : undefined,
-          })) ?? [],
-      ),
+      menus: menuItems(Menu.getApplicationMenu() ?? undefined),
     };
   }
   private async control(id: string) {

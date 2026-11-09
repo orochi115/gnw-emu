@@ -48,3 +48,25 @@ test("localized chassis checkbox mirrors the stored preference on every platform
     });
   }
 });
+
+test("pixel scale menu offers half size and six integers with one checked preset", () => {
+  const selected: number[] = [];
+  const template = menuTemplate("darwin", {
+    open() {},
+    make() {},
+    pixelScale: 0.5,
+    setScale: (value: number) => selected.push(value),
+  });
+  const view: any = template.find((i) => i.id === "menu.view");
+  const items = view.submenu.find((i: any) => i.id === "view.scale").submenu;
+  expect(items.map((i: any) => i.id)).toEqual([
+    "view.scale.half",
+    ...[1, 2, 3, 4, 5, 6].map((n) => `view.scale.${n}`),
+    "view.scale.custom",
+  ]);
+  expect(items.filter((i: any) => i.checked).map((i: any) => i.id)).toEqual([
+    "view.scale.half",
+  ]);
+  items[2].click();
+  expect(selected).toEqual([2]);
+});

@@ -7,7 +7,7 @@ export class ChassisPreference {
     private options: {
       persist: (visible: boolean) => Promise<unknown>;
       release: () => void;
-      publish: (value: ViewPreferences) => void;
+      publish: (value: ViewPreferences) => void | Promise<void>;
     },
   ) {}
   get current(): ViewPreferences {
@@ -24,7 +24,7 @@ export class ChassisPreference {
         // while preserving keyboard ownership of the same logical button.
         this.options.release();
         this.visible = next;
-        this.options.publish(this.current);
+        await this.options.publish(this.current);
       });
     this.queue = work;
     return work;

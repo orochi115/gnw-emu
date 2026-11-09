@@ -1,6 +1,6 @@
 # Display pixel scale and frame switching
 
-Status: proposed for user review. No implementation changes yet.
+Status: user approved implementation, including 0.5×, clock placement and both option states. Implemented and verified on macOS; see `docs/desktop/validation.md` for evidence and platform limits.
 
 ## Behavior
 
@@ -8,7 +8,7 @@ The unit of scale is a QEMU LCD pixel relative to a Chromium output pixel. The s
 
 Normal mode and desktop clock mode each remember an independent positive scale in application settings, including fractional values from manual resizing. Defaults for settings without these fields are normal 4× and clock 1×. ROM profiles and the QEMU process do not own this preference.
 
-Enabling/disabling the chassis retains the current LCD scale and adjusts the enclosing window around its center. Changing Mario/Zelda applies the same scale with the new canonical chassis geometry. It does not reset the clock scale to 1×. Returning between modes uses the corresponding remembered scale; existing focus release, on-top restoration and session continuity remain.
+Enabling/disabling the chassis retains the current LCD scale and adjusts the enclosing window around its center. If this would put controls offscreen, minimally adjust placement and constrain control width, retaining the factor. Changing Mario/Zelda applies the same scale with the new canonical chassis geometry. It does not reset the clock scale to 1×. Returning between modes uses the corresponding remembered scale; existing focus release, on-top restoration and session continuity remain.
 
 Add View → Pixel Scale and the same submenu to the clock context menu: 0.5× and 1× through 6×, showing the source LCD output dimensions. At 0.5×, the LCD occupies 160×120 output pixels (80×60 logical pixels at DPR 2); downsampling is intentional. The existing Restore 1:1 action remains and selects 1× for the current mode. Selecting a menu item affects only the active mode. A menu radio item is checked only when the active scale matches that preset; other manual fractional scales have no preset checked. Entries whose complete window would exceed the current display work area are disabled rather than silently selecting a different scale. No new keyboard accelerators collide with game controls.
 
@@ -49,4 +49,4 @@ Expose active and per-mode scales through trusted state/automation inspection. A
 - Keep model switching, different-DPI monitor simulation, tiny clock resizing, normal/maximized/fullscreen restoration and focus/input cleanup regressions.
 - Typecheck, unit suite, UI E2E, production build and updated macOS directory package smoke. Linux/Windows actual display behavior remains unverified without those systems.
 
-Review note: the dispatched reviewer response arrived as an opaque `pv_` transport token and could not be read. No independent review approval is claimed. Self-review clarified the maximized/fullscreen overflow case above; this proposal still awaits user review.
+Review note: initial spec-review transport was unreadable. The user approved this design and amendments. Implementation review inferred scope from the local spec/code and returned two concrete P2 findings; both were fixed with regressions and follow-up review confirmed their resolution. The minor control-width publication suggestion was also addressed. Validation scope is documented separately.

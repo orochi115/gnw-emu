@@ -49,3 +49,42 @@ test("invalid settings updates leave the persisted preference untouched", async 
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("per-mode fractional scales, clock preference and placement survive unrelated updates", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-settings-"));
+  try {
+    expect(await loadSettings(root)).toMatchObject({
+      normalScale: 4,
+      clockScale: 1,
+      clockMode: false,
+    });
+    const clockBounds = {
+      x: 100,
+      y: 200,
+      width: 183,
+      height: 110,
+      displayId: 42,
+    };
+    await Promise.all([
+      updateSettings(root, {
+        normalScale: 3,
+        clockScale: 0.625,
+        clockMode: true,
+        clockBounds,
+      }),
+      updateSettings(root, { showChassis: false, language: "en" }),
+    ]);
+    expect(await loadSettings(root)).toMatchObject({
+      normalScale: 3,
+      clockScale: 0.625,
+      clockMode: true,
+      clockBounds,
+      showChassis: false,
+      language: "en",
+    });
+    await expect(updateSettings(root, { clockScale: 0 })).rejects.toThrow();
+    expect((await loadSettings(root)).clockScale).toBe(0.625);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

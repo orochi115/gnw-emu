@@ -7,12 +7,24 @@ export function clockGeometry(
   model: "mario" | "zelda" | undefined,
   frame: boolean,
   density: number,
+  factor = 1,
 ) {
   const skin = model && frame ? skins[model] : undefined;
-  const scale = skin ? 320 / (skin.screen.width * density) : 1 / density;
+  const photoScale = skin
+    ? (320 * factor) / (skin.screen.width * density)
+    : factor / density;
+  const layoutWidth = (skin?.size.width ?? 320) * photoScale;
+  const layoutHeight = (skin?.size.height ?? 240) * photoScale;
   return {
-    width: Math.ceil((skin?.size.width ?? 320) * scale),
-    height: Math.ceil((skin?.size.height ?? 240) * scale),
+    width: Math.ceil(layoutWidth),
+    height: Math.ceil(layoutHeight),
+    layoutWidth,
+    layoutHeight,
+    scale: factor / density,
     ratio: skin ? skin.size.width / skin.size.height : 4 / 3,
   };
 }
+
+export const SCALE_PRESETS = [0.5, 1, 2, 3, 4, 5, 6] as const;
+export const scaleMenuId = (factor: number) =>
+  `view.scale.${factor === 0.5 ? "half" : factor}`;

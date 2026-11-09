@@ -7,13 +7,241 @@ vi.mock("electron", async () => {
     screen: Object.assign(new EventEmitter(), {
       getDisplayMatching: () => ({
         scaleFactor: display.density,
-        workArea: { width: 1600, height: 1000 },
+        workArea: { x: 0, y: 0, width: 1600, height: 1000 },
       }),
     }),
   };
 });
 import { screen } from "electron";
 import { WindowMode } from "../../src/main/window-mode";
+
+function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
+  let bounds = { ...initial };
+  const host = Object.assign(new EventEmitter(), {
+    isDestroyed: () => false,
+    isFocused: () => true,
+    isMaximized: (): boolean => false,
+    isFullScreen: () => false,
+    isAlwaysOnTop: () => false,
+    getBounds: () => ({ ...bounds }),
+    getNormalBounds: () => ({ ...bounds }),
+    getContentSize: () => [bounds.width, bounds.height],
+    setBounds: (next: any) => {
+      bounds = { ...bounds, ...next };
+      host.emit("resize");
+      host.emit("move");
+    },
+    setContentSize: (width: number, height: number) => {
+      bounds = { ...bounds, width, height };
+      host.emit("resize");
+    },
+    setMinimumSize: vi.fn(),
+    setAspectRatio: vi.fn(),
+    unmaximize: vi.fn(),
+    setAlwaysOnTop: vi.fn(),
+  });
+  return host;
+}
+
+test("frame switching preserves LCD scale and each mode restores its independent factor", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", true);
+  const framed = host.getBounds();
+  await mode.fit("zelda", false);
+  expect(host.getContentSize()).toEqual([640, 512]);
+  expect(mode.state.pixelScale).toBe(4);
+  expect(host.getBounds().x + host.getBounds().width / 2).toBeCloseTo(
+    framed.x + framed.width / 2,
+    0,
+  );
+  await mode.setScale(3);
+  await mode.toggle();
+  await mode.setScale(0.5);
+  await mode.fit("zelda", true);
+  expect(mode.state.pixelScale).toBe(0.5);
+  expect(host.getContentSize()).toEqual([183, 110]);
+  await mode.toggle();
+  expect(mode.state.pixelScale).toBe(3);
+  expect(host.getContentSize()).toEqual([1097, 687]);
+  await mode.toggle();
+  expect(mode.state.pixelScale).toBe(0.5);
+  host.emit("closed");
+});
+
+test("manual fractional scale survives a frame toggle instead of resetting to 1x", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("mario", false);
+  await mode.toggle();
+  host.setContentSize(100, 75);
+  expect(mode.state.pixelScale).toBe(0.625);
+  await mode.fit("mario", true);
+  expect(mode.state.pixelScale).toBe(0.625);
+  expect(host.getContentSize()).toEqual([228, 137]);
+  host.emit("closed");
+});
+
+test("restored clock placement and temporary exits do not erase preferred clock mode", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const edits: any[] = [];
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {
+      normalScale: 2,
+      clockScale: 0.5,
+      clockMode: true,
+      clockBounds: { x: 400, y: 300, width: 183, height: 110 },
+    },
+    (patch) => edits.push(patch),
+  );
+  await mode.fit("zelda", true);
+  await mode.toggle(false);
+  expect(host.getBounds()).toMatchObject({
+    x: 400,
+    y: 300,
+    width: 183,
+    height: 110,
+  });
+  await mode.toggle(false);
+  expect(mode.state.preferredClockMode).toBe(true);
+  expect(edits.some((patch) => patch.clockMode === false)).toBe(false);
+  await mode.toggle();
+  await mode.toggle();
+  expect(mode.state.preferredClockMode).toBe(false);
+  host.emit("closed");
+});
+
+test("a disconnected monitor relocates the saved clock without reducing its scale", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {
+      clockScale: 0.5,
+      clockBounds: {
+        x: 8000,
+        y: 4000,
+        width: 183,
+        height: 110,
+        displayId: 999,
+      },
+    },
+  );
+  await mode.fit("zelda", true);
+  await mode.toggle(false);
+  expect(host.getBounds()).toEqual({
+    x: 1417,
+    y: 890,
+    width: 183,
+    height: 110,
+  });
+  expect(mode.state.pixelScale).toBe(0.5);
+  host.emit("closed");
+});
+
+test("unmaximizing a frame-switched viewport restores the remembered windowed factor", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  let expanded = false;
+  host.isMaximized = () => expanded;
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", true);
+  expanded = true;
+  host.setContentSize(1600, 1000);
+  host.emit("maximize");
+  const factor = mode.state.pixelScale;
+  await mode.fit("zelda", false);
+  expect(mode.state.pixelScale).toBe(factor);
+  expect(mode.state.normalScale).toBe(4);
+  expanded = false;
+  host.emit("unmaximize");
+  expect(mode.state.pixelScale).toBe(4);
+  expect(host.getContentSize()).toEqual([640, 512]);
+  host.emit("closed");
+});
+
+test("intermediate native maximize bounds cannot overwrite windowed scale", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", true);
+  const normal = host.getBounds();
+  host.getNormalBounds = () => normal;
+  host.setContentSize(1644, 1013); // resize arrives before maximize flag/event
+  expect(mode.state.normalScale).toBe(4);
+  host.emit("closed");
+});
+
+test("idle recovery view retains its usable minimum across density changes", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", false);
+  await mode.setScale(0.5);
+  mode.setGameAvailable(false);
+  expect(host.getContentSize()).toEqual([320, 280]);
+  display.density = 1;
+  host.emit("move");
+  expect(host.getContentSize()).toEqual([320, 280]);
+  expect(host.setMinimumSize).toHaveBeenLastCalledWith(320, 280);
+  host.emit("closed");
+});
+
+test("frame expansion at the top edge keeps controls on screen without reducing pixels", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", false);
+  host.setBounds({ y: 0 });
+  await mode.fit("zelda", true);
+  expect(host.getBounds().y).toBe(0);
+  expect(mode.state.pixelScale).toBe(4);
+  await mode.setScale(6);
+  expect(mode.state.controlWidth).toBe(1600);
+  expect(host.getBounds().x).toBe(0);
+  expect(mode.state.pixelScale).toBe(6);
+  host.emit("closed");
+});
 
 test("a dead runtime during fullscreen exit cannot finish entering clock mode", async () => {
   const host = Object.assign(new EventEmitter(), {
@@ -99,7 +327,7 @@ test("display density changes retain exact pixels or a manually chosen size", as
   screen.emit("display-metrics-changed");
   expect(host.getContentSize()).toEqual([200, 120]);
   expect(mode.state.pixelPerfect).toBe(false);
-  mode.restoreActualSize();
+  await mode.restoreActualSize();
   expect(host.getContentSize()).toEqual([366, 219]);
   expect(mode.state.pixelPerfect).toBe(true);
   host.emit("closed");
@@ -140,7 +368,12 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
     (bounds) =>
       ({
         scaleFactor: bounds.x + bounds.width / 2 > 0 ? 2 : 1,
-        workArea: { width: 1600, height: 1000 },
+        workArea: {
+          x: bounds.x + bounds.width / 2 > 0 ? 0 : -1600,
+          y: 0,
+          width: 1600,
+          height: 1000,
+        },
       }) as any,
   );
   const mode = new WindowMode(
@@ -151,10 +384,11 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
   );
   try {
     mode.fit("zelda", true);
+    const center = x + width / 2;
     await expect(mode.toggle()).resolves.toBeUndefined();
     expect(mode.state).toMatchObject({ pixelPerfect: true, scaleFactor: 1 });
     expect(width).toBe(731);
-    expect(x + width / 2).toBeCloseTo(-67.5, 0);
+    expect(Math.abs(x + width / 2 - center)).toBeLessThanOrEqual(0.5);
   } finally {
     host.emit("closed");
     match.mockRestore();
