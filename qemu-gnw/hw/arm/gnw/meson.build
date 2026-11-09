@@ -1,10 +1,8 @@
 gnw_libs = [dependency('libjpeg')]
-if host_machine.system() == 'darwin'
-  gnw_libs += dependency('appleframeworks', modules: 'AudioToolbox')
-endif
-
 arm_common_ss.add(when: 'CONFIG_GNW', if_true: [files(
   'gnw.c',
+  'gnw_display.c',
+  'gnw_session_lock.c',
   'gnw_regs.c',
   'gnw_gpio.c',
   'gnw_ospi.c',

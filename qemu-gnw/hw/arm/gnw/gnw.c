@@ -14,7 +14,7 @@
  *   buttons=   bit mask of pressed buttons (see GNW_BTN_*), settable at
  *              run time with qom-set /machine buttons <mask>
  *   wav=       capture SAI1 audio into a WAV file
- *   audio=     play SAI1 on the host speakers (macOS AudioQueue)
+ *   audio=     play SAI1 on the host speakers (QEMU audio backend)
  *   realtime=  with -icount shift=N,sleep=off: pace virtual time to the
  *              host clock (see gnw_realtime_tick)
  *   battery=   battery level in percent (default 100), settable at run time
@@ -54,6 +54,8 @@
 #include "qemu/timer.h"
 #include "ui/input.h"
 #include "gnw.h"
+#include "gnw_display.h"
+#include "gnw_session_lock.h"
 
 #define TYPE_GNW_MACHINE MACHINE_TYPE_NAME("gnw-common")
 OBJECT_DECLARE_TYPE(GnwMachineState, GnwMachineClass, GNW_MACHINE)
@@ -94,6 +96,9 @@ struct GnwMachineState {
     char *overlay_path;
     char *wav_path;
     char *state_path;           /* exit dump of battery / usb-power */
+    char *frame_endpoint;
+    char *session_lock_path;
+    int session_lock_fd;
     Notifier exit_notify;
     bool audio;
     bool realtime;
@@ -493,6 +498,8 @@ static void gnw_init(MachineState *machine)
 
 #define NVIC(n) qdev_get_gpio_in(armv7m, n)
 
+    /* Acquire before any working image can be opened or modified. */
+    m->session_lock_fd = gnw_session_lock_acquire(m->session_lock_path, &error_fatal);
     /* Images */
     internal = load_file("internal", m->internal_path, &int_len);
     if (m->overlay_path && g_file_test(m->overlay_path, G_FILE_TEST_EXISTS)) {
@@ -762,6 +769,7 @@ static void gnw_init(MachineState *machine)
         qemu_add_exit_notifier(&m->exit_notify);
     }
     armv7m_load_kernel(ARM_CPU(first_cpu), NULL, 0, 0);
+    gnw_display_start(m->frame_endpoint, &error_fatal);
 #undef NVIC
 }
 
@@ -774,9 +782,13 @@ static void gnw_write_state(Notifier *n, void *unused)
     if (!m->state_path) {
         return;
     }
-    text = g_strdup_printf("battery=%u\nusb-power=%s\n",
+    text = g_strdup_printf("{\"formatVersion\":1,\"battery\":%u,\"usbPower\":%s}\n",
                            m->battery, m->usb ? "true" : "false");
-    g_file_set_contents(m->state_path, text, -1, NULL);
+    GError *error = NULL;
+    if (!g_file_set_contents(m->state_path, text, -1, &error)) {
+        error_report("gnw: exit snapshot failed: %s", error->message);
+        g_error_free(error);
+    }
 }
 
 /* ------------------------------------------------------------------ */
@@ -804,6 +816,8 @@ STR_PROP(uid, "uid")
 STR_PROP(bank1_overlay, "bank1-overlay")
 STR_PROP(bank2_overlay, "bank2-overlay")
 STR_PROP(state_path, "state-file")
+STR_PROP(frame_endpoint, "frame-endpoint")
+STR_PROP(session_lock_path, "session-lock")
 
 static void gnw_get_battery(Object *obj, Visitor *v, const char *name,
                             void *opaque, Error **errp)
@@ -982,7 +996,11 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
     object_class_property_add_str(oc, "state-file", gnw_get_state_path,
                                   gnw_set_state_path);
     object_class_property_set_description(oc, "state-file",
-        "On exit, write battery= and usb-power= lines here");
+        "On exit, write a JSON battery/usbPower snapshot here");
+    object_class_property_add_str(oc, "frame-endpoint", gnw_get_frame_endpoint,
+                                  gnw_set_frame_endpoint);
+    object_class_property_add_str(oc, "session-lock", gnw_get_session_lock_path,
+                                  gnw_set_session_lock_path);
     object_class_property_add_str(oc, "wav", gnw_get_wav_path,
                                   gnw_set_wav_path);
     object_class_property_set_description(oc, "wav",

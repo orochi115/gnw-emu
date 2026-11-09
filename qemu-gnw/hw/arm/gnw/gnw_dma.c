@@ -19,9 +19,8 @@
 #include "system/address-spaces.h"
 #include "system/dma.h"
 #include "gnw.h"
-#ifdef __APPLE__
-#include <AudioToolbox/AudioToolbox.h>
-#endif
+#include "qemu/audio.h"
+#include "system/system.h"
 
 #define PCM_RING (64 * 1024)
 
@@ -208,234 +207,79 @@ static void wav_capture(GnwDmaState *s, uint32_t addr, uint32_t len,
 }
 
 /* ------------------------------------------------------------------ */
-/* Host playback (AudioQueue; QEMU's CoreAudio voice stays silent here) */
+/* Host playback uses QEMU's selected backend on every platform. */
 
-#ifdef __APPLE__
-/* Debug: GNW_AQ_DUMP=file.raw records exactly what the host queue plays. */
-static struct {
-    FILE *dump;
-    bool init;
-    uint64_t calls, short_reads, empty, dropped, frames;
-    int64_t last_report;
-} aq_dbg;
-
-static void aq_debug(const uint8_t *data, UInt32 len, UInt32 cap,
-                     bool empty)
-{
-    int64_t now = g_get_monotonic_time();
-
-    if (!aq_dbg.init) {
-        const char *p = getenv("GNW_AQ_DUMP");
-        aq_dbg.init = true;
-        aq_dbg.dump = p ? fopen(p, "wb") : NULL;
-        aq_dbg.last_report = now;
-    }
-    aq_dbg.calls++;
-    aq_dbg.frames += len / 4;
-    aq_dbg.short_reads += len < cap;
-    aq_dbg.empty += empty;
-    if (aq_dbg.dump) {
-        fwrite(data, 1, len, aq_dbg.dump);
-    }
-    if (now - aq_dbg.last_report >= 2000000) {
-        qemu_log_mask(LOG_UNIMP, "gnw-aq: %" PRIu64 " fills, %" PRIu64
-                      " short, %" PRIu64 " empty, %" PRIu64 " frames, %"
-                      PRIu64 " bytes dropped\n", aq_dbg.calls,
-                      aq_dbg.short_reads, aq_dbg.empty, aq_dbg.frames,
-                      aq_dbg.dropped);
-        aq_dbg.last_report = now;
-    }
-}
-
-/*
- * Jitter buffer.  The guest delivers audio in bursts (one DMA half-buffer,
- * e.g. 800 frames every 16.7 ms for Retro-Go) on QEMU timers that can run
- * a few ms late, while the host queue pulls 512-frame buffers on its own
- * clock.  So: start (and restart after an underrun) only once PCM_PRIME
- * worth of audio is queued, always hand the host a full buffer, and if the
- * guest really runs dry, fade the last frame out instead of inserting a
- * flat step.  host_push() trims the queue back when it grows past
- * PCM_HIGH (guest ahead of the host clock, e.g. after a pause).
- */
-static unsigned pcm_ms_bytes(GnwDmaState *s, unsigned ms)
-{
-    return ((s->voice_rate ? s->voice_rate : 48000) * 4u * ms / 1000) & ~3u;
-}
-
-#define PCM_PRIME_MS    60
-#define PCM_HIGH_MS     200
-
-static void aq_fill(void *opaque, AudioQueueRef q, AudioQueueBufferRef buf)
+/* Audio callbacks and guest DMA execute under QEMU's main-loop lock.
+ * Only owned PCM enters this bounded queue; no guest RAM is retained. */
+static void host_fill(void *opaque, int available)
 {
     GnwDmaState *s = opaque;
-    uint8_t *dst = buf->mAudioData;
-    UInt32 cap = buf->mAudioDataBytesCapacity & ~3u;
-    UInt32 got = 0;
-    bool underrun;
 
-    pthread_mutex_lock(&s->pcm_lock);
-    if (!s->pcm_primed && s->pcm_fill >= pcm_ms_bytes(s, PCM_PRIME_MS)) {
-        s->pcm_primed = true;
-    }
-    while (s->pcm_primed && got < cap && s->pcm_fill >= 4) {
-        unsigned chunk = MIN(cap - got, s->pcm_fill);
+    while (s->voice && s->pcm_fill && available >= 4) {
+        unsigned chunk = MIN((unsigned)available, s->pcm_fill);
+        size_t written;
 
-        chunk = MIN(chunk, PCM_RING - s->pcm_r);
-        chunk &= ~3u;
-        if (!chunk) {
+        chunk = MIN(chunk, PCM_RING - s->pcm_r) & ~3u;
+        written = audio_be_write(s->audio_be, s->voice,
+                                 s->pcm + s->pcm_r, chunk);
+        if (!written) {
             break;
         }
-        memcpy(dst + got, s->pcm + s->pcm_r, chunk);
-        s->pcm_r = (s->pcm_r + chunk) % PCM_RING;
-        s->pcm_fill -= chunk;
-        got += chunk;
+        s->pcm_r = (s->pcm_r + written) % PCM_RING;
+        s->pcm_fill -= written;
+        available -= written;
     }
-    if (got >= 4) {
-        int16_t *tail = (int16_t *)(dst + got - 4);
-        s->last_l = tail[0];
-        s->last_r = tail[1];
-    }
-    underrun = got < cap;
-    if (underrun) {
-        s->pcm_primed = false;          /* rebuild the margin first */
-    }
-    pthread_mutex_unlock(&s->pcm_lock);
-
-    if (underrun) {
-        /* Fade the last frame to silence over the rest of the buffer. */
-        unsigned n = (cap - got) / 4;
-        int16_t *f = (int16_t *)(dst + got);
-
-        for (unsigned i = 0; i < n; i++) {
-            int32_t k = (int32_t)(n - 1 - i) * 256 / (n ? n : 1);
-            f[i * 2] = s->last_l * k / 256;
-            f[i * 2 + 1] = s->last_r * k / 256;
-        }
-        s->last_l = s->last_r = 0;
-    }
-    aq_debug(dst, got, cap, got == 0);
-    buf->mAudioDataByteSize = cap;
-    AudioQueueEnqueueBuffer(q, buf, 0, NULL);
 }
 
 static void host_open(GnwDmaState *s, uint32_t rate, int channels)
 {
-    AudioStreamBasicDescription fmt = { 0 };
-    AudioQueueRef q;
-    OSStatus st;
+    struct audsettings settings = {
+        .freq = rate, .nchannels = channels,
+        .fmt = AUDIO_FORMAT_S16, .big_endian = false,
+    };
 
-    if (s->aq && s->voice_rate == (int)rate && s->voice_ch == channels) {
+    if (s->voice_rate == rate && s->voice_ch == channels) {
         return;
     }
-    if (s->aq) {
-        AudioQueueStop(s->aq, true);
-        AudioQueueDispose(s->aq, true);
-        s->aq = NULL;
-    }
-    fmt.mSampleRate = rate;
-    fmt.mFormatID = kAudioFormatLinearPCM;
-    fmt.mFormatFlags = kLinearPCMFormatFlagIsSignedInteger |
-                       kLinearPCMFormatFlagIsPacked;
-    fmt.mChannelsPerFrame = channels;
-    fmt.mBitsPerChannel = 16;
-    fmt.mFramesPerPacket = 1;
-    fmt.mBytesPerFrame = 2 * channels;
-    fmt.mBytesPerPacket = fmt.mBytesPerFrame;
-    st = AudioQueueNewOutput(&fmt, aq_fill, s, NULL, NULL, 0, &q);
-    if (st != noErr) {
-        qemu_log_mask(LOG_UNIMP, "gnw-sai: AudioQueueNewOutput failed (%d)\n",
-                      (int)st);
+    if (!rate || channels != 2) {
         return;
     }
-    for (int i = 0; i < 3; i++) {
-        AudioQueueBufferRef b;
-
-        AudioQueueAllocateBuffer(q, 512 * fmt.mBytesPerFrame, &b);
-        memset(b->mAudioData, 0, b->mAudioDataBytesCapacity);
-        b->mAudioDataByteSize = b->mAudioDataBytesCapacity;
-        AudioQueueEnqueueBuffer(q, b, 0, NULL);
-    }
-    AudioQueueSetParameter(q, kAudioQueueParam_Volume, 1.0);
-    st = AudioQueueStart(q, NULL);
-    if (st != noErr) {
-        qemu_log_mask(LOG_UNIMP, "gnw-sai: AudioQueueStart failed (%d)\n",
-                      (int)st);
-        AudioQueueDispose(q, true);
-        return;
-    }
-    s->aq = q;
+    s->pcm_r = s->pcm_fill = 0;
+    /* A failed backend is not retried on every guest half-buffer. */
     s->voice_rate = rate;
     s->voice_ch = channels;
-}
-#else
-static void host_open(GnwDmaState *s, uint32_t rate, int channels)
-{
-}
-#endif
-
-/* 16-bit little-endian PCM. Mono is duplicated so both speakers play. */
-static void host_push(GnwDmaState *s, const uint8_t *src, uint32_t len,
-                      int channels)
-{
-    uint8_t stack[4096];
-    const uint8_t *in = src;
-    uint32_t out_len = len;
-    unsigned w = 0;
-
-    if (channels == 1) {
-        out_len = len * 2;
-        in = NULL;
+    s->voice = audio_be_open_out(s->audio_be, s->voice, "gnw-sai",
+                                 s, host_fill, &settings);
+    if (!s->voice) {
+        return;
     }
-    pthread_mutex_lock(&s->pcm_lock);
+    s->voice_rate = rate;
+    s->voice_ch = channels;
+    audio_be_set_active_out(s->audio_be, s->voice, true);
+}
+
+static void host_push(GnwDmaState *s, const uint8_t *src,
+                      uint32_t len, int channels)
+{
+    unsigned frame_bytes = channels * 2;
+    unsigned high = MIN(PCM_RING, (unsigned)s->voice_rate * 4 / 10) & ~3u;
+
     if (!s->pcm) {
         s->pcm = g_malloc(PCM_RING);
     }
-#ifdef __APPLE__
-    /* Guest ahead of the host clock: drop the oldest audio, keep ~PRIME. */
-    if (s->pcm_fill + out_len > pcm_ms_bytes(s, PCM_HIGH_MS)) {
-        unsigned keep = pcm_ms_bytes(s, PCM_PRIME_MS);
-        unsigned drop = s->pcm_fill > keep ? s->pcm_fill - keep : 0;
-
-        s->pcm_r = (s->pcm_r + drop) % PCM_RING;
-        s->pcm_fill -= drop;
-        aq_dbg.dropped += drop;
-    }
-#endif
-    while (s->pcm_fill + out_len > PCM_RING) {
-        unsigned drop = s->pcm_fill + out_len - PCM_RING;
-
-        drop = MIN(drop, PCM_RING - s->pcm_r);
-#ifdef __APPLE__
-        aq_dbg.dropped += drop;
-#endif
-        s->pcm_r = (s->pcm_r + drop) % PCM_RING;
-        s->pcm_fill -= drop;
-    }
-    while (w < out_len) {
-        unsigned pos = (s->pcm_r + s->pcm_fill) % PCM_RING;
-        unsigned chunk = MIN(out_len - w, PCM_RING - pos);
-        unsigned i;
-
-        if (channels == 1) {
-            unsigned n = MIN(chunk / 4, (unsigned)sizeof(stack) / 4);
-            const int16_t *s16 = (const int16_t *)(src + w / 2);
-
-            if (!n) {
-                break;
-            }
-            chunk = n * 4;
-            for (i = 0; i < n; i++) {
-                ((int16_t *)stack)[i * 2] = s16[i];
-                ((int16_t *)stack)[i * 2 + 1] = s16[i];
-            }
-            memcpy(s->pcm + pos, stack, chunk);
-        } else {
-            memcpy(s->pcm + pos, in + w, chunk);
+    /* Keep at most 100 ms, dropping old complete stereo frames if the
+     * host is slower. Host consumption never changes virtual DMA timing. */
+    for (unsigned i = 0; i + frame_bytes <= len; i += frame_bytes) {
+        unsigned pos;
+        if (s->pcm_fill + 4 > high) {
+            s->pcm_r = (s->pcm_r + 4) % PCM_RING;
+            s->pcm_fill -= 4;
         }
-        s->pcm_fill += chunk;
-        w += chunk;
+        pos = (s->pcm_r + s->pcm_fill) % PCM_RING;
+        memcpy(s->pcm + pos, src + i, 2);
+        memcpy(s->pcm + pos + 2, src + i + (channels == 1 ? 0 : 2), 2);
+        s->pcm_fill += 4;
     }
-    pthread_mutex_unlock(&s->pcm_lock);
 }
 
 static void host_play(GnwDmaState *s, uint32_t addr, uint32_t len,
@@ -447,11 +291,9 @@ static void host_play(GnwDmaState *s, uint32_t addr, uint32_t len,
         return;
     }
     host_open(s, rate, channels == 1 ? 2 : channels);
-#ifdef __APPLE__
-    if (!s->aq) {
+    if (!s->voice) {
         return;
     }
-#endif
     buf = g_malloc(len);
     dma_memory_read(&address_space_memory, addr, buf, len,
                     MEMTXATTRS_UNSPECIFIED);
@@ -903,19 +745,62 @@ static void gnw_dma_init(Object *obj)
             sysbus_init_irq(sbd, &s->irq[c][i]);
         }
     }
-    pthread_mutex_init(&s->pcm_lock, NULL);
+
 }
 
 static const Property gnw_dma_props[] = {
     DEFINE_PROP_UINT32("sample-rate", GnwDmaState, sample_rate, 0),
     DEFINE_PROP_STRING("wav", GnwDmaState, wav_path),
     DEFINE_PROP_BOOL("playback", GnwDmaState, playback, false),
+    DEFINE_AUDIO_PROPERTIES(GnwDmaState, audio_be),
 };
+
+static void gnw_dma_audio_exit(Notifier *notifier, void *data)
+{
+    GnwDmaState *s = container_of(notifier, GnwDmaState, audio_exit);
+    if (s->voice) {
+        audio_be_close_out(s->audio_be, s->voice);
+        s->voice = NULL;
+    }
+    object_unref(OBJECT(s->audio_be));
+    s->audio_be = NULL;
+    s->audio_registered = false;
+}
+
+static void gnw_dma_realize(DeviceState *dev, Error **errp)
+{
+    GnwDmaState *s = GNW_DMA(dev);
+    if (s->playback) {
+        if (!audio_be_check(&s->audio_be, errp)) {
+            return;
+        }
+        /* Retain the backend through audio_cleanup(), then close the voice
+         * so capture backends finalize headers before the process exits. */
+        object_ref(OBJECT(s->audio_be));
+        s->audio_exit.notify = gnw_dma_audio_exit;
+        s->audio_registered = true;
+        qemu_add_exit_notifier(&s->audio_exit);
+    }
+}
+
+static void gnw_dma_finalize(Object *obj)
+{
+    GnwDmaState *s = GNW_DMA(obj);
+    if (s->audio_registered) {
+        qemu_remove_exit_notifier(&s->audio_exit);
+        gnw_dma_audio_exit(&s->audio_exit, NULL);
+    }
+    g_free(s->pcm);
+    if (s->wav) {
+        fclose(s->wav);
+    }
+}
 
 static void gnw_dma_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
+    dc->realize = gnw_dma_realize;
     device_class_set_legacy_reset(dc, gnw_dma_reset);
     device_class_set_props(dc, gnw_dma_props);
 }
@@ -925,6 +810,7 @@ static const TypeInfo gnw_dma_info = {
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(GnwDmaState),
     .instance_init = gnw_dma_init,
+    .instance_finalize = gnw_dma_finalize,
     .class_init = gnw_dma_class_init,
 };
 

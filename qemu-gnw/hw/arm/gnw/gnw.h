@@ -12,7 +12,8 @@
 #include "qom/object.h"
 #include "ui/console.h"
 #include "crypto/aes.h"
-#include <pthread.h>
+#include "qemu/audio.h"
+#include "qemu/notify.h"
 
 /* CPU clock the stock firmware programs (PLL1 280 MHz). */
 #define GNW_SYSCLK_HZ       280000000ULL
@@ -233,16 +234,16 @@ struct GnwDmaState {
     char *wav_path;
     FILE *wav;
     uint32_t wav_bytes;
-    bool playback;              /* host speakers via AudioQueue */
-    void *aq;                   /* AudioQueueRef */
+    bool playback;              /* host speakers via QEMU audio backend */
+    AudioBackend *audio_be;
+    Notifier audio_exit;
+    bool audio_registered;
+    SWVoiceOut *voice;
     int voice_rate;
     int voice_ch;
     uint8_t *pcm;
     unsigned pcm_r;
     unsigned pcm_fill;
-    int16_t last_l, last_r;
-    bool pcm_primed;
-    pthread_mutex_t pcm_lock;
     /* Called when a stream towards a handshaking peripheral is enabled. */
     void (*periph_kick)(void *opaque);
     void *periph_opaque;
