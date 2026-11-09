@@ -1,0 +1,7 @@
+{
+  "formatVersion": 1,
+  "id": "1446eddd-0e6f-4438-97d6-1c3fde7d1979",
+  "model": "zelda",
+  "internalFlash": "../../firmware/internal_flash_backup_zelda.bin",
+  "externalFlash": "../../firmware/flash_backup_zelda.bin"
+}

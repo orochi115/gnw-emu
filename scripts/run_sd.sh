@@ -2,7 +2,7 @@
 # Retro-Go SD, direct: a full device backup (stock + dual boot) with the SD
 # build of Retro-Go in bank 2 and a microSD card image.
 #
-#   scripts/run_sd.sh [BACKUP_DIR] [extra qemu args...]
+#   scripts/run_sd.sh [BACKUP_DIR] [Electron application flags]
 #
 # BACKUP_DIR defaults to ../game-and-watch-backup/backups/full_20261104_1021
 # (bank1.bin + ext.bin are used; the backup itself is never modified).
@@ -15,13 +15,12 @@
 #                         (default ../xx/game-and-watch-retro-go/roms)
 #   SYSTEMS=nes,gb,...    only these systems on the card
 #   SDCARD=FILE           card image (default out/sd/sdcard.img)
-#   FRESH=1               rebuild the card image and drop this profile's session
-#   BATTERY=, USB_POWER=, ... are passed to scripts/run.sh
+#   FRESH=1               rebuild the card image and create a new profile identity
+#   FRESH=1 creates a new JSON identity; previous saves are retained.
 #
-# The script writes out/profiles/sd-<backup name>.gnw.toml and runs it.
+# The script writes out/profiles/sd-<backup name>.gnw.json and runs it.
 # Saves live in UserData/sessions/<profile id>/. The SD card is copied
-# there on first launch; the source image is left unchanged. An old
-# out/sd/<name>_ext.bin is copied into the session the first time.
+# there on first launch; the source image is left unchanged.
 #
 # Keys: arrows = D-pad, X = A, Z = B, G = GAME, T = TIME, P = PAUSE,
 #       O = POWER.  Hold LEFT + G on the clock to enter Retro-Go.
@@ -54,7 +53,6 @@ if ! ls "$ROOT"/out/dl/*/x/cores/*.bin >/dev/null 2>&1; then
 fi
 
 NAME=$(basename "$B")
-OVERLAY=$ROOT/out/sd/${NAME}_ext.bin
 
 # Retro-Go SD finds the stock firmware (and keeps its ROM cache clear of
 # the stock data in external flash) through a metadata word at bank1+0x1B8,
@@ -72,22 +70,20 @@ if (word >> 24) & 0xF != 4:
     print("bank1  : added the Retro-Go SD metadata word (4 MiB stock data)")
 open(sys.argv[2], "wb").write(b)
 PY
-PROFILE=$ROOT/out/profiles/sd-$NAME.gnw.toml
-python3 "$ROOT/harness/profile.py" write "$PROFILE" zelda \
-    internal="$BANK1" external="$B/ext.bin" bank2="$FWBIN" \
-    sdcard="$SDCARD" sd-wiring="${SD_WIRING:-spi1}"
-SESS=$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")
+PROFILE=$ROOT/out/profiles/sd-$NAME.gnw.json
 if [ "${FRESH:-0}" = 1 ]; then
     rm -f "$SDCARD"
-    rm -rf "$SESS"
-else
-    python3 "$ROOT/harness/profile.py" seed "$PROFILE" flash.bin="$OVERLAY"
 fi
 if [ ! -f "$SDCARD" ]; then
     mkdir -p "$(dirname "$SDCARD")"
     python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --roms "$ROMS" \
         ${SYSTEMS:+--systems "$SYSTEMS"}
 fi
+
+node "$ROOT/desktop/dist-cli/cli.js" ensure "$PROFILE" zelda \
+    internalFlash="$BANK1" externalFlash="$B/ext.bin" bank2Flash="$FWBIN" \
+    sdCard="$SDCARD" sdWiring="${SD_WIRING:-spi1}" $(if [ "${FRESH:-0}" = 1 ]; then echo --fresh; fi)
+SESS=$(node "$ROOT/desktop/dist-cli/cli.js" session-dir "$PROFILE")
 
 echo "backup  : $B (bank1 + metadata, ext)"
 echo "bank2   : $FWBIN"

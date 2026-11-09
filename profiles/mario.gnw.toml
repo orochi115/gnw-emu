@@ -1,5 +1,0 @@
-version = 1
-id = "22222222-2222-4222-8222-222222222222"
-model = "mario"
-internal = "../../firmware/internal_flash_backup_mario.bin"
-external = "../../firmware/flash_backup_mario.bin"

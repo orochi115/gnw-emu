@@ -4,7 +4,7 @@
 # retro-go_update.bin.  The bootloader installs Retro-Go into bank 2 from
 # the card, like a first install or an update on the real console.
 #
-#   scripts/run_sd_update.sh [extra qemu args...]
+#   scripts/run_sd_update.sh [Electron application flags]
 #
 #   1. clock (stock firmware) -> hold LEFT + G
 #      The freshly patched flash has no settings yet, so the stock firmware
@@ -13,20 +13,19 @@
 #   2. "Updating firmware" ... "Firmware update done" -> press any button
 #   3. clock again -> hold LEFT + G -> Retro-Go SD
 #
-# The script writes out/profiles/sd-update.gnw.toml. Bank 2 in that profile
+# The script writes out/profiles/sd-update.gnw.json. Bank 2 in that profile
 # is a blank 256 KiB image; the installed firmware is the session's
 # bank2.bin under UserData/sessions/<profile id>/. The source card stays
 # out/sd/update/card.img; the running copy is the session's sdcard.img.
-# FRESH=1 deletes the session and the source card, which returns to the
-# pre-update state. An old out/sd/update overlay is copied into the session
-# the first time.
+# FRESH=1 rebuilds the source card and creates a new JSON identity.
+# Previous application saves are retained.
 #
 # Prepared when missing: the patched firmware (scripts/build_sd_patch.sh,
 # needs ../firmware/*_zelda.bin and `brew install keystone`), the Retro-Go
 # SD build, cores and the SD bootloader.
 #
 #   SD_WIRING=spi1|ospi, ROMS=DIR, SYSTEMS=nes,gb  as in scripts/run_sd.sh
-#   BATTERY=, USB_POWER=, ...                      passed to scripts/run.sh
+# Existing saves are reused only while the JSON profile is unchanged.
 set -e
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WS=$(cd "$ROOT/.." && pwd)
@@ -51,12 +50,9 @@ if [ ! -f "$DB/bank1.bin" ]; then
     python3 "$ROOT/scripts/make_sd_dualboot.py" "$DB"
 fi
 
-PROFILE=$ROOT/out/profiles/sd-update.gnw.toml
+PROFILE=$ROOT/out/profiles/sd-update.gnw.json
 BLANK=$D/bank2-blank.bin
 if [ "${FRESH:-0}" = 1 ]; then
-    if [ -f "$PROFILE" ]; then
-        rm -rf "$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")"
-    fi
     rm -rf "$D"
 fi
 mkdir -p "$D"
@@ -70,12 +66,10 @@ if [ ! -f "$D/card.img" ]; then
     python3 "$ROOT/scripts/make_sd_image.py" "$D/card.img" --roms "$ROMS" \
         ${SYSTEMS:+--systems "$SYSTEMS"} --with-update
 fi
-python3 "$ROOT/harness/profile.py" write "$PROFILE" zelda \
-    internal="$DB/bank1.bin" external="$DB/ext.bin" bank2="$BLANK" \
-    sdcard="$D/card.img" sd-wiring="${SD_WIRING:-spi1}"
-SESS=$(python3 "$ROOT/harness/profile.py" session-dir "$PROFILE")
-python3 "$ROOT/harness/profile.py" seed "$PROFILE" \
-    flash.bin="$D/ext.bin" bank1.bin="$D/bank1.bin" bank2.bin="$D/bank2.bin"
+node "$ROOT/desktop/dist-cli/cli.js" ensure "$PROFILE" zelda \
+    internalFlash="$DB/bank1.bin" externalFlash="$DB/ext.bin" bank2Flash="$BLANK" \
+    sdCard="$D/card.img" sdWiring="${SD_WIRING:-spi1}" $(if [ "${FRESH:-0}" = 1 ]; then echo --fresh; fi)
+SESS=$(node "$ROOT/desktop/dist-cli/cli.js" session-dir "$PROFILE")
 
 echo "bank1   : $DB/bank1.bin (patched stock + SD bootloader)"
 echo "bank2   : blank, until the update writes the session copy"

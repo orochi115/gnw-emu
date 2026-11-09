@@ -1,0 +1,7 @@
+{
+  "formatVersion": 1,
+  "id": "757c7d6d-b902-4283-9d35-d6c3ad2f8d0d",
+  "model": "mario",
+  "internalFlash": "../../firmware/internal_flash_backup_mario.bin",
+  "externalFlash": "../../firmware/flash_backup_mario.bin"
+}

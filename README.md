@@ -25,7 +25,7 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 | `scripts/run_sd.sh`、`run_sd_update.sh` | Retro-Go SD 一键运行：直启 / 从 SD 卡升级 |
 | `scripts/build_retrogo_sd.sh`、`fetch_cores.sh`、`build_cores.sh`、`make_sd_image.py`、`build_sd_patch.sh`、`make_sd_dualboot.py` | Retro-Go SD：编译固件、下载或编译核心、生成 SD 卡镜像、打补丁、拼双系统 Bank 1（见 `docs/sdcard.md`） |
 | `hwtest/` | Cortex-M7 时序测试，真机和模拟器都能跑；结果与周期精确化评估见 `docs/cycle-accuracy.md` |
-| `docs/profiles.md` | ROM profile（`.gnw.toml`）、`UserData/` 里的会话和 `settings.toml`。`scripts/run.sh` 负责加载 |
+| `docs/desktop/README.md` | Electron 桌面、JSON ROM 配置、自动化、日志和开发说明 |
 
 ## 复用的社区代码
 
@@ -47,48 +47,33 @@ scripts/build.sh
 
 qemu 子模块的 `gnw` 分支已经提交了两处钩子：`hw/arm/meson.build` 里的 `subdir('gnw')` 和 `hw/arm/Kconfig` 里的 `source gnw/Kconfig`，`hw/arm/gnw` 是指向 `qemu-gnw/hw/arm/gnw` 的相对软链接。用 `QEMU_SRC=` 指定原版 QEMU 时，`build.sh` 会自动补上这两处。本机 `/opt/devkitpro` 自带的 `pkg-config` 找不到 Homebrew 的 glib，所以脚本固定使用 `/opt/homebrew/bin/pkg-config`。
 
-## 运行（窗口）
+## 运行（Electron 窗口）
 
 ```sh
-scripts/run.sh zelda      # 或 mario
-scripts/run.sh path/to/machine.gnw.toml
+cd desktop
+npm ci
+npm run build
+npm run dev
 ```
 
-`zelda` / `mario` 分别加载 `profiles/zelda.gnw.toml` 和 `profiles/mario.gnw.toml`。`.gnw.toml` 只写机型、`id` 和只读镜像，镜像路径相对这份文件。电量、RTC、可写 Flash 和 SD 卡工作副本在 `UserData/sessions/<id>/`。声音、窗口、实时节拍和最近打开的列表在 `UserData/settings.toml`（第一次窗口运行时按默认值生成；macOS 的默认窗口是 Cocoa，其他系统是 GTK）。字段见 `docs/profiles.md`。这一次运行可以用 `BATTERY`、`USB_POWER`、`BATTERY_LIFE_MIN`、`CHARGE_TIME_MIN`、`RTC`、`DISPLAY_BACKEND` 覆盖，不写回 profile。
+也可在项目根目录使用 `scripts/run.sh zelda` / `mario` / `FILE.gnw.json`。主窗口通过“文件 → 加载 ROM…”和“制作 ROM…”操作。制作只组合已有的 Flash/SD 镜像，不编译固件。源镜像不修改，新格式存档位于 `UserData/sessions/<id>/`。完整说明见 [桌面应用文档](docs/desktop/README.md)。
 
-| 键盘 | 按键 |
+| 键盘 | 设备操作 |
 |---|---|
 | 方向键 | 十字键 |
 | X / Z | A / B |
-| G / T / P | GAME / TIME / PAUSE |
-| O | POWER |
-| Return / Tab | START / SELECT（仅 Zelda） |
+| G / T / P / O | GAME / TIME / PAUSE / POWER |
+| Return / Tab | START / SELECT |
 | - / = | 电量 −10% / +10% |
 | C | 插上 / 拔掉 USB 电源 |
 
-原厂镜像的存档在 `UserData/sessions/11111111-1111-4111-8111-111111111111/`（Mario 用它自己的 `id`）。第一次运行时从 `firmware/` 的 dump 复制，那些文件不会被改动。
+亮度由已有 DAC/GPIO/LCD 模型合成，Electron 显示 QEMU 完整像素，不改变游戏颜色。宿主音频由 QEMU 音频后端播放。
 
-亮度跟随固件已有的设置菜单：原厂 Mario/Zelda、Retro-Go 和 Retro-Go SD 均支持。
-模拟器以 DAC1 通道 1（PA4）作为整屏背光强度，在两层画面合成后按 12 位 DAC 输出值 / 4095 线性缩放 RGB；不修改固件显存。
-PA4 配置为 GPIO 输出时，高电平全亮、低电平关闭。DAC 通道关闭或 LCD 供电关闭时画面全黑，重新开启后恢复。
-窗口和 headless 截图使用相同的亮度处理。默认档位也会按比例变暗；此映射尚未按真机背光电路或视觉曲线校准。
+## 完整设备备份
 
-## 运行改装机的完整备份（原厂 + Retro-Go 双系统）
+`../run_backup_emu.sh BACKUP_DIR` 将 bank1.bin、bank2.bin、ext.bin 组合为 JSON 配置。新脚本不迁移旧存档；`FRESH=1` 创建新 UUID，保留以前的存档。尚在开发工作区时用 `GNW_EMU_DIR=/path/to/gnw-emu-electron-ui` 指定项目。
 
-用 `game-and-watch-backup/gnw_full_backup.py` 做出的备份（`bank1.bin`、`bank2.bin`、`ext.bin`）由仓库根目录的 `run_backup_emu.sh` 运行。它写一份 `out/profiles/<备份名>.gnw.toml`，再交给 `scripts/run.sh`。备份目录本身不会被改动。
-
-```sh
-../run_backup_emu.sh ../game-and-watch-backup/backups/full_YYYYMMDD_HHMM
-```
-
-开机进入原厂时钟。按住 **← + G**（LEFT + GAME）后，补丁过的引导程序会跳到 Bank 2 的 Retro-Go。
-Retro-Go 里 G 对应游戏的 START，P（PAUSE）打开游戏菜单，T（TIME）对应 SELECT。
-存档在 `UserData/sessions/<profile id>/`。以前写在 `out/<备份名>_flash.bin` 的外挂 Flash 会在第一次使用这份 profile 时复制过去。`FRESH=1` 删掉会话，从备份镜像重新开始。
-
-电池：`BATTERY=30 USB_POWER=on BATTERY_LIFE_MIN=10 ../run_backup_emu.sh` 设定这一次的开机电量、是否插着 USB、耗电和充电速度；窗口里按 `-`/`=` 调电量，按 `C` 插拔 USB。Headless 用 `GnW(battery=..., usb=..., battery_life_min=..., charge_time_min=...)`，运行中 `gw.set_battery(n)`、`gw.set_usb(True)`。注意 QEMU 在 VM 暂停时会丢弃键盘事件，脚本里要在运行时发键。
-
-Headless 时用 `--internal/--external/--bank2`，或者 `GnW(internal=..., external=..., bank2=...)`。
-`tests/test_retrogo.py` 会找最新的 `../game-and-watch-backup/backups/full_*`（也可以用 `GNW_FULL_BACKUP` 指定），没有就跳过。
+原厂时钟中按住 **← + G** 进入 Retro-Go；Retro-Go 中 G 对应 START、T 对应 SELECT、P 打开游戏菜单。Headless 固件/设备测试仍使用 Python `GnW`，参数和测试隔离行为不变。
 
 ## Retro-Go SD（microSD 改装）
 
@@ -172,7 +157,7 @@ GNW_UPDATE_GOLDEN=1 .venv/bin/python -m pytest tests   # 画面有意改变后�
 
 ## 已知限制
 
-- 窗口运行（`scripts/run.sh`，机器属性 `audio=on`）用 macOS AudioQueue 播放 SAI1，前面有 60 ms 的抖动缓冲（读空后重新攒满再播，积压超过 200 ms 就丢掉最旧的数据）。`GNW_AQ_DUMP=文件` 会把实际播放的数据存成 raw（48 kHz、16 位、双声道），可以和 `wav=` 录到的 SAI 数据对比。不设 `audio=on` 时静音；录音仍用 `wav=` 或 `--wav`。时钟界面几乎没有声音，进游戏后才有 BGM。
+- 窗口运行用 QEMU 音频后端播放 SAI1，保留有界的 PCM 队列；不依赖 Apple 专用 API。声音生成与 WAV 捕获仍由原有 SAI/DMA 模型完成。时钟界面通常静音，游戏中有 BGM。
 - SAI1 的采样率按 RCC 和 SAI 寄存器推算（Zelda 为 pll2_p 12.289 MHz，约 48004 Hz）。以前误读了 `RCC_CDCCIPR` 而不是 `RCC_CDCCIP1R` 的 SAI1SEL，得到 44270 Hz，比游戏的出声速度慢约 8%。游戏的缓冲队列因此溢出，正在播放的缓冲被改写，每 240 个采样的块尾都有杂音。
 - MDMA、BDMA、I2C1、DAC、WWDG 都只是桩。
 - 电量用电压线性近似，没有模拟锂电池放电曲线；0% 不会自动关机，只有原厂固件会在低电量时自己关机。
