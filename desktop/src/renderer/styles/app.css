@@ -153,7 +153,6 @@ canvas {
   position: relative;
   flex: none;
   isolation: isolate;
-  filter: drop-shadow(0 12px 16px #0002);
 }
 .chassis canvas {
   position: absolute;
@@ -466,4 +465,84 @@ details[open] summary {
   .model-option span {
     transition: none;
   }
+}
+
+main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.window-content {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.window-titlebar {
+  height: 32px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  app-region: drag;
+  user-select: none;
+}
+.window-titlebar[hidden] {
+  display: none;
+}
+.window-title {
+  flex: 1;
+  padding: 0 8px;
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.window-controls {
+  display: flex;
+  app-region: no-drag;
+}
+.window-titlebar button,
+.clock-controls button {
+  app-region: no-drag;
+  height: 32px;
+  min-width: 36px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 18px;
+}
+.window-titlebar button[data-ui="window.close"]:hover,
+.clock-controls button[data-ui="window.close"]:hover {
+  background: #c43a45;
+  color: white;
+}
+.clock-controls {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: flex;
+  z-index: 10;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 2px 8px #0003;
+  opacity: 0;
+  transition: opacity 140ms;
+  app-region: no-drag;
+}
+.desktop-clock:hover .clock-controls,
+.clock-controls:focus-within {
+  opacity: 1;
+}
+.desktop-clock .game-screen {
+  app-region: drag;
+}
+.desktop-clock .chassis-button {
+  app-region: no-drag;
 }

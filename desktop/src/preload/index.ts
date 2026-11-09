@@ -6,6 +6,9 @@ const subscribe = (channel: string, callback: (value: any) => void) => {
   return () => ipcRenderer.removeListener(channel, listener);
 };
 contextBridge.exposeInMainWorld("desktop", {
+  windowState: () => ipcRenderer.invoke("window.state"),
+  onWindowState: (cb: (v: unknown) => void) => subscribe("window.state", cb),
+  windowAction: (action: string) => ipcRenderer.invoke("window.action", action),
   locale: () => ipcRenderer.invoke("app.locale"),
   state: () => ipcRenderer.invoke("app.state"),
   onState: (cb: (v: unknown) => void) => subscribe("app.state", cb),

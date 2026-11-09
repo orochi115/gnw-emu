@@ -8,6 +8,8 @@ export function menuTemplate(
     make: () => void;
     toggleChassis?: () => void;
     showChassis?: boolean;
+    clockMode?: boolean;
+    toggleClock?: () => void;
   },
 ): Item[] {
   const separator: Item = { type: "separator" };
@@ -73,6 +75,13 @@ export function menuTemplate(
           type: "checkbox",
           checked: actions.showChassis ?? true,
           click: actions.toggleChassis,
+        },
+        {
+          id: "view.clock",
+          label: t("menu.clock"),
+          type: "checkbox",
+          checked: actions.clockMode ?? false,
+          click: actions.toggleClock,
         },
       ],
     },

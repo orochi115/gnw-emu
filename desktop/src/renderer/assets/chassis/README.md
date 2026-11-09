@@ -41,3 +41,5 @@ offline image preparation; Electron does not depend on Python.
 Review sheets are generated under ignored `out/chassis-preview/`: `comparison.jpg`
 shows normal and LEFT+A+GAME states, and `<model>-states.jpg` shows every button.
 The placeholder LCD contains no firmware or ROM screenshots.
+
+Directional pressed sprites add a warm translucent face tint and strong inner rim for visibility at desktop-clock scale. The photographic center and all other directions remain unchanged.

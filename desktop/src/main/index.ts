@@ -9,6 +9,7 @@ import {
 import { UserError } from "../shared/user-error";
 import { loadSettings, updateSettings } from "../core/settings-store";
 import { ChassisPreference } from "../core/chassis-preference";
+import { WindowMode } from "./window-mode";
 import { menuTemplate } from "./menu";
 import type { AppState, ViewPreferences } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
@@ -59,6 +60,8 @@ let closeLogs: () => Promise<void> = async () => {};
 let preferences: ViewPreferences = { showChassis: true };
 let preferenceChange: Promise<void> = Promise.resolve();
 let viewPreference: ChassisPreference;
+let windowMode: WindowMode;
+let fittedModel: AppState["model"];
 async function main() {
   const settings = await loadSettings(paths.userData);
   preferences = { showChassis: settings.showChassis };
@@ -129,6 +132,8 @@ async function main() {
     width: 960,
     height: 640,
     useContentSize: true,
+    frame: false,
+    autoHideMenuBar: true,
     minWidth: 320,
     minHeight: 280,
     title: "gnw-emu",
@@ -141,6 +146,20 @@ async function main() {
       nodeIntegration: false,
     },
   });
+  window.setMenuBarVisibility(false);
+  windowMode = new WindowMode(
+    window,
+    (value) => {
+      window.webContents.send("window.state", value);
+      logger
+        .child("view")
+        .debug({ event: "window.state", ...value }, "Window state changed");
+      updateMenu();
+      uiEvents.emit("changed");
+    },
+    () => controller?.releaseInput(),
+    () => controller.state.status === "running" && !shuttingDown,
+  );
   controller = new SessionController({
     ...paths,
     logger: logger.child("session"),
@@ -155,18 +174,17 @@ async function main() {
     },
     publish: (value) => {
       preferences = value;
+      windowMode.fit(controller.state.model, value.showChassis);
       if (!window.isDestroyed())
         window.webContents.send("view.preferences", preferences);
-      logger
-        .child("view")
-        .info(
-          {
-            event: "chassis.visibility",
-            ...value,
-            runtimeSessionId: controller.state.runtimeSessionId,
-          },
-          "Device frame visibility changed",
-        );
+      logger.child("view").info(
+        {
+          event: "chassis.visibility",
+          ...value,
+          runtimeSessionId: controller.state.runtimeSessionId,
+        },
+        "Device frame visibility changed",
+      );
     },
   });
   dialogs = new DialogAdapter(
@@ -175,6 +193,16 @@ async function main() {
   );
   controller.on("state", (state) => {
     if (!window.isDestroyed()) {
+      if (state.model && state.model !== fittedModel) {
+        fittedModel = state.model;
+        windowMode.fit(state.model, preferences.showChassis);
+      }
+      if (
+        !shuttingDown &&
+        windowMode.state.clockMode &&
+        ["idle", "error"].includes(state.status)
+      )
+        void toggleClock().catch(showError);
       window.webContents.send("app.state", stateForUi(state));
       window.webContents.send("input.state", controller.inputState());
       window.setTitle(
@@ -188,7 +216,23 @@ async function main() {
     if (!window.isDestroyed()) window.webContents.send("input.state", state);
     uiEvents.emit("changed");
   });
-  window.on("blur", () => controller.releaseInput());
+  window.webContents.on("context-menu", () => {
+    if (windowMode.state.clockMode)
+      Menu.buildFromTemplate([
+        {
+          label: t("window.normal"),
+          click: () => {
+            void toggleClock().catch(showError);
+          },
+        },
+        {
+          label: t("menu.quit"),
+          click: () => {
+            void shutdown();
+          },
+        },
+      ]).popup({ window });
+  });
   window.webContents.on("before-input-event", (_e, input) => {
     if (input.control || input.meta || input.alt || input.key === "F10")
       controller.releaseInput();
@@ -229,6 +273,8 @@ function updateMenu() {
   const blocked =
     makerOpen ||
     nativeDialog ||
+    windowMode?.state.clockMode ||
+    windowMode?.transitioning ||
     ["starting", "stopping"].includes(controller.state.status);
   const menu = Menu.getApplicationMenu();
   if (menu)
@@ -238,6 +284,19 @@ function updateMenu() {
     }
   const chassis = menu?.getMenuItemById("view.chassis");
   if (chassis) chassis.checked = preferences.showChassis;
+  const zoom = menu?.getMenuItemById("window.zoom");
+  if (zoom)
+    zoom.enabled = !windowMode.state.clockMode && !windowMode.transitioning;
+  const clock = menu?.getMenuItemById("view.clock");
+  if (clock) {
+    clock.checked = windowMode.state.clockMode;
+    clock.enabled =
+      !makerOpen &&
+      !nativeDialog &&
+      !active &&
+      !windowMode.transitioning &&
+      controller.state.status === "running";
+  }
 }
 /** Queue toggles against the last committed preference; rollback native checks on failure. */
 function toggleChassis() {
@@ -249,6 +308,25 @@ function toggleChassis() {
   observedActivity = work;
   return work;
 }
+async function toggleClock() {
+  if (makerOpen || nativeDialog || shuttingDown)
+    throw new UserError("error.busy");
+  if (!windowMode.state.clockMode && controller.state.status !== "running")
+    throw new UserError("error.busy");
+  try {
+    await perform(() => windowMode.toggle());
+    logger.child("view").info(
+      {
+        event: "window.mode",
+        ...windowMode.state,
+        runtimeSessionId: controller.state.runtimeSessionId,
+      },
+      "Window mode changed",
+    );
+  } finally {
+    updateMenu();
+  }
+}
 function createMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
@@ -258,6 +336,10 @@ function createMenu() {
         },
         make: () => makeRom(),
         showChassis: preferences.showChassis,
+        clockMode: windowMode.state.clockMode,
+        toggleClock: () => {
+          void toggleClock().catch(showError);
+        },
         toggleChassis: () => {
           void toggleChassis().catch(showError);
         },
@@ -287,6 +369,7 @@ async function perform<T>(work: () => Promise<T>): Promise<T> {
     return await promise;
   } finally {
     if (active === promise) active = undefined;
+    updateMenu();
   }
 }
 async function native<T>(work: () => Promise<T>) {
@@ -304,13 +387,14 @@ async function native<T>(work: () => Promise<T>) {
 }
 async function openRom() {
   if (makerOpen) throw new UserError("error.makerOpen");
+  if (windowMode.state.clockMode) throw new UserError("error.busy");
   return perform(async () => {
     const path = await native(() => dialogs.open(true));
     if (path) await controller.load(path);
   });
 }
 function makeRom() {
-  if (makerOpen || nativeDialog || active) return;
+  if (makerOpen || nativeDialog || active || windowMode.state.clockMode) return;
   controller.releaseInput();
   makerOpen = true;
   updateMenu();
@@ -339,6 +423,33 @@ function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) {
     throw new Error("Unauthorized renderer");
 }
 function registerIpc() {
+  ipcMain.handle("window.state", (event) => {
+    trusted(event);
+    return windowMode.state;
+  });
+  ipcMain.handle("window.action", async (event, action) => {
+    trusted(event);
+    switch (action) {
+      case "menu":
+        Menu.getApplicationMenu()?.popup({ window });
+        break;
+      case "minimize":
+        window.minimize();
+        break;
+      case "maximize":
+        if (!windowMode.state.clockMode)
+          window.isMaximized() ? window.unmaximize() : window.maximize();
+        break;
+      case "normal":
+        if (windowMode.state.clockMode) await toggleClock();
+        break;
+      case "close":
+        window.close();
+        break;
+      default:
+        throw new Error("Invalid window action");
+    }
+  });
   ipcMain.handle("view.preferences", (event) => {
     trusted(event);
     return preferences;
@@ -408,8 +519,11 @@ function registerIpc() {
     if (
       typeof code === "string" &&
       typeof down === "boolean" &&
-      !makerOpen &&
-      !nativeDialog
+      (!down ||
+        (!makerOpen &&
+          !nativeDialog &&
+          window.isFocused() &&
+          !windowMode.transitioning))
     )
       controller.key(code, down);
   });
@@ -427,7 +541,12 @@ function registerIpc() {
       typeof source === "string" &&
       /^(pointer:\d{1,10}|chassis-key:[a-z]+:(Space|Enter))$/.test(source) &&
       typeof runtimeSessionId === "string" &&
-      (!down || (!makerOpen && !nativeDialog && preferences.showChassis))
+      (!down ||
+        (!makerOpen &&
+          !nativeDialog &&
+          preferences.showChassis &&
+          window.isFocused() &&
+          !windowMode.transitioning))
     )
       controller.button(bit, down, source, runtimeSessionId);
   });
@@ -504,8 +623,10 @@ async function dispatch(method: string, params: any) {
   )
     throw new RpcError(-32005, "Stale runtime session");
   switch (method) {
-    case "ui.inspect":
-      return ui.inspect();
+    case "ui.inspect": {
+      const result = await ui.inspect();
+      return { ...result, window: { ...result.window, ...windowMode.state } };
+    }
     case "ui.click": {
       observedActivity = undefined;
       const result = await ui.click(params.id);
@@ -535,6 +656,11 @@ async function dispatch(method: string, params: any) {
         ...controller.diagnostics(),
         ...((await ui.inspect()).canvas ?? {}),
         chassis: (await ui.inspect()).chassis,
+        window: {
+          ...windowMode.state,
+          alwaysOnTop: window.isAlwaysOnTop(),
+          bounds: window.getBounds(),
+        },
         memory: process.memoryUsage(),
         instanceId,
         logBridge: { dropped: bridgeDropped },

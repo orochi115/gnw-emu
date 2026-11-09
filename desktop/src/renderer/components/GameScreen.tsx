@@ -6,6 +6,7 @@ export function GameScreen({
   runtimeSessionId,
   model,
   showChassis,
+  compact,
   mask,
   disabled,
   resetGeneration,
@@ -13,6 +14,7 @@ export function GameScreen({
   runtimeSessionId?: string;
   model?: "zelda" | "mario";
   showChassis: boolean;
+  compact: boolean;
   mask: number;
   disabled: boolean;
   resetGeneration: number;
@@ -22,12 +24,14 @@ export function GameScreen({
   const layout = useRef<HTMLDivElement>(null);
   const skin =
     showChassis && model && runtimeSessionId ? skins[model] : undefined;
+  const compactRef = useRef(compact);
+  compactRef.current = compact;
   const skinRef = useRef<Skin | undefined>(skin);
   skinRef.current = skin;
   const resizeRef = useRef<() => void>(() => {});
   useEffect(() => {
     resizeRef.current();
-  }, [skin, runtimeSessionId]);
+  }, [skin, runtimeSessionId, compact]);
   useEffect(() => {
     let port: MessagePort | undefined;
     let animation = 0;
@@ -41,8 +45,8 @@ export function GameScreen({
       const box = container.current.getBoundingClientRect();
       const chassis = skinRef.current;
       if (chassis && layout.current) {
-        const availableWidth = Math.max(1, box.width - 32),
-          availableHeight = Math.max(1, box.height - 32);
+        const availableWidth = Math.max(1, box.width),
+          availableHeight = Math.max(1, box.height);
         const scale = Math.min(
           availableWidth / chassis.size.width,
           availableHeight / chassis.size.height,
@@ -68,7 +72,7 @@ export function GameScreen({
       canvas.current.style.left = "";
       canvas.current.style.top = "";
       const fit = Math.min(box.width / sourceWidth, box.height / sourceHeight);
-      const scale = fit >= 1 ? Math.floor(fit) : fit;
+      const scale = !compactRef.current && fit >= 1 ? Math.floor(fit) : fit;
       canvas.current.style.width = `${sourceWidth * scale}px`;
       canvas.current.style.height = `${sourceHeight * scale}px`;
     };

@@ -16,6 +16,8 @@ export class UiDriver {
       window: {
         title: this.window.getTitle(),
         bounds: this.window.getBounds(),
+        contentBounds: this.window.getContentBounds(),
+        alwaysOnTop: this.window.isAlwaysOnTop(),
         focused: this.window.isFocused(),
       },
       menus: Menu.getApplicationMenu()?.items.flatMap(

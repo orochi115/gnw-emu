@@ -35,3 +35,16 @@
 稳定性备注：早期回归曾出现一次原有表单注入末尾字符重复，单独复核及三轮重复未再出现；一次长按重复场景收到提前的 pointer 来源释放。补充 DOM/Pino 失败诊断后，机身输入连续 **8 次通过**，最终全量也通过；这两项偶发现象未定位，不将重复通过表述为已彻底修复。后续失败 trace 附输入来源日志与 DOM 事件，以便复现分析。
 
 本轮没有修改 QEMU/帧协议，未重复十分钟 soak 与完整原生 pytest。Linux/Windows 实机、实际触摸硬件和物理输入到显示延迟仍未验证；Chromium 触摸注入不等于触摸设备实测。原生菜单自动化仍覆盖 handler/checkbox 边界，不能替代逐平台真实菜单展开检查。
+
+
+## 第二阶段完善：紧凑机身与桌面时钟（2026-11-09）
+
+最终 TypeScript typecheck/build/macOS package:dir 退出 0；Vitest **41 passed / 17 files**；普通 Electron E2E **7 passed / 6 skipped**，显式目录包/CLI smoke **1 passed**。目录包额外验证时钟菜单进入、置顶、运行 UUID 保留与返回普通窗口。六项跳过仍为 soak、四个启动脚本、package 的显式开关；未修改后端/帧链路，本轮未重跑 soak 或原生 pytest。
+
+真实 Electron/QEMU 验证：Tab=SELECT 与 Enter=START 在聚焦 A 按钮时仍正确，游戏中不改变焦点；既有 Space、混合来源、触摸取消、模态/blur 清理继续通过。两机型 LCD 原始 320×240、4:3，对齐不变；初始和紧凑窗口照片区域与容器边界误差小于 2 CSS px。已查看浅色、深色、Mario、Zelda 方向按下及桌面时钟的实际截图，移除旧 16px 外圈和阴影，D-pad 按下使用亮金色方向反馈。照片外侧极小的透明边缘保留，任意非机身比例的手动窗口缩放仍等比容纳。
+
+时钟往返验证：同一 QEMU PID、runtimeSessionId、DOM Canvas 保留，帧序号继续增长；480px 紧凑窗口始终置顶；普通窗口 bounds/原有 onTop 恢复。真实最大化进入/返回后恢复最大化和已有置顶；真实全屏退出完成后再设置紧凑 bounds，返回普通几何。失焦测试使用第二个原生 BrowserWindow 夺取焦点，先确认 held mask 清零，再从仍运行的 renderer preload API 注入键盘/按钮 down 和迟到 up，desiredMask/appliedMask 保持 0；重新聚焦后新按下可用。紧凑窗口关闭正常退出宿主，使用现有保存生命周期。
+
+审阅发现并复现两个边界问题：原生 Zoom 绕过紧凑模式（真实菜单回归），以及全屏动画等待期间运行结束仍进入紧凑模式（受控宿主事件单元回归）。禁用原生 Zoom、返回前 unmaximize，并在全屏退出后重新核验运行状态；等待有 8 秒上限。修复后回归通过，审阅复核未发现阻塞项。最初退出测试在宿主关闭后读取失效的 Playwright 进程句柄，已改为缓存 ChildProcess；应用退出码 0。
+
+Linux/Windows 的实际窗口拖动、置顶、系统菜单、全屏和焦点仍需对应平台运行验证；本轮实测范围是 macOS Apple Silicon。桌面时钟继续运行当前固件，未实现系统时间同步或自动注入 TIME；截图的时钟画面由测试显式按 T 选择。物理输入延迟与真实触摸硬件仍未测量。

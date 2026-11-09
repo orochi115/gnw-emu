@@ -91,6 +91,25 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
           .evaluate((e) => Number((e as HTMLElement).dataset.frames)),
       )
       .toBeGreaterThan(2);
+    const runtimeId = reply.result.runtimeSessionId;
+    await app.evaluate(({ Menu }) =>
+      Menu.getApplicationMenu()!.getMenuItemById("view.clock")!.click(),
+    );
+    await expect(page.locator("main")).toHaveClass("desktop-clock");
+    expect(
+      await app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].isAlwaysOnTop(),
+      ),
+    ).toBe(true);
+    expect(await page.evaluate(() => window.desktop.state())).toMatchObject({
+      runtimeSessionId: runtimeId,
+    });
+    await page.evaluate(() => window.desktop.windowAction("normal"));
+    await expect(page.locator("main")).toHaveClass("normal-window");
+    await expect(page.locator("canvas")).toHaveAttribute(
+      "data-runtime-session-id",
+      runtimeId,
+    );
   } finally {
     await app.close();
     await rm(root, { recursive: true, force: true });

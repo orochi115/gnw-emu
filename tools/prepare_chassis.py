@@ -74,9 +74,13 @@ def state_sprite(source, mask, state, directional):
     sprite = source.copy()
     if state == "pressed":
         sprite = ImageEnhance.Brightness(sprite).enhance(0.68)
-        # A restrained warm inner rim makes a black d-pad press legible too.
+        # Bright directional face and rim stay legible at compact desktop size.
+        if directional:
+            face = Image.new("RGBA", source.size, (242, 204, 126, 0))
+            face.putalpha(mask.point(lambda p: round(p * 0.36)))
+            sprite = Image.alpha_composite(sprite, face)
         rim = ImageChops.subtract(mask, mask.filter(ImageFilter.MinFilter(5)))
-        rim = rim.point(lambda p: round(p * (0.35 if directional else 0.20)))
+        rim = rim.point(lambda p: round(p * (0.85 if directional else 0.20)))
         tint = Image.new("RGBA", source.size, (220, 190, 118, 0))
         tint.putalpha(rim)
         sprite = Image.alpha_composite(sprite, tint)

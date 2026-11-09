@@ -6,6 +6,11 @@ export interface InputState {
   appliedMask: number;
   resetGeneration: number;
 }
+export interface WindowState {
+  clockMode: boolean;
+  focused: boolean;
+  maximized: boolean;
+}
 export interface ViewPreferences {
   showChassis: boolean;
 }
@@ -22,6 +27,11 @@ export interface AppState {
   saveUncertain?: boolean;
 }
 export interface DesktopApi {
+  windowState(): Promise<WindowState>;
+  onWindowState(callback: (value: WindowState) => void): () => void;
+  windowAction(
+    action: "menu" | "minimize" | "maximize" | "close" | "normal",
+  ): Promise<void>;
   locale(): Promise<"zh-CN" | "en">;
   state(): Promise<AppState>;
   onState(callback: (state: AppState) => void): () => void;

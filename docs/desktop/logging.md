@@ -17,3 +17,5 @@ node desktop/dist-cli/ui-cli.js UserData/automation.json logging.tail '{"limit":
 动态配置更新已存在的模块 logger。近期缓冲最多2000条，查询最多200条，返回cursor/overwritten，after用于读取增量；历史已覆盖可由overwritten识别。文件仍保留更长历史。renderer桥单条≤8 KiB、最多40条/秒；utility不发送像素日志。滚动transport失败回退stderr，不能使日志故障中断游戏。
 
 不在日志里写固件/SD内容。路径作为诊断信息保留，因此日志文件适合本地排查；截图/日志不会自动上传。新模块应注入logger、定义明确event及单位，并同步更新本页。
+
+窗口模式：view 模块 `window.mode`（info）记录桌面时钟进入/返回与运行 ID；`window.state`（debug）记录焦点/最大化/模式变化。renderer 的 `window.action.failure`（error）记录窗口控制失败，不记录拖动位置或逐帧画面。
