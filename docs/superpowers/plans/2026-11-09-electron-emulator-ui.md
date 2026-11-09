@@ -6,7 +6,7 @@
 
 **Architecture:** Electron 主进程运行 TypeScript 应用服务，管理 JSON 配置、输入、QMP 和独立 QEMU 生命周期。QEMU 使用单独的显示监听模块输出本机 TCP 完整 RGBA 帧；Electron utility process 接收，渲染进程 Canvas 绘制。Python 保留活跃 QEMU 测试与镜像工具，废弃应用层删除。
 
-**Tech Stack:** Electron、TypeScript、React、electron-vite、electron-builder、Zod、Vitest、Playwright Electron；CSS tokens、系统字体与单一 SVG 图标风格；QEMU C、QIOChannelSocket、DisplayChangeListener、QEMU 音频 API。
+**Tech Stack:** Electron、TypeScript、React、electron-vite、electron-builder、Zod、Vitest、Playwright Electron、Pino/pino-pretty 与滚动日志 transport；本机 JSON-RPC/CLI 自动化；CSS tokens、系统字体与单一 SVG 图标风格；QEMU C、QIOChannelSocket、DisplayChangeListener、QEMU 音频 API。
 
 ---
 
@@ -16,6 +16,8 @@
 
 设计依据：`docs/superpowers/specs/2026-11-09-electron-emulator-ui-design.md`。本计划细化的 TCP ACK、字段布局、模块路径和测试安排，不改变第一阶段业务范围。机身外观、设置页面、改键页面、手柄页面、调试窗口和最近打开菜单不实现。
 
+追加设计依据：`docs/superpowers/specs/2026-11-09-ui-automation-observability-design.md`。用户要求 UI 自动化控制/读取、丰富可配置日志及文档；以下 Task 1.1/9.1 和对应验收纳入这些基础能力。MCP 后续可作薄适配，第一阶段选 CLI/本地 JSON-RPC，不新增可视调试面板。
+
 先在独立开发分支/工作区执行，保留用户未跟踪的 `.superpowers/` 和既有 UserData。一次任务完成后作相应提交；生成的 dist/node_modules/截图不提交。依赖在实现时选稳定版本并写 lockfile，本次不下载或安装。
 
 ## 文件职责
@@ -24,6 +26,9 @@
 |---|---|
 | `desktop/package.json`, `electron.vite.config.ts`, `tsconfig*.json` | 开发/构建/测试入口，主进程、preload 和 renderer 分别构建 |
 | `desktop/src/shared/{contracts,frame-protocol}.ts` | 业务 IPC 类型、与 C 对齐的帧协议常量 |
+| `desktop/src/shared/{automation-contracts,log-contracts}.ts` | 自动化命令/错误/读取 schema，日志配置/事件字段 |
+| `desktop/src/observability/{logger,config,bridge}.ts` | Pino 实例、过滤/sinks、跨进程日志收集及有界缓冲 |
+| `desktop/src/automation/{server,dispatcher,ui-driver,snapshot,dialog-adapter}.ts` | 本机 JSON-RPC、真实窗口操作、UI/应用读取和显式测试对话框替代 |
 | `desktop/src/core/{schemas,profile-store,session-store,settings-store,atomic-file,paths}.ts` | 无 Electron 依赖的 JSON 数据与文件服务 |
 | `desktop/src/core/{qmp-client,input-controller,qemu-command,session-controller,session-lease}.ts` | 控制通信、设备输入、命令参数、生命周期与独占 |
 | `desktop/src/main/{index,windows,menu,ipc}.ts` | Electron 进程/窗口/系统对话框及受限业务接口 |
@@ -33,6 +38,8 @@
 | `desktop/src/renderer/components/{GameScreen,EmptyState,MakeRomDialog,FileField}.tsx` | 画面、空态、制作表单及文件选择控件 |
 | `desktop/src/renderer/styles/{tokens,app,form}.css` | 视觉规范、浅/深色、各状态与布局 |
 | `desktop/tools/cli.ts` | 脚本共用的最小 profile/会话入口，不依赖 Electron 模块 |
+| `desktop/tools/ui-cli.ts` | 连接已运行应用、UI 命令/读取/等待/截图；stdout JSON、stderr 日志 |
+| `docs/desktop/{README,architecture,automation,logging,frame-protocol,json-format,development,validation}.md` | 可查找的独立文档，与对应代码任务一同维护 |
 | `desktop/tests/{unit,integration,e2e}/` | 业务/协议/生命周期与 Electron 场景测试 |
 | `qemu-gnw/hw/arm/gnw/gnw_display.{c,h}` | 显示监听、像素快照、TCP 握手及有界发送 |
 | `qemu-gnw/hw/arm/gnw/gnw_frame_protocol.h` | 显式协议字段及编码辅助，不发送原始 C struct |
@@ -87,7 +94,19 @@ session.json：formatVersion、battery、usbPower、rtc、batteryLifeMinutes、c
 - [ ] npm scripts 固定 dev、build、build:cli、typecheck、test、test:e2e、package:dir；提交 lockfile，dist/node_modules 加忽略规则。
 - [ ] 为以上 64 字节协议写有效/非法头的测试；覆盖 uint64 精度和双方相同的固定字节样例。
 - [ ] 实现协议声明、编码/解码和 IPC 请求/事件类型，约束 runtimeSessionId/requestId。
+- [ ] 固定自动化操作/信息读取 schema、稳定菜单/控件标识、operationId 和日志公共字段；将 UI 操作来源与直接应用服务调用区分。
 - [ ] 验证 `npm --prefix desktop run typecheck` 与 `npm --prefix desktop test -- tests/unit/frame-protocol.test.ts`，预期退出 0；提交工程与契约。
+
+## Task 1.1：日志管理和文档入口
+
+**Create:** observability 模块、shared/log-contracts.ts、tests/unit/logger.test.ts、docs/desktop/README.md、logging.md。
+
+- [ ] 选定并锁定 Pino/pino-pretty 与兼容的滚动 transport 版本。建立可注入 logger 和 per-module 子 logger，默认 info，支持 trace/debug、模块过滤及 JSONL/可读终端/文件 sinks。
+- [ ] 测试关联字段、结构化 error/cause、uint64 序号字符串化、token 过滤、动态级别变更、stdout 不混日志、文件轮转与 transport 失败回退。
+- [ ] renderer/utility 日志走受限有界 bridge，记录来源和丢弃计数；高频帧/音频事件按采样/汇总输出，默认不写逐帧内容。
+- [ ] 近期记录采用有界内存 cursor 查询，最多 2000 条、单次最多 200 条，提供过滤及覆盖/丢弃计数；滚动文件保留历史，不在主线程扫描完整文件。
+- [ ] 随此任务提交 logging 配置/目录/字段/轮转说明和 docs/desktop/README.md 导航；后续所有 core/QMP/输入/显示/生命周期任务使用该 logger，同步补充事件文档。
+- [ ] 跑 `npm --prefix desktop test -- tests/unit/logger.test.ts`、typecheck，预期通过；提交。
 
 ## Task 2：JSON 和原子文件服务
 
@@ -97,6 +116,7 @@ session.json：formatVersion、battery、usbPower、rtc、batteryLifeMinutes、c
 - [ ] 写临时目录集成测试：旧镜像不修改、工作副本不覆盖、复制失败没有有效半成品、JSON 原子替换失败保留旧文件。
 - [ ] 用 Zod 校验结构，用参数化 paths 服务定位资源/UserData；镜像校验对齐 gnw.c/gnw_flash.c/gnw_ospi.c 的真实边界，明确 Bank 2 ≤256 KiB，不虚构外部 Flash 只能 1/4 MiB 的限制。
 - [ ] 实现新 profile、session/settings 保存；只有新格式会话可复用，不读取旧用户数据或自动迁移。
+- [ ] 同步写 docs/desktop/json-format.md，记录字段/默认/路径/新身份与存档关系；校验和保存失败有结构化事件，不打印原始镜像。
 - [ ] 跑 `npm --prefix desktop test -- tests/unit/schemas.test.ts tests/unit/profile-store.test.ts tests/unit/session-store.test.ts`，预期全部通过；提交。
 
 ## Task 3：QEMU 完整帧显示模块
@@ -108,6 +128,7 @@ session.json：formatVersion、battery、usbPower、rtc、batteryLifeMinutes、c
 - [ ] 使用 QIOChannelSocket 和主循环可读/可写事件，完成 HELLO/ACK/FRAME/FRAME_ACK；非阻塞发送中持有自身快照，不引用被修改的 surface。
 - [ ] 将刷新请求设为约 16–17 ms，调用 qemu_console_hw_update 得到新 surface，再转换为紧密 RGBA。首帧不依赖固件执行；不改 LTDC 的硬件时序/中断。
 - [ ] 在 ACK 之前不提交下一帧给内核；更新最新待发送帧。断线/退出清理监听器、socket 和快照。
+- [ ] 同步写 docs/desktop/frame-protocol.md，C 注释记录快照所有权、部分写入和 ACK 约束；日志记录握手/断线/尺寸变化，帧统计有界且限频。
 - [ ] 跑 `scripts/build.sh`，预期 build/qemu-system-arm 更新成功；跑 `.venv/bin/python -m pytest -q tests/test_display_transport.py tests/test_backlight.py`，预期通过或仅缺固件用例明确 skip；提交。
 
 ## Task 4：画面接收和有界交付
@@ -149,6 +170,7 @@ session.json：formatVersion、battery、usbPower、rtc、batteryLifeMinutes、c
 - [ ] 实现状态机和唯一停止路径。通道握手完成后 cont，不先等固件首帧；cont 后有效帧到达再报告运行中。默认握手超时 10 秒、首帧 10 秒、正常退出 5 秒，可在测试中注入较短值。
 - [ ] 正常退出等待 child 的退出及资源关闭，再验证本次 state.json 并原子更新 session；不要使用其他运行的快照。
 - [ ] 所有回调带 runtimeSessionId；关闭/切换释放输入，关闭窗口等待同一停止流程。强制终止只在正常退出失败后明确处理，并显示保存状态不确定。
+- [ ] 操作具 operationId 和可读取最终结果，断线后可查结果而不盲重试；状态转换、耗时和失败关联到 Pino。同步写 docs/desktop/architecture.md。
 - [ ] 最小 CLI 支持生成新 JSON profile、查询 session-dir、启动窗口及解析 probe 所需路径；复用 core。脚本重跑生成配置时明确新 ID/存档策略，不隐式迁移旧 seed 文件。
 - [ ] `npm --prefix desktop test -- tests/integration/session-controller.test.ts tests/integration/session-lease.test.ts` 预期通过；`npm --prefix desktop run build:cli` 输出 dist-cli/cli.cjs；提交。
 
@@ -159,6 +181,7 @@ session.json：formatVersion、battery、usbPower、rtc、batteryLifeMinutes、c
 - [ ] 使用原生窗口框架/控制按钮和 Electron Menu，实现平台菜单及 Ctrl/Cmd+O/N；开启 contextIsolation/sandbox，renderer 不直接使用 Node。
 - [ ] 固定 renderer 只调用 preload 业务 API，main 负责系统对话框；关闭窗口/应用退出统一接入控制器。
 - [ ] React 主界面呈现空闲/加载/运行/错误，Canvas2D 用 ImageData 显示 RGBA，imageSmoothingEnabled=false。Canvas 背缓冲以源尺寸设置，CSS 与实际像素缩放检查 high DPI，初期无需 shader。
+- [ ] 控件与菜单定义稳定 ID、role/label，UI inspect 从真实 DOM/窗口读取；绘制回报区分最后收到和最后呈现帧。供自动化读取的信息不作为普通 UI 调试内容。
 - [ ] 主窗口初始游戏区域 640×480；原生菜单/标题栏另计。最小尺寸允许 1 倍画面或更小的可用区域，不要求窗口恰好固定 4:3。标题随 ROM 更新。
 - [ ] 使用设计文档的 tokens、系统字体、单一 SVG 图标、操作系统主题与 reduced-motion。空态/加载态也是正式界面，运行态没有调试信息或侧栏。
 - [ ] release-all 覆盖 BrowserWindow blur、系统菜单打开、系统对话框和制作窗口打开；各平台真实验证菜单生命周期事件，不能只依赖 DOM blur。
@@ -170,37 +193,56 @@ session.json：formatVersion、battery、usbPower、rtc、batteryLifeMinutes、c
 
 - [ ] 创建有 parent 的独立 modal BrowserWindow，禁止游戏输入但不暂停固件；Escape/取消可关闭。模态窗口保留表单内容，取消系统保存对话框不清空。
 - [ ] 单列表单分必需镜像、可选镜像、高级选项；UID 折叠，SD 接线有卡时启用。路径按一个统一 FileField 呈现，浏览通过 main 选择，支持长路径查看和复制。
+- [ ] 系统对话框默认走原生路径；只有显式测试模式消费一次性的预置返回值，保留同一校验/保存后续逻辑，并记录 native/scripted 模式。
 - [ ] 写有意义的 E2E：必填校验/首次错误焦点、保存取消、缺失镜像、保存失败、后缀补齐、保存不切换、保存并加载只切换一次。系统选择器通过可注入适配器自动化，真实系统对话框仍人工验证。
 - [ ] 使用现代 tokens，正文不显示参数名/UUID；按钮 loading/disabled、字段错误、keyboard focus/ARIA 完整。错误在失焦或提交后出现，不在第一下输入时闪烁。
 - [ ] 保存创建新 UUID，原子写 JSON；成功关闭制作窗口，只有保存并加载触发控制器。退出制作恢复游戏焦点，不重放旧按键。
 - [ ] 跑 make-rom E2E 和 profile-store unit；视觉检查浅/深色、长路径、错误与加载状态，提交。
 
+## Task 9.1：可连接运行中 UI 的自动化接口
+
+**Create:** automation 模块、tools/ui-cli.ts、tests/unit/automation-contracts.test.ts、tests/integration/automation-server.test.ts、tests/e2e/automation-ui.spec.ts、docs/desktop/automation.md。
+
+- [ ] 本地 HTTP POST /rpc JSON-RPC 2.0 服务只在 --automation 启用；监听 loopback 随机端口，创建本次 endpoint/token/instance 文件，退出清理。限制请求/查询大小，不暴露任意 eval/Node/QMP。开发版和目录包都包含可启用的接口。
+- [ ] ui-driver 通过稳定控件定位及 Electron 实际输入事件操作当前窗口；填表/点击覆盖 React onInput/onBlur/onClick，而非直接改变组件/core 状态。原生菜单走真实 Menu click handler，并标记语义菜单操作的测试边界。
+- [ ] 实现窗口/DOM inspect、菜单、click/fill/key、条件 waitFor、真实窗口截图；app.getState/getDiagnostics 分别返回业务与协议/帧/队列信息。执行前核对窗口、模态、可见性/禁用状态和 runtimeSessionId。
+- [ ] 实现明确的错误码、operationId 最终结果和事件驱动等待；网络超时不自动重试副作用。实现仅测试模式的 queueDialogResponse，消费一次并可返回取消。
+- [ ] automation.getOperation 查询终态，cancelWait 只取消等待；logging.getConfig/configure/tail 复用日志服务，查询有界且标记历史截断，不增加一套日志状态。
+- [ ] UI CLI 可连接已运行实例，列能力、请求操作/读取、等待/截图；stdout 严格 JSON，失败非零退出，日志在 stderr，命令参数来自共享 schema。
+- [ ] 测试旧 endpoint、错误 token、busy/模态/失效窗口、操作超时/重连查询、界面校验失败和被替代对话框；通过 JSON-RPC 完成一条真实制作/保存/加载/读取/截图场景，并用独立 Playwright E2E 交叉验证 UI 路径。
+- [ ] 同步写 automation.md 的开发/目录包启动、连接、动作/读取/等待/截图及对话框模式例子，纳入 smoke test；失败材料保存 screenshot/UI inspect/state/logs/步骤，不上传用户镜像。
+- [ ] 跑 `npm --prefix desktop test -- tests/unit/automation-contracts.test.ts tests/integration/automation-server.test.ts` 和 `npm --prefix desktop run test:e2e -- tests/e2e/automation-ui.spec.ts`；预期通过，提交。
+
 ## Task 10：跨平台音频和构建
 
-**Modify:** gnw_dma.c/gnw.h/meson.build、scripts/build.sh；**Create:** desktop/electron-builder 配置、docs/desktop-build.md。
+**Modify:** gnw_dma.c/gnw.h/meson.build、scripts/build.sh；**Create:** desktop/electron-builder 配置、docs/desktop/development.md。
 
 - [ ] 将宿主播放改为 QEMU 音频 API，保留 SAI/DMA 样本生成、虚拟时序和 WAV 输出。正确处理采样率变化、双声道、欠载与有界缓冲；不将 PCM 发到 renderer。
 - [ ] 音频任务写/复用样本序列回归，比较修改前后 WAV，确保固件时序未因宿主音频改变；移除实际废弃的 AudioQueue 路径和对应 Apple-only 链接。
 - [ ] 构建按宿主选择音频依赖及 QEMU 二进制路径；用现有 Windows/Linux QEMU 构建方式验证 GNW 中的 POSIX-only 文件操作/线程等边界，作必要定向适配。
 - [ ] 打包 Electron 与 QEMU、所需运行库；QEMU 放 resources 之外部可执行文件，不放入 asar。默认镜像不打包，profile 路径仍由用户选择。
+- [ ] 验证目录包 --automation 能被 CLI 连接，生产构建没有去掉该显式可用能力；普通启动仍不开放端口。QEMU stderr 按会话/source 接入 Pino，保留原文，错误级别不只按流名猜测。
 - [ ] macOS/Linux/Windows 各自产生可启动目录包，验证加载/制作、声音、焦点和退出。缺平台执行环境时记录“未验证”，不得声称已跨平台完成；签名/发布不属于本阶段授权。
 - [ ] 运行 build/typecheck、现有相关 pytest 与三平台人工检查，提交代码及构建说明。
 
 ## Task 11：清理废弃实现与脚本依赖
 
-**Delete:** harness/profile.py、harness/launch.py、tests/test_profile.py、profiles/*.gnw.toml。**Modify:** profiles 新 JSON 示例、README.md、docs/profiles.md、scripts/run.sh/probe.sh/run_sd.sh/run_sd_update.sh、父目录 run_backup_emu.sh。
+**Delete:** harness/profile.py、harness/launch.py、tests/test_profile.py、profiles/*.gnw.toml、旧 docs/profiles.md。**Modify:** profiles 新 JSON 示例、README.md、docs/desktop 文档、scripts/run.sh/probe.sh/run_sd.sh/run_sd_update.sh、父目录 run_backup_emu.sh。
 
 - [ ] 在新服务已可用后删除旧应用层；不提前删除依赖仍在使用的模块。重新生成 zelda/mario JSON 示例，不兼容旧 ID/存档。
 - [ ] 将需要保留的 shell 入口改为最小 Node CLI/core 或明确退役；probe 保持测试隔离，SD 镜像制作 Python 工具继续使用。删除旧 seed/兼容迁移分支。
 - [ ] 更新文档的路径/依赖/菜单说明及状态快照格式；Python 的 headless/pytest 仍可运行。父目录不是 Git 仓库，run_backup_emu.sh 的改动须单独记录，不能假装进入 gnw-emu 提交。
-- [ ] 全量 `rg -n 'harness\.(profile|launch)|harness/profile\.py|\.gnw\.toml|session\.toml|settings\.toml' README.md docs/profiles.md scripts harness profiles tests ../run_backup_emu.sh`，预期活跃入口无残留。历史设计/计划文档可以出现说明性引用。
+- [ ] README 链接 docs/desktop/README.md，JSON 新格式只有 json-format.md 一份说明；删除旧格式文档并更新所有活跃引用。注释保留协议单位/所有权/并发理由，不复制整套手册。
+- [ ] 全量 `rg -n 'harness\.(profile|launch)|harness/profile\.py|\.gnw\.toml|session\.toml|settings\.toml|docs/profiles\.md' README.md docs/desktop scripts harness profiles tests ../run_backup_emu.sh`，预期活跃入口无残留。历史设计/计划文档可以出现说明性引用。
 - [ ] 跑 `npm --prefix desktop test`、`npm --prefix desktop run build` 和 `.venv/bin/python -m pytest -q tests`；记录缺固件/SD 依赖的 skip，实际失败必须处理；提交。
 
 ## Task 12：性能、视觉与最终验收
 
-**Create:** desktop/tests/integration/display-performance.test.ts、docs/desktop-validation.md；截图/数据放 out/ui-validation/，不提交真实固件画面。
+**Create:** desktop/tests/integration/display-performance.test.ts、docs/desktop/validation.md；截图/数据放 out/ui-validation/，不提交真实固件画面。
 
 - [ ] 自动化验证慢网络/慢绘制时各段队列有界、最新帧恢复、QMP 响应及尺寸切换。10 分钟运行中记录内存、有效帧率、丢帧和帧龄，区分静态画面与持续变化画面。
+- [ ] 同时检查日志 trace 开/关、模块过滤、JSON/可读输出和轮转；高频日志有界且不使模拟线程等待磁盘。失败材料能关联 UI/core/utility/QEMU 同一次操作。
+- [ ] CLI/JSON-RPC 连接已运行目录包完成真实 UI 操作与读取，不以 core 测试替代；运行已发布 automation/logging/development 示例 smoke tests，确保文档命令与实际一致。
 - [ ] 在 60 Hz 或更高刷新率显示器测持续变化画面，目标约 60 次有效更新/秒；记录输入到可见变化延迟分布，不能以 QMP ACK 或重复 rAF 次数代替。
 - [ ] 实际查看浅/深色、系统菜单、空态、加载、错误、制作表单、禁用、长路径、窄窗口和 high DPI。普通文字对比 ≥4.5:1，键盘操作、焦点和 reduced-motion 可用；校对文案，不显示内部参数/调试日志。
 - [ ] 逐个平台验证三项业务及关闭/切换/失焦、声音、源镜像哈希不变、工作存档复用、孤儿 QEMU 锁与错误退出。

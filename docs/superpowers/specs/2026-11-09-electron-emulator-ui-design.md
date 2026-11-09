@@ -2,6 +2,8 @@
 
 日期：2026-11-09。状态：架构、传输路线、取消旧实现兼容及第一阶段 UI 流程已获用户确认。用户补充要求界面美观、现代；本文补充相应视觉规范，进入实施规划，尚未授权开始编码。
 
+用户追加 UI 自动化控制/信息读取、专业日志管理及维护文档要求。具体方案见 [UI 自动化、日志与文档设计补充](2026-11-09-ui-automation-observability-design.md)，同属第一阶段基础能力，不新增面向普通用户的调试界面。
+
 ## 1. 背景与目标
 
 提交 `efb9ad7c554432ec8cd9c98a16346e7180534db2` 已通过 `6cf8506` 回退。回退后的已跟踪文件与原提交的父提交一致，`tests/test_profile.py` 的 11 项测试通过。未跟踪的 `.superpowers/` 目录保留。
@@ -99,7 +101,7 @@
 - `UserData` 是可配置的可写根目录：开发/便携模式默认使用模拟器目录中的 UserData；安装包由应用后端解析到可写位置后显式传入服务，不假定应用安装目录可写。具体开发与发行路径在实施计划中明确。
 - QEMU 的 state-file 输出改为本次运行独立的 JSON 设备快照，正常退出后由应用后端校验并写入 session.json。QEMU 仍不解析 profile/session/settings。
 
-实施时删除 `harness/profile.py`、`harness/launch.py` 及只测试旧应用逻辑的 `tests/test_profile.py`，替换旧 profiles 和 docs/profiles.md 的格式说明。scripts/run.sh、probe.sh、run_sd.sh、run_sd_update.sh 和仓库父目录 run_backup_emu.sh 的旧 profile 入口须一并适配或明确移除，不能留下引用已删除模块的脚本。仍需这些入口时，使用轻量 Node 入口复用同一套 TypeScript 服务，不另写一套启动/配置逻辑。
+实施时删除 `harness/profile.py`、`harness/launch.py` 及只测试旧应用逻辑的 `tests/test_profile.py`，替换旧 profiles，并以 docs/desktop/json-format.md 取代旧 docs/profiles.md。scripts/run.sh、probe.sh、run_sd.sh、run_sd_update.sh 和仓库父目录 run_backup_emu.sh 的旧 profile 入口须一并适配或明确移除，不能留下引用已删除模块的脚本。仍需这些入口时，使用轻量 Node 入口复用同一套 TypeScript 服务，不另写一套启动/配置逻辑。
 
 Python `harness/gnw.py`、headless 命令、QEMU 外设回归测试，以及活跃的镜像/固件制作工具仍有独立用途，保留并使用测试隔离目录，不读取用户 JSON 会话，不复制应用业务。不以清理废弃实现为理由重写整个 pytest/工具生态。
 
@@ -202,6 +204,8 @@ QEMU 非阻塞发送，模拟线程不等待 socket 可写。最多保留一帧�
 ## 12. 实施顺序与当前边界
 
 后续实施计划按依赖顺序组织：固定协议表与新 JSON 数据模型 → QEMU 显示后端、退出快照与最小接收验证 → TypeScript 文件/QMP/会话服务 → Electron 主窗口及加载/制作菜单 → 删除废弃应用实现并更新受影响入口 → 三平台运行、输入/生命周期和性能验证。
+
+工程初期建立 Pino 日志与自动化契约；窗口/表单形成后实现可连接已运行应用的 UI 操作及读取接口；每个对应任务同步更新独立文档。详细验收包含真实 UI 路径、CLI/JSON-RPC 和日志输出控制，参见补充设计。
 
 这是设计级顺序，不是已开始执行的代码。共享内存、VNC/WebSocket 替代、键位编辑 UI、手柄 UI、按键可视化、存档管理器、机身外观和调试界面均不在第一阶段实现范围。用户已确认 UI 流程并要求美观现代，当前进入具体实施规划；编写计划不代表开始编码。
 
