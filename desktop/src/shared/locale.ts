@@ -6,6 +6,8 @@ export type LanguagePreference = Locale | "system";
 const en = {
   "menu.file": "File",
   "menu.open": "Load ROM…",
+  "menu.recent": "Load Recent",
+  "menu.clearRecent": "Clear Recent",
   "menu.make": "Make ROM…",
   "menu.quit": "Quit",
   "menu.edit": "Edit",
@@ -19,7 +21,6 @@ const en = {
   "menu.view": "View",
   "menu.chassis": "Show Device Frame",
   "menu.clock": "Desktop Clock Mode",
-  "menu.actualSize": "Restore 1:1 Pixels",
   "menu.scale": "Pixel Scale",
   "menu.customScale": "Custom Scale",
   "window.menu": "Menu",
@@ -119,6 +120,8 @@ const en = {
 const zh: Record<keyof typeof en, string> = {
   "menu.file": "文件",
   "menu.open": "加载 ROM…",
+  "menu.recent": "最近加载",
+  "menu.clearRecent": "清空最近记录",
   "menu.make": "制作 ROM…",
   "menu.quit": "退出",
   "menu.edit": "编辑",
@@ -132,7 +135,6 @@ const zh: Record<keyof typeof en, string> = {
   "menu.view": "视图",
   "menu.chassis": "显示机身边框",
   "menu.clock": "桌面时钟模式",
-  "menu.actualSize": "恢复像素 1:1",
   "menu.scale": "像素倍率",
   "menu.customScale": "自定义倍率",
   "window.menu": "菜单",

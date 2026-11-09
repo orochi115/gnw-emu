@@ -10,7 +10,7 @@
 ./run_sd_update_emu.sh             # 补丁原厂 + SD bootloader，从卡安装 Retro-Go
 ```
 
-这些父目录脚本自动优先选择存在桌面工程的 `gnw-emu-electron-ui`，其次 `gnw-emu`；用 `GNW_EMU_DIR=/绝对/项目路径` 覆盖。脚本从自身位置解析目录，所以从其他 cwd 也能运行。它们和共用的 `gnw_emu_common.sh` 不属于 gnw-emu Git 仓库，此工作区已单独修改；仓库内对应入口始终可用：
+合并后的默认项目为 `gnw-emu`。这些父目录脚本自动优先选择存在桌面工程的 `gnw-emu-electron-ui`，其次 `gnw-emu`；用 `GNW_EMU_DIR=/绝对/项目路径` 覆盖。脚本从自身位置解析目录，所以从其他 cwd 也能运行。它们和共用的 `gnw_emu_common.sh` 不属于 gnw-emu Git 仓库，此工作区已单独修改；仓库内对应入口始终可用：
 
 ```sh
 scripts/run.sh zelda
@@ -46,3 +46,5 @@ GNW_LAUNCH_TEST=1 npm run test:e2e -- tests/e2e/launchers.spec.ts
 ```
 
 该测试分别启动四个父目录脚本，通过真实窗口/Canvas/JSON-RPC读取，再调用原生菜单退出，检查隔离 session.json 和 endpoint 清理；不修改应用正常存档。此场景验证启动与退出，不代替完整 SD 刷写流程的硬件回归。
+
+合并后移除 Electron worktree 时，选择器自动回退到主项目 `gnw-emu`，无需修改四个快捷命令。开发版默认 UserData 跟随所选项目；清理 worktree 前须保留配置、会话存档和 out 下生成的 profile/镜像，并将使用中的数据迁移到主项目。迁移生成配置时同步替换其旧 worktree 绝对路径。目录包默认使用系统应用数据目录，独立于开发版 UserData。

@@ -39,8 +39,7 @@ export interface DesktopApi {
   windowState(): Promise<WindowState>;
   onWindowState(callback: (value: WindowState) => void): () => void;
   windowAction(
-    action:
-      "menu" | "minimize" | "maximize" | "close" | "normal" | "actualSize",
+    action: "menu" | "minimize" | "maximize" | "close" | "normal",
   ): Promise<void>;
   locale(): Promise<"zh-CN" | "en">;
   state(): Promise<AppState>;

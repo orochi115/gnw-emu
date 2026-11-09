@@ -48,6 +48,7 @@ export const settingsSchema = z
     formatVersion: z.literal(1),
     language: z.enum(["system", "zh-CN", "en"]).default("system"),
     showChassis: z.boolean().default(true),
+    recentRoms: z.array(path).max(10).default([]),
     normalScale: z.number().finite().min(0.05).max(64).default(4),
     clockScale: z.number().finite().min(0.05).max(64).default(1),
     clockMode: z.boolean().default(false),

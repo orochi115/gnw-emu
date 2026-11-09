@@ -1,6 +1,49 @@
 import { expect, test } from "vitest";
 import { menuTemplate } from "../../src/main/menu";
 import { initializeLocale } from "../../src/shared/locale";
+test("recent labels preserve literal ampersands on macOS and escape native mnemonics elsewhere", () => {
+  initializeLocale("en");
+  for (const platform of ["darwin", "linux", "win32"]) {
+    const template = menuTemplate(platform, {
+      open() {},
+      make() {},
+      recentRoms: ["/games/A&B.gnw.json"],
+    });
+    const file: any = template.find((i) => i.id === "menu.file");
+    const recent = file.submenu.find((i: any) => i.id === "file.recent");
+    expect(recent.submenu[0].label).toBe(
+      platform === "darwin"
+        ? "A&B.gnw.json — /games"
+        : "A&&B.gnw.json — /games",
+    );
+  }
+});
+test("recent native actions capture paths and duplicate 1:1 action is absent", () => {
+  initializeLocale("en");
+  const calls: string[] = [];
+  for (const platform of ["darwin", "linux", "win32"]) {
+    const template = menuTemplate(platform, {
+      open() {},
+      make() {},
+      recentRoms: ["/games/stock.gnw.json", "/backup/stock.gnw.json"],
+      loadRecent: (path: string) => calls.push(path),
+      clearRecent: () => calls.push("clear"),
+    });
+    const file: any = template.find((i) => i.id === "menu.file");
+    const recent = file.submenu.find((i: any) => i.id === "file.recent");
+    expect(recent.label).toBe("Load Recent");
+    expect(recent.submenu[0].label).not.toBe(recent.submenu[1].label);
+    recent.submenu[1].click();
+    recent.submenu.find((i: any) => i.id === "file.recent.clear").click();
+    const view: any = template.find((i) => i.id === "menu.view");
+    expect(view.submenu.some((i: any) => i.id === "view.actualSize")).toBe(
+      false,
+    );
+  }
+  expect(calls).toEqual(
+    Array(3).fill(["/backup/stock.gnw.json", "clear"]).flat(),
+  );
+});
 test("menus group editing roles and provide one stable quit on every platform", () => {
   initializeLocale("en");
   for (const platform of ["darwin", "linux", "win32"]) {

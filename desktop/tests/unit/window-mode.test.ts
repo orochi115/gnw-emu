@@ -327,7 +327,7 @@ test("display density changes retain exact pixels or a manually chosen size", as
   screen.emit("display-metrics-changed");
   expect(host.getContentSize()).toEqual([200, 120]);
   expect(mode.state.pixelPerfect).toBe(false);
-  await mode.restoreActualSize();
+  await mode.setScale(1);
   expect(host.getContentSize()).toEqual([366, 219]);
   expect(mode.state.pixelPerfect).toBe(true);
   host.emit("closed");

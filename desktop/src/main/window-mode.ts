@@ -428,9 +428,6 @@ export class WindowMode {
       this.changed();
     }
   }
-  restoreActualSize() {
-    return this.setScale(1);
-  }
   private async leaveFullscreen() {
     if (!this.window.isFullScreen()) return;
     await new Promise<void>((resolve, reject) => {

@@ -16,3 +16,5 @@ main/renderer 各自初始化 i18next，共用 src/shared/locale.ts 中的词条
 制作界面的机型为分段单选组，方向键切换，自动化可点击 rom.model.zelda/mario。UID 不在制作界面中输入；需要特定器件身份的高级用户可编辑 JSON 的 deviceUid，仍受24位十六进制校验。省略时使用 QEMU 默认身份，不自动生成新的器件 UID。
 
 SD 卡接线始终可见，未填入卡镜像时禁用。SPI1 为硬件 SPI，软件 SPI 复用外部 Flash 引脚；这不是 SPI Mode 0–3 设置。
+
+文件 → 最近加载（File → Load Recent）：保存最近十个成功加载的配置路径，重复打开置顶，重启保留记录。支持清空，未加载成功或取消时不记录；启动时不自动加载。文件名后显示父目录以区分同名配置。历史和显示设置一起保存在 UserData/settings.json 的 recentRoms 中，ROM 配置和 QEMU 不负责保存这项应用偏好。

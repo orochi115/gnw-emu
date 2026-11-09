@@ -95,6 +95,10 @@ test("RPC operates real form, saves, loads pixels, preserves game on invalid ROM
       timeoutMs: 15000,
     });
     await expect(page.getByRole("dialog")).not.toBeVisible();
+    expect(
+      JSON.parse(await readFile(join(root, "settings.json"), "utf8"))
+        .recentRoms,
+    ).toEqual([target]);
     await rpc("ui.waitFor", { condition: "ui.lastPresented", value: "2" });
     const diagnostics = await rpc("app.getDiagnostics");
     expect(diagnostics.width).toBe(320);
@@ -148,6 +152,10 @@ test("RPC operates real form, saves, loads pixels, preserves game on invalid ROM
     expect((await rpc("app.getState")).runtimeSessionId).toBe(
       state.runtimeSessionId,
     );
+    expect(
+      JSON.parse(await readFile(join(root, "settings.json"), "utf8"))
+        .recentRoms,
+    ).toEqual([target]);
     expect(await hash(external)).toBe(before);
     await writeFile(
       resolve("../out/ui-validation/diagnostics.json"),

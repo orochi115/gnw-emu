@@ -22,7 +22,7 @@ ui.menu/click/fill/select/key/pointer 返回 operationId。用 `automation.getOp
 | 方法                             | 参数与读取                                                                              |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | ui.inspect                       | 实际语言、DOM 控件、可见/禁用/错误/单选状态、表单值、原生菜单、窗口、Canvas最后收到/呈现帧        |
-| ui.menu                          | id=file.open / file.make / view.chassis / view.clock / view.actualSize / view.scale.half / view.scale.1～6 / app.quit / edit.* / window.*；执行 Menu handler 或对应原生 role 命令；checkbox 同步 checked 状态 |
+| ui.menu                          | id=file.open / file.make / file.recent.0～9 / file.recent.clear / view.chassis / view.clock / view.scale.half / view.scale.1～6 / app.quit / edit.* / window.*；执行 Menu handler 或对应原生 role 命令；checkbox 同步 checked 状态 |
 | ui.click                         | id=真实 data-ui 控件；发送 Electron 鼠标事件                                            |
 | ui.fill                          | id/value；真实点击、选择文本、insertText触发输入                                        |
 | ui.select                        | id/value；真实 select DOM 的 input/change事件                                           |
@@ -70,8 +70,10 @@ node dist-cli/ui-cli.js ../UserData/automation.json ui.menu '{"id":"view.chassis
 UiDriver 的 click/key/pointer 会主动 focus 窗口，适合操作 UI，不能用于模拟失焦输入。验证失焦边界时，用另一真实窗口夺取焦点，再通过原 renderer preload API 注入 key/button 按下并读取 inputState/diagnostics；预期两个 mask 均保持 0。拒绝规则在主进程，包含键盘、指针及辅助技术来源。
 
 
-像素缩放：`ui.menu {"id":"view.actualSize"}` 将当前模式恢复为 1×，两种模式均可用。`view.scale.half` 选择 0.5×，`view.scale.1` 至 `view.scale.6` 选择对应整数倍率；仅运行且不忙、尺寸能容纳时启用。`ui.inspect.menus` 递归返回子菜单项及真实 radio checked 状态，非预设手动倍率选择只读 `view.scale.custom`。此项不在动作 allowlist 中。
+像素缩放：`ui.menu {"id":"view.scale.1"}` 将当前模式恢复为 1×，两种模式均可用。`view.scale.half` 选择 0.5×，`view.scale.1` 至 `view.scale.6` 选择对应整数倍率；仅运行且不忙、尺寸能容纳时启用。`ui.inspect.menus` 递归返回子菜单项及真实 radio checked 状态，非预设手动倍率选择只读 `view.scale.custom`。此项不在动作 allowlist 中。
 
-`ui.inspect.canvas` 的 displayWidth/displayHeight/displayX/displayY 来自变换后的 bounding rect；devicePixelRatio 返回 renderer 密度，pixelScale=displayWidth×DPR/源宽度。1× 应为 pixelScale=1、输出大小 320×240，2×=640×480、0.5×=160×120；显式预设起点对齐输出像素网格。原始 width/height 保持 320×240；不能把 source-size canvas 的 clientWidth 当作可见宽度。`window.actualSize` 是受信 preload windowAction 入口，不是额外悬浮按钮。验证持久化需正常退出并使用同一测试 UserData 重启，不能用另一配置目录判断恢复。
+`ui.inspect.canvas` 的 displayWidth/displayHeight/displayX/displayY 来自变换后的 bounding rect；devicePixelRatio 返回 renderer 密度，pixelScale=displayWidth×DPR/源宽度。1× 应为 pixelScale=1、输出大小 320×240，2×=640×480、0.5×=160×120；显式预设起点对齐输出像素网格。原始 width/height 保持 320×240；不能把 source-size canvas 的 clientWidth 当作可见宽度。原来的 Restore 1:1 menu、windowAction 与 automation ID 已移除，统一使用 view.scale.1。验证持久化需正常退出并使用同一测试 UserData 重启，不能用另一配置目录判断恢复。
 
 `window.controlWidth` 为工作区域与窗口宽度的较小值，限制超大窗口的标题栏/悬浮控件，避免控件落在屏幕之外。边框切换可能为保持控件可达而调整中心；测试应优先断言 canvas.pixelScale 不变。
+
+最近加载：`ui.inspect.menus` 返回 `file.recent.0`～`file.recent.9` 的实际文件名、父目录和 enabled 状态。索引按最近成功加载顺序排列，每次操作前重新 inspect；`ui.menu` 执行同一原生 handler。`file.recent.clear` 清空历史，不停止当前游戏。制作 ROM、原生对话框、时钟模式和加载期间父菜单与子项均禁用。

@@ -37,6 +37,6 @@ GNW_PACKAGE_TEST=1 npm run test:e2e -- tests/e2e/packaged.spec.ts
 
 十分钟测试显式启用，避免日常单元测试等待；目录包测试接受GNW_PACKAGE_BINARY覆盖平台路径。测试不提交固件画面，产物位于根out/ui-validation和desktop/test-results。
 
-父目录 stock/backup/sd/sd_update wrappers 与 gnw_emu_common.sh 不属于本 Git 仓库；已单独调整为新版入口并自动选择 Electron worktree。详见 launchers.md。
+父目录 stock/backup/sd/sd_update wrappers 与 gnw_emu_common.sh 不属于本 Git 仓库；已单独调整为新版入口并自动选择可用的 Electron 项目；移除 worktree 后回退到主项目 gnw-emu。详见 launchers.md。
 
 界面语言/原生菜单说明见 localization.md；一键入口支持 --language、--automation 和 --user-data-dir。

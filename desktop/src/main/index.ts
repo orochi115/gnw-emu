@@ -10,6 +10,7 @@ import { UserError } from "../shared/user-error";
 import { loadSettings, updateSettings } from "../core/settings-store";
 import { ChassisPreference } from "../core/chassis-preference";
 import { ViewSettings } from "../core/view-settings";
+import { RecentRoms } from "../core/recent-roms";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { WindowMode } from "./window-mode";
 import { menuTemplate, scaleMenuTemplate } from "./menu";
@@ -64,9 +65,13 @@ let preferenceChange: Promise<void> = Promise.resolve();
 let viewPreference: ChassisPreference;
 let windowMode: WindowMode;
 let viewSettings: ViewSettings;
+let recentRoms: RecentRoms;
 let fittedModel: AppState["model"];
 async function main() {
   const settings = await loadSettings(paths.userData);
+  recentRoms = new RecentRoms(settings.recentRoms, (recentRoms) =>
+    updateSettings(paths.userData, { recentRoms }),
+  );
   preferences = { showChassis: settings.showChassis };
   locale = chooseLocale(
     app.getLocale(),
@@ -257,12 +262,6 @@ async function main() {
             void toggleClock().catch(showError);
           },
         },
-        {
-          label: t("menu.actualSize"),
-          click: () => {
-            void restoreActualSize().catch(showError);
-          },
-        },
         scaleMenuTemplate({
           pixelScale: windowMode.state.pixelScale,
           canScale: (factor) => canSetScale(factor),
@@ -304,9 +303,7 @@ async function main() {
     });
   const file = argv.find((v) => v.endsWith(".gnw.json"));
   if (file)
-    void perform(() => controller.load(resolve(file))).catch((e) =>
-      showError(e),
-    );
+    void perform(() => loadRom(resolve(file))).catch((e) => showError(e));
   logger
     .child("app")
     .info(
@@ -316,6 +313,8 @@ async function main() {
 }
 function updateMenu() {
   const blocked =
+    shuttingDown ||
+    !!active ||
     makerOpen ||
     nativeDialog ||
     windowMode?.state.clockMode ||
@@ -327,14 +326,18 @@ function updateMenu() {
       const item = menu.getMenuItemById(id);
       if (item) item.enabled = !blocked;
     }
+  const recent = menu?.getMenuItemById("file.recent");
+  if (recent) {
+    recent.enabled = !blocked && recentRoms.entries.length > 0;
+    for (const item of recent.submenu?.items ?? [])
+      if (item.type !== "separator") item.enabled = recent.enabled;
+  }
   const chassis = menu?.getMenuItemById("view.chassis");
   if (chassis) {
     chassis.checked = preferences.showChassis;
     chassis.enabled =
       !makerOpen && !nativeDialog && !active && !windowMode.transitioning;
   }
-  const actualSize = menu?.getMenuItemById("view.actualSize");
-  if (actualSize) actualSize.enabled = canSetScale(1);
   for (const factor of SCALE_PRESETS) {
     const item = menu?.getMenuItemById(scaleMenuId(factor));
     if (item) {
@@ -422,15 +425,6 @@ async function setScale(factor: number) {
       "Pixel scale changed",
     );
 }
-async function restoreActualSize() {
-  await setScale(1);
-  logger
-    .child("view")
-    .info(
-      { event: "window.actualSize", ...windowMode.state },
-      "Restored 1:1 pixels",
-    );
-}
 async function toggleClock() {
   if (makerOpen || nativeDialog || shuttingDown)
     throw new UserError("error.busy");
@@ -459,11 +453,15 @@ function createMenu() {
           void openRom().catch(showError);
         },
         make: () => makeRom(),
+        recentRoms: recentRoms.entries,
+        loadRecent: (path) => {
+          void openRecent(path).catch(showError);
+        },
+        clearRecent: () => {
+          void clearRecent().catch(showError);
+        },
         showChassis: preferences.showChassis,
         clockMode: windowMode.state.clockMode,
-        actualSize: () => {
-          void restoreActualSize().catch(showError);
-        },
         pixelScale: windowMode.state.pixelScale,
         setScale: (factor) => {
           void setScale(factor).catch(showError);
@@ -496,6 +494,7 @@ async function perform<T>(work: () => Promise<T>): Promise<T> {
   const promise = work();
   active = promise;
   observedActivity = promise;
+  updateMenu();
   promise.catch(() => {});
   try {
     return await promise;
@@ -523,7 +522,44 @@ async function openRom() {
   if (windowMode.state.clockMode) throw new UserError("error.busy");
   return perform(async () => {
     const path = await native(() => dialogs.open(true));
-    if (path) await controller.load(path);
+    if (path) await loadRom(path);
+  });
+}
+/** All successful host load routes record history, including CLI and Save and Load. */
+async function loadRom(path: string) {
+  await controller.load(path);
+  try {
+    await recentRoms.record(path);
+    createMenu();
+    updateMenu();
+    logger
+      .child("app")
+      .info({ event: "recent.record", profilePath: path }, "Recent ROM saved");
+  } catch (error) {
+    showError(error as Error);
+  }
+}
+function guardRecent() {
+  if (
+    makerOpen ||
+    nativeDialog ||
+    shuttingDown ||
+    windowMode.state.clockMode ||
+    windowMode.transitioning
+  )
+    throw new UserError("error.busy");
+}
+async function openRecent(path: string) {
+  guardRecent();
+  return perform(() => loadRom(path));
+}
+async function clearRecent() {
+  guardRecent();
+  return perform(async () => {
+    await recentRoms.clear();
+    createMenu();
+    updateMenu();
+    logger.child("app").info({ event: "recent.clear" }, "Recent ROMs cleared");
   });
 }
 function makeRom() {
@@ -572,9 +608,6 @@ function registerIpc() {
       case "maximize":
         if (!windowMode.state.clockMode)
           window.isMaximized() ? window.unmaximize() : window.maximize();
-        break;
-      case "actualSize":
-        await restoreActualSize();
         break;
       case "normal":
         if (windowMode.state.clockMode) await toggleClock();
@@ -644,7 +677,7 @@ function registerIpc() {
       const path = dest.endsWith(".gnw.json") ? dest : dest + ".gnw.json";
       const { formatVersion, id, ...values } = validated;
       await createProfile(path, values);
-      if (load) await controller.load(path);
+      if (load) await loadRom(path);
       return { saved: true, path };
     }).catch((error) => {
       throw new Error(userMessage(error));

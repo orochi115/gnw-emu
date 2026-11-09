@@ -1,6 +1,7 @@
 import type { MenuItemConstructorOptions as Item } from "electron";
 import { t } from "../shared/locale";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
+import { basename, dirname } from "node:path";
 
 export function scaleMenuTemplate(actions: {
   pixelScale?: number;
@@ -37,11 +38,13 @@ export function menuTemplate(
   actions: {
     open: () => void;
     make: () => void;
+    recentRoms?: string[];
+    loadRecent?: (path: string) => void;
+    clearRecent?: () => void;
     toggleChassis?: () => void;
     showChassis?: boolean;
     clockMode?: boolean;
     toggleClock?: () => void;
-    actualSize?: () => void;
     pixelScale?: number;
     setScale?: (value: number) => void;
     canScale?: (value: number) => boolean;
@@ -76,6 +79,31 @@ export function menuTemplate(
           label: t("menu.open"),
           accelerator: "CmdOrCtrl+O",
           click: actions.open,
+        },
+        {
+          id: "file.recent",
+          label: t("menu.recent"),
+          enabled: !!actions.recentRoms?.length,
+          submenu: [
+            ...(actions.recentRoms ?? []).map((path, index) => ({
+              id: `file.recent.${index}`,
+              // Electron uses ampersands as mnemonic markers on Windows/Linux.
+              label:
+                platform === "darwin"
+                  ? `${basename(path)} — ${dirname(path)}`
+                  : `${basename(path)} — ${dirname(path)}`.replaceAll(
+                      "&",
+                      "&&",
+                    ),
+              click: () => actions.loadRecent?.(path),
+            })),
+            separator,
+            {
+              id: "file.recent.clear",
+              label: t("menu.clearRecent"),
+              click: actions.clearRecent,
+            },
+          ],
         },
         {
           id: "file.make",
@@ -119,12 +147,6 @@ export function menuTemplate(
           click: actions.toggleClock,
         },
         scaleMenuTemplate(actions),
-        {
-          id: "view.actualSize",
-          label: t("menu.actualSize"),
-          enabled: true,
-          click: actions.actualSize,
-        },
       ],
     },
     {

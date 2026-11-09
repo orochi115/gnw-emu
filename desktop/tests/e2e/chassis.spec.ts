@@ -829,7 +829,7 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
     expect(
       (await rpc("ui.inspect")).canvas.displayWidth * density,
     ).toBeLessThan(320);
-    await action("ui.menu", { id: "view.actualSize" });
+    await action("ui.menu", { id: "view.scale.1" });
     await actualPixels(page);
 
     expect((await rpc("app.getState")).runtimeSessionId).toBe(
@@ -923,7 +923,7 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
           ),
       )
       .toBeLessThan(320);
-    await action("ui.menu", { id: "view.actualSize" });
+    await action("ui.menu", { id: "view.scale.1" });
     await actualPixels(page);
     expect(
       plain.window.contentBounds.width / plain.window.contentBounds.height,

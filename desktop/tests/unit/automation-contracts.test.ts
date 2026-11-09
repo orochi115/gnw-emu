@@ -41,9 +41,19 @@ test("pointer commands require a real target or bounded release coordinates", ()
   });
 });
 test("stable edit/window/quit menu actions are accepted without accepting arbitrary IDs", () => {
-  for (const id of ["app.quit", "edit.copy", "window.close"])
+  for (const id of [
+    "app.quit",
+    "edit.copy",
+    "window.close",
+    "file.recent.0",
+    "file.recent.9",
+    "file.recent.clear",
+    "view.scale.1",
+  ])
     expect(validateAutomationParams("ui.menu", { id })).toEqual({ id });
   expect(() =>
     validateAutomationParams("ui.menu", { id: "unknown.menu" }),
   ).toThrow();
+  for (const id of ["view.actualSize", "file.recent.10"])
+    expect(() => validateAutomationParams("ui.menu", { id })).toThrow();
 });
