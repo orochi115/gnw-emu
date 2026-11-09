@@ -10,6 +10,7 @@ export function menuTemplate(
     showChassis?: boolean;
     clockMode?: boolean;
     toggleClock?: () => void;
+    actualSize?: () => void;
   },
 ): Item[] {
   const separator: Item = { type: "separator" };
@@ -82,6 +83,12 @@ export function menuTemplate(
           type: "checkbox",
           checked: actions.clockMode ?? false,
           click: actions.toggleClock,
+        },
+        {
+          id: "view.actualSize",
+          label: t("menu.actualSize"),
+          enabled: actions.clockMode ?? false,
+          click: actions.actualSize,
         },
       ],
     },

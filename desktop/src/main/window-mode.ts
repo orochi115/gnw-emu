@@ -1,13 +1,20 @@
 import { BrowserWindow, screen } from "electron";
+import { clockGeometry } from "../shared/clock-geometry";
 import type { WindowState } from "../shared/contracts";
 
 export const TITLEBAR_HEIGHT = 32;
-const ratios = { mario: 919 / 550, zelda: 950 / 567 };
 
 /** Changes host geometry only; the renderer and running emulator never move. */
 export class WindowMode {
   private clock = false;
   private ratio = 4 / 3;
+  private model?: "mario" | "zelda";
+  private frame = true;
+  private density = 1;
+  private actualPixels = false;
+  private applyingBounds = false;
+  private target?: { width: number; height: number };
+  private lastPublished = "";
   private saved?: {
     bounds: Electron.Rectangle;
     maximized: boolean;
@@ -21,6 +28,22 @@ export class WindowMode {
     private release: () => void,
     private canEnter: () => boolean,
   ) {
+    this.density = screen.getDisplayMatching(window.getBounds()).scaleFactor;
+    window.on("move", () => this.refreshDensity());
+    window.on("resize", () => {
+      if (this.applyingBounds) return;
+      this.refreshDensity();
+      if (this.clock && this.actualPixels && this.target) {
+        const [width, height] = window.getContentSize();
+        if (width !== this.target.width || height !== this.target.height)
+          this.actualPixels = false;
+      }
+      this.changed();
+    });
+    screen.on("display-metrics-changed", this.refreshDensity);
+    window.once("closed", () =>
+      screen.removeListener("display-metrics-changed", this.refreshDensity),
+    );
     window.on("focus", () => this.changed());
     window.on("blur", () => {
       release();
@@ -32,16 +55,29 @@ export class WindowMode {
   get state(): WindowState {
     return {
       clockMode: this.clock,
+      pixelPerfect: this.clock && this.actualPixels,
+      scaleFactor: this.density,
       focused: this.window.isFocused(),
       maximized: this.window.isMaximized(),
     };
   }
   private changed() {
-    this.publish(this.state);
+    if (this.window.isDestroyed()) return;
+    const value = this.state;
+    const key = JSON.stringify(value);
+    if (key === this.lastPublished) return;
+    this.lastPublished = key;
+    this.publish(value);
   }
 
   fit(model: "mario" | "zelda" | undefined, showChassis: boolean) {
-    this.ratio = model && showChassis ? ratios[model] : 4 / 3;
+    this.model = model;
+    this.frame = showChassis;
+    this.ratio = clockGeometry(model, showChassis, this.density).ratio;
+    if (this.clock) {
+      this.restoreActualSize();
+      return;
+    }
     if (!model && !this.clock) return;
     if (this.window.isMaximized() || this.window.isFullScreen()) return;
     const extra = this.clock ? 0 : TITLEBAR_HEIGHT;
@@ -59,6 +95,48 @@ export class WindowMode {
       Math.round(width / this.ratio) + extra,
     );
     this.window.setAspectRatio(this.clock ? this.ratio : 0);
+  }
+
+  private refreshDensity = () => {
+    if (this.window.isDestroyed() || this.applyingBounds) return;
+    const density = screen.getDisplayMatching(
+      this.window.getBounds(),
+    ).scaleFactor;
+    if (density === this.density) return;
+    this.density = density;
+    if (this.clock && this.actualPixels) this.restoreActualSize();
+    else this.changed();
+  };
+
+  restoreActualSize() {
+    if (!this.clock || this.window.isDestroyed()) return;
+    this.density = screen.getDisplayMatching(
+      this.window.getBounds(),
+    ).scaleFactor;
+    const geometry = clockGeometry(this.model, this.frame, this.density);
+    this.target = geometry;
+    this.actualPixels = true;
+    // Keep the center stable: changing only width at a monitor boundary can
+    // alternate the display with the largest intersection and recurse forever.
+    const bounds = this.window.getBounds();
+    this.applyingBounds = true;
+    try {
+      this.window.setAspectRatio(0);
+      this.window.setMinimumSize(
+        Math.min(80, geometry.width),
+        Math.min(48, geometry.height),
+      );
+      this.window.setBounds({
+        x: Math.round(bounds.x + (bounds.width - geometry.width) / 2),
+        y: Math.round(bounds.y + (bounds.height - geometry.height) / 2),
+        width: geometry.width,
+        height: geometry.height,
+      });
+      this.window.setAspectRatio(geometry.ratio);
+    } finally {
+      this.applyingBounds = false;
+    }
+    this.changed();
   }
 
   async toggle() {
@@ -94,12 +172,12 @@ export class WindowMode {
         }
         this.window.unmaximize();
         this.clock = true;
-        this.window.setMinimumSize(320, 180);
         this.window.setAlwaysOnTop(true);
-        this.window.setContentSize(480, Math.round(480 / this.ratio));
-        this.window.setAspectRatio(this.ratio);
+        this.restoreActualSize();
       } else {
         this.clock = false;
+        this.actualPixels = false;
+        this.target = undefined;
         this.window.unmaximize();
         this.window.setAspectRatio(0);
         this.window.setMinimumSize(320, 280);

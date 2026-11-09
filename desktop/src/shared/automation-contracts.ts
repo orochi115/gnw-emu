@@ -27,6 +27,7 @@ const schemas: Record<string, z.ZodType> = {
         "file.make",
         "view.chassis",
         "view.clock",
+        "view.actualSize",
         "app.quit",
         "edit.undo",
         "edit.redo",

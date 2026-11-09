@@ -226,6 +226,10 @@ async function main() {
           },
         },
         {
+          label: t("menu.actualSize"),
+          click: restoreActualSize,
+        },
+        {
           label: t("menu.quit"),
           click: () => {
             void shutdown();
@@ -284,6 +288,10 @@ function updateMenu() {
     }
   const chassis = menu?.getMenuItemById("view.chassis");
   if (chassis) chassis.checked = preferences.showChassis;
+  const actualSize = menu?.getMenuItemById("view.actualSize");
+  if (actualSize)
+    actualSize.enabled =
+      windowMode.state.clockMode && !windowMode.transitioning;
   const zoom = menu?.getMenuItemById("window.zoom");
   if (zoom)
     zoom.enabled = !windowMode.state.clockMode && !windowMode.transitioning;
@@ -307,6 +315,15 @@ function toggleChassis() {
   preferenceChange = work;
   observedActivity = work;
   return work;
+}
+function restoreActualSize() {
+  windowMode.restoreActualSize();
+  logger
+    .child("view")
+    .info(
+      { event: "window.actualSize", ...windowMode.state },
+      "Restored 1:1 pixels",
+    );
 }
 async function toggleClock() {
   if (makerOpen || nativeDialog || shuttingDown)
@@ -337,6 +354,7 @@ function createMenu() {
         make: () => makeRom(),
         showChassis: preferences.showChassis,
         clockMode: windowMode.state.clockMode,
+        actualSize: restoreActualSize,
         toggleClock: () => {
           void toggleClock().catch(showError);
         },
@@ -439,6 +457,9 @@ function registerIpc() {
       case "maximize":
         if (!windowMode.state.clockMode)
           window.isMaximized() ? window.unmaximize() : window.maximize();
+        break;
+      case "actualSize":
+        restoreActualSize();
         break;
       case "normal":
         if (windowMode.state.clockMode) await toggleClock();

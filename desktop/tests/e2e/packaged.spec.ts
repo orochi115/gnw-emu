@@ -97,6 +97,21 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
     );
     await expect(page.locator("main")).toHaveClass("desktop-clock");
     expect(
+      await page.evaluate(() => window.desktop.windowState()),
+    ).toMatchObject({ pixelPerfect: true });
+    await expect
+      .poll(() =>
+        page.locator("canvas").evaluate((c) => {
+          const r = c.getBoundingClientRect(),
+            d = window.devicePixelRatio;
+          return {
+            width: Math.round(r.width * d),
+            height: Math.round(r.height * d),
+          };
+        }),
+      )
+      .toEqual({ width: 320, height: 240 });
+    expect(
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].isAlwaysOnTop(),
       ),

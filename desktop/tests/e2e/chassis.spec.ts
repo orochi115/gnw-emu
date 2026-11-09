@@ -108,6 +108,89 @@ async function aligned(page: Page) {
   expect(c.width / c.height).toBeCloseTo(width / height, 2);
 }
 
+async function actualPixels(page: Page) {
+  await expect
+    .poll(() =>
+      page.locator("canvas").evaluate((c) => {
+        const r = c.getBoundingClientRect(),
+          d = window.devicePixelRatio;
+        return {
+          width: Math.round(r.width * d),
+          height: Math.round(r.height * d),
+        };
+      }),
+    )
+    .toEqual({ width: 320, height: 240 });
+  const origin = await page.locator("canvas").evaluate((c) => {
+    const r = c.getBoundingClientRect(),
+      d = window.devicePixelRatio;
+    return { x: r.x * d, y: r.y * d };
+  });
+  expect(origin.x).toBeCloseTo(Math.round(origin.x), 1);
+  expect(origin.y).toBeCloseTo(Math.round(origin.y), 1);
+}
+
+async function pixelPattern(app: ElectronApplication, page: Page) {
+  await page.evaluate(() => {
+    const canvas = document.querySelector("canvas")!,
+      context = canvas.getContext("2d")!;
+    const original = context.putImageData.bind(context);
+    const pixels = new Uint8ClampedArray(canvas.width * canvas.height * 4);
+    for (let y = 0; y < canvas.height; y++)
+      for (let x = 0; x < canvas.width; x++) {
+        const i = (y * canvas.width + x) * 4,
+          v = (x + y) % 2 ? 255 : 0;
+        pixels[i] = pixels[i + 1] = pixels[i + 2] = v;
+        pixels[i + 3] = 255;
+      }
+    const pattern = new ImageData(pixels, canvas.width, canvas.height);
+    context.putImageData = () => original(pattern, 0, 0);
+    context.putImageData(pattern, 0, 0);
+    const controls = document.querySelector(".clock-controls") as HTMLElement;
+    const visibility = controls?.style.visibility;
+    if (controls) controls.style.visibility = "hidden";
+    (window as any).__restorePixelPattern = () => {
+      context.putImageData = original;
+      if (controls) controls.style.visibility = visibility;
+    };
+  });
+  try {
+    const rect = await page.locator("canvas").evaluate((c) => {
+      const r = c.getBoundingClientRect(),
+        d = window.devicePixelRatio;
+      return { x: Math.round(r.x * d), y: Math.round(r.y * d) };
+    });
+    const png = (await page.screenshot({ scale: "device" })).toString("base64");
+    const checked = await app.evaluate(
+      ({ nativeImage }, { png, rect }) => {
+        const im = nativeImage.createFromBuffer(Buffer.from(png, "base64")),
+          width = im.getSize().width,
+          bytes = im.toBitmap();
+        let wrong = 0,
+          first: any;
+        for (let y = 0; y < 240; y++)
+          for (let x = 0; x < 320; x++) {
+            const i = ((rect.y + y) * width + rect.x + x) * 4,
+              expected = (x + y) % 2 ? 255 : 0;
+            if (
+              bytes[i] !== expected ||
+              bytes[i + 1] !== expected ||
+              bytes[i + 2] !== expected
+            ) {
+              wrong++;
+              first ??= { x, y, value: Array.from(bytes.subarray(i, i + 4)) };
+            }
+          }
+        return { wrong, first };
+      },
+      { png, rect },
+    );
+    expect(checked).toEqual({ wrong: 0, first: undefined });
+  } finally {
+    await page.evaluate(() => (window as any).__restorePixelPattern());
+  }
+}
+
 test("live chassis shows aggregate keyboard/pointer input, releases safely, and toggles without restarting", async () => {
   test.setTimeout(90000);
   const root = await mkdtemp(join(tmpdir(), "gnw-chassis-"));
@@ -358,6 +441,10 @@ test("live chassis shows aggregate keyboard/pointer input, releases safely, and 
     await page.screenshot({
       path: resolve("../out/ui-validation/chassis-mario.png"),
     });
+    await action("ui.menu", { id: "view.clock" });
+    await actualPixels(page);
+    await pixelPattern(app, page);
+    await aligned(page);
   } finally {
     await app.close();
     await rm(root, { recursive: true, force: true });
@@ -370,7 +457,11 @@ test("chassis preference survives restart and failed writes restore the checkbox
   let launched: Awaited<ReturnType<typeof launch>> | undefined;
   try {
     launched = await launch(root);
-    expect((await launched.rpc("ui.inspect")).menus.find((m:any)=>m.id==="view.clock").enabled).toBe(false);
+    expect(
+      (await launched.rpc("ui.inspect")).menus.find(
+        (m: any) => m.id === "view.clock",
+      ).enabled,
+    ).toBe(false);
     await launched.action("ui.menu", { id: "view.chassis" });
     expect(
       JSON.parse(await readFile(join(root, "settings.json"), "utf8"))
@@ -469,11 +560,37 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
       clockMode: true,
       alwaysOnTop: true,
     });
-    expect(compact.window.contentBounds.width).toBe(480);
+    await actualPixels(page);
+    await pixelPattern(app, page);
+    expect(compact.window.pixelPerfect).toBe(true);
+    const density = await page.evaluate(() => window.devicePixelRatio);
+    expect(compact.window.contentBounds.width).toBe(
+      Math.ceil((950 * 320) / (416 * density)),
+    );
     const zoom = compact.menus.find((m: any) => m.id === "window.zoom");
     if (zoom) expect(zoom.enabled).toBe(false);
     await expect(page.locator(".window-titlebar")).toBeHidden();
     await tight();
+    await app.evaluate(
+      ({ BrowserWindow }, size) =>
+        BrowserWindow.getAllWindows()[0].setContentSize(
+          size.width,
+          size.height,
+        ),
+      {
+        width: Math.round(compact.window.contentBounds.width * 0.65),
+        height: Math.round(compact.window.contentBounds.height * 0.65),
+      },
+    );
+    await expect
+      .poll(async () => (await rpc("ui.inspect")).window.pixelPerfect)
+      .toBe(false);
+    expect(
+      (await rpc("ui.inspect")).canvas.displayWidth * density,
+    ).toBeLessThan(320);
+    await action("ui.menu", { id: "view.actualSize" });
+    await actualPixels(page);
+
     expect((await rpc("app.getState")).runtimeSessionId).toBe(
       state.runtimeSessionId,
     );
@@ -545,12 +662,34 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
     await action("ui.menu", { id: "view.clock" });
     await action("ui.menu", { id: "view.chassis" });
     await expect(page.locator('[data-ui="chassis"]')).toBeHidden();
+    await actualPixels(page);
+    await pixelPattern(app, page);
     const plain = await rpc("ui.inspect");
+    expect(plain.window.contentBounds).toMatchObject({
+      width: Math.ceil(320 / density),
+      height: Math.ceil(240 / density),
+    });
+    await app.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()[0].setContentSize(100, 75),
+    );
+    expect((await rpc("ui.inspect")).window.contentBounds.width).toBe(100);
+    await expect
+      .poll(() =>
+        page
+          .locator("canvas")
+          .evaluate(
+            (c) => c.getBoundingClientRect().width * window.devicePixelRatio,
+          ),
+      )
+      .toBeLessThan(320);
+    await action("ui.menu", { id: "view.actualSize" });
+    await actualPixels(page);
     expect(
       plain.window.contentBounds.width / plain.window.contentBounds.height,
     ).toBeCloseTo(4 / 3, 2);
     await action("ui.menu", { id: "view.chassis" });
     await tight();
+    await actualPixels(page);
     await action("ui.menu", { id: "view.clock" });
     await app.evaluate(({ BrowserWindow }) => {
       const w = BrowserWindow.getAllWindows()[0];

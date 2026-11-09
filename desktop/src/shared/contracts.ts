@@ -8,6 +8,8 @@ export interface InputState {
 }
 export interface WindowState {
   clockMode: boolean;
+  pixelPerfect: boolean;
+  scaleFactor: number;
   focused: boolean;
   maximized: boolean;
 }
@@ -30,7 +32,8 @@ export interface DesktopApi {
   windowState(): Promise<WindowState>;
   onWindowState(callback: (value: WindowState) => void): () => void;
   windowAction(
-    action: "menu" | "minimize" | "maximize" | "close" | "normal",
+    action:
+      "menu" | "minimize" | "maximize" | "close" | "normal" | "actualSize",
   ): Promise<void>;
   locale(): Promise<"zh-CN" | "en">;
   state(): Promise<AppState>;

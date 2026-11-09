@@ -31,6 +31,8 @@ export function App() {
   const [state, setState] = useState<AppState>({ status: "idle" });
   const [host, setHost] = useState<WindowState>({
     clockMode: false,
+    pixelPerfect: false,
+    scaleFactor: 1,
     focused: true,
     maximized: false,
   });
@@ -128,6 +130,7 @@ export function App() {
           model={state.model}
           showChassis={preferences.showChassis}
           compact={host.clockMode}
+          pixelPerfect={host.pixelPerfect}
           mask={desiredMask}
           disabled={state.status !== "running" || maker}
           resetGeneration={

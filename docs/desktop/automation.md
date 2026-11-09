@@ -22,7 +22,7 @@ ui.menu/click/fill/select/key/pointer 返回 operationId。用 `automation.getOp
 | 方法                             | 参数与读取                                                                              |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | ui.inspect                       | 实际语言、DOM 控件、可见/禁用/错误/单选状态、表单值、原生菜单、窗口、Canvas最后收到/呈现帧        |
-| ui.menu                          | id=file.open / file.make / view.chassis / view.clock / app.quit / edit.* / window.*；执行 Menu handler 或对应原生 role 命令；checkbox 同步 checked 状态 |
+| ui.menu                          | id=file.open / file.make / view.chassis / view.clock / view.actualSize / app.quit / edit.* / window.*；执行 Menu handler 或对应原生 role 命令；checkbox 同步 checked 状态 |
 | ui.click                         | id=真实 data-ui 控件；发送 Electron 鼠标事件                                            |
 | ui.fill                          | id/value；真实点击、选择文本、insertText触发输入                                        |
 | ui.select                        | id/value；真实 select DOM 的 input/change事件                                           |
@@ -65,6 +65,9 @@ node dist-cli/ui-cli.js ../UserData/automation.json ui.menu '{"id":"view.chassis
 机型用 ui.click 选择 rom.model.zelda/mario，ui.inspect 的 checked 返回真实选中状态；ui.fill 仅接受文本输入框。app.quit/window.close 会结束应用，退出后无法查询 operationId，应等待进程结束/endpoint 清理并读取存档。阶段和业务错误分别有稳定 stage/errorCode/errorParams，不用翻译文本作测试断言。
 
 
-桌面时钟：`ui.menu {"id":"view.clock"}` 通过真实 Menu handler 切换，仅运行时可进入。窗口控件 ID：`window.menu/minimize/maximize/close`（普通）、`window.normal/close`（时钟悬浮）。`ui.inspect.window` 返回 clockMode/focused/maximized/alwaysOnTop/bounds/contentBounds；`app.getDiagnostics.window` 也可读取模式和焦点。退出/关闭走原有正常保存路径。此模式不自动按 TIME，脚本可显式 `ui.key {"key":"T","down":true}` 再松开。
+桌面时钟：`ui.menu {"id":"view.clock"}` 通过真实 Menu handler 切换，仅运行时可进入。窗口控件 ID：`window.menu/minimize/maximize/close`（普通）、`window.normal/close`（时钟悬浮）。`ui.inspect.window` 返回 clockMode/pixelPerfect/scaleFactor/focused/maximized/alwaysOnTop/bounds/contentBounds；`app.getDiagnostics.window` 也可读取模式和焦点。退出/关闭走原有正常保存路径。此模式不自动按 TIME，脚本可显式 `ui.key {"key":"T","down":true}` 再松开。
 
 UiDriver 的 click/key/pointer 会主动 focus 窗口，适合操作 UI，不能用于模拟失焦输入。验证失焦边界时，用另一真实窗口夺取焦点，再通过原 renderer preload API 注入 key/button 按下并读取 inputState/diagnostics；预期两个 mask 均保持 0。拒绝规则在主进程，包含键盘、指针及辅助技术来源。
+
+
+像素缩放：`ui.menu {"id":"view.actualSize"}` 调用真实恢复菜单，仅时钟模式启用。`ui.inspect.canvas` 的 displayWidth/displayHeight/displayX/displayY 来自实际变换后的 bounding rect；devicePixelRatio 返回 renderer 密度，pixelScale=displayWidth×DPR/源宽度。像素 1:1 应为 pixelScale=1（浮点误差可容忍），输出大小 320×240，起点对齐输出像素网格。原始 width/height 保持 320×240；不能把 source-size canvas 的 clientWidth 当作可见宽度。`window.actualSize` 是受信 preload windowAction 入口，不是额外悬浮按钮。
