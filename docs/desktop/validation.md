@@ -90,3 +90,9 @@ DPR 1/1.25/1.5/2/3/4 的目标几何由单元测试覆盖；受控 Electron 宿�
 新 Electron 设置与存档，旧 Python 数据保留原样。主 checkout 重新构建
 QEMU/desktop，并在 worktree 删除后验证四个快捷启动脚本。Linux/Windows
 菜单结构有单测；此次没有运行这两个平台的原生发行版。
+
+集成实测结果：主目录 QEMU 重建通过，typecheck/build/package:dir 通过；
+63 项单测和 10 项日常 UI 回归通过（6 项显式场景默认跳过）。删除 worktree
+后，原版、dump、SD 和 SD 升级四个父目录脚本 smoke 全部通过，选择器解析
+为 gnw-emu；新的主目录应用包启动 smoke 通过。首次主目录单测与 QEMU
+重建并行时曾读到旧二进制而失败；等待重建完成后完整重跑通过。
