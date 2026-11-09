@@ -15,36 +15,46 @@
 #                         (default ../xx/game-and-watch-retro-go/roms)
 #   SYSTEMS=nes,gb,...    only these systems on the card
 #   SDCARD=FILE           card image (default out/sd/sdcard.img)
-#   FRESH=1               rebuild the card image and create a new profile identity
+#   FRESH=1               new identity; rebuild a generated card, never explicit SDCARD
 #   FRESH=1 creates a new JSON identity; previous saves are retained.
 #
-# The script writes out/profiles/sd-<backup name>.gnw.json and runs it.
+# The script writes out/profiles/sd-<backup name>-<wiring>.gnw.json and runs it.
 # Saves live in UserData/sessions/<profile id>/. The SD card is copied
 # there on first launch; the source image is left unchanged.
 #
 # Keys: arrows = D-pad, X = A, Z = B, G = GAME, T = TIME, P = PAUSE,
 #       O = POWER.  Hold LEFT + G on the clock to enter Retro-Go.
 #       In Retro-Go: G = START, T = SELECT, P = in-game menu.
-set -e
+set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WS=$(cd "$ROOT/.." && pwd)
-B=$WS/game-and-watch-backup/backups/full_20261104_1021
+B=${GNW_BACKUP_DIR:-$WS/game-and-watch-backup/backups/full_20261104_1021}
 case ${1:-} in
 -*|"") ;;
 *) B=$1; shift ;;
 esac
 B=$(cd "$B" && pwd)
 ROMS=${ROMS:-$WS/xx/game-and-watch-retro-go/roms}
-SDCARD=${SDCARD:-$ROOT/out/sd/sdcard.img}
-RG=$ROOT/externals/retro-go-sd
+. "$ROOT/scripts/launch_common.sh"
+select_sd_assets
+GNW_EXPLICIT_CARD=${SDCARD:-}
+SDCARD=${SDCARD:-$ASSETS/out/sd/sdcard.img}
+# FRESH may rebuild our generated card, never an explicitly supplied source.
+if [ "${FRESH:-0}" = 1 ] && [ -z "$GNW_EXPLICIT_CARD" ]; then
+    SDCARD=$ROOT/out/sd/sdcard.img
+fi
 FWBIN=$RG/build/gw_retro_go_intflash.bin
 
 for f in bank1.bin ext.bin; do
     [ -f "$B/$f" ] || { echo "missing $B/$f" >&2; exit 1; }
 done
-[ -x "$ROOT/build/qemu-system-arm" ] || "$ROOT/scripts/build.sh"
-[ -f "$FWBIN" ] || "$ROOT/scripts/build_retrogo_sd.sh"
-if ! ls "$ROOT"/out/dl/*/x/cores/*.bin >/dev/null 2>&1; then
+prepare_desktop
+if [ ! -f "$FWBIN" ]; then
+    [ "$ASSETS" = "$ROOT" ] || { echo "Missing prepared firmware: $FWBIN" >&2; exit 1; }
+    "$ROOT/scripts/build_retrogo_sd.sh"
+fi
+if [ ! -f "$SDCARD" ] && ! ls "$ASSETS"/out/dl/*/x/cores/*.bin >/dev/null 2>&1; then
+    [ "$ASSETS" = "$ROOT" ] || { echo "Missing prepared cores under $ASSETS/out/dl" >&2; exit 1; }
     if [ "${CORES_FROM:-release}" = source ]; then
         "$ROOT/scripts/build_cores.sh"
     else
@@ -70,20 +80,17 @@ if (word >> 24) & 0xF != 4:
     print("bank1  : added the Retro-Go SD metadata word (4 MiB stock data)")
 open(sys.argv[2], "wb").write(b)
 PY
-PROFILE=$ROOT/out/profiles/sd-$NAME.gnw.json
-if [ "${FRESH:-0}" = 1 ]; then
-    rm -f "$SDCARD"
-fi
-if [ ! -f "$SDCARD" ]; then
+PROFILE=$ROOT/out/profiles/sd-$NAME-${SD_WIRING:-spi1}.gnw.json
+if [ ! -f "$SDCARD" ] || { [ "${FRESH:-0}" = 1 ] && [ -z "$GNW_EXPLICIT_CARD" ]; }; then
     mkdir -p "$(dirname "$SDCARD")"
-    python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --roms "$ROMS" \
-        ${SYSTEMS:+--systems "$SYSTEMS"}
+    if [ -n "${SYSTEMS:-}" ]; then
+        python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --retrogo "$RG" --dl "$ASSETS/out/dl" --roms "$ROMS" --systems "$SYSTEMS"
+    else
+        python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --retrogo "$RG" --dl "$ASSETS/out/dl" --roms "$ROMS"
+    fi
 fi
-
-node "$ROOT/desktop/dist-cli/cli.js" ensure "$PROFILE" zelda \
-    internalFlash="$BANK1" externalFlash="$B/ext.bin" bank2Flash="$FWBIN" \
-    sdCard="$SDCARD" sdWiring="${SD_WIRING:-spi1}" $(if [ "${FRESH:-0}" = 1 ]; then echo --fresh; fi)
-SESS=$(node "$ROOT/desktop/dist-cli/cli.js" session-dir "$PROFILE")
+ensure_rom "$PROFILE" zelda internalFlash="$BANK1" externalFlash="$B/ext.bin" bank2Flash="$FWBIN" sdCard="$SDCARD" sdWiring="${SD_WIRING:-spi1}"
+SESS=$(print_session_directory "$@")
 
 echo "backup  : $B (bank1 + metadata, ext)"
 echo "bank2   : $FWBIN"

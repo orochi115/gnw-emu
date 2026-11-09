@@ -12,10 +12,8 @@ case "$TARGET" in
   zelda|mario) TARGET=$ROOT/profiles/$TARGET.gnw.json ;;
   "") ;;
 esac
-[ -f "$ROOT/desktop/dist-cli/cli.js" ] || {
-  echo "Build the desktop first: cd desktop && npm ci && npm run build" >&2
-  exit 1
-}
+. "$ROOT/scripts/launch_common.sh"
+prepare_desktop
 if [ -n "$TARGET" ]; then
   exec node "$ROOT/desktop/dist-cli/cli.js" launch "$TARGET" "$@"
 fi

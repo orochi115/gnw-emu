@@ -27,7 +27,7 @@
 ./run_sd_emu.sh                  # 直启：实机备份的 Bank 1 + SD 版 Retro-Go（Bank 2）+ SD 卡
 ./run_sd_update_emu.sh           # 真实安装流程：补丁原厂 + SD bootloader，从卡上升级 Bank 2
 SD_WIRING=ospi ./run_sd_emu.sh   # 软件 SPI 接法
-FRESH=1 ./run_sd_update_emu.sh   # 回到升级前（清空 Bank 2、重做卡）
+FRESH=1 ./run_sd_update_emu.sh   # 新身份回到升级前，保留旧存档（未指定源卡时重做新版卡）
 ```
 
 缺什么就先准备：QEMU、Retro-Go SD 固件、核心（默认下载 release；`CORES_FROM=source` 时用 `build_cores.sh` 从源码编译）、卡镜像，升级流程还会准备补丁固件。`ROMS=`、`SYSTEMS=nes,gb`、`SDCARD=` 以及 `BATTERY=` 等选项见脚本开头的注释。
@@ -83,7 +83,7 @@ scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升
 scripts/run_sd.sh ../game-and-watch-backup/backups/full_20261104_1021
 ```
 
-脚本写 `out/profiles/sd-<备份名>.gnw.toml`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdcard` 指向源卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 和 SD 卡的工作副本在 `UserData/sessions/<profile id>/`，源卡不被写入。以前的 `out/sd/<备份名>_ext.bin` 会在第一次运行时复制过去。
+脚本写 `out/profiles/sd-<备份名>-<接线>.gnw.json`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdCard` 指向源卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 和 SD 卡的工作副本在 `UserData/sessions/<profile id>/`，源卡不被写入。不读取或迁移旧的存档副本。
 
 ### 从 SD 卡升级（真实安装流程）
 
@@ -93,7 +93,7 @@ scripts/run_sd.sh ../game-and-watch-backup/backups/full_20261104_1021
 scripts/run_sd_update.sh
 ```
 
-它在缺文件时做下面这些准备，再写 `out/profiles/sd-update.gnw.toml` 并启动。profile 里的 Bank 2 是 256 KiB 的空白镜像；刷写结果留在 `UserData/sessions/<profile id>/bank2.bin`。运行中的卡是会话里的 `sdcard.img`。
+它在缺文件时做下面这些准备，再写 `out/profiles/sd-update-<接线>.gnw.json` 并启动。profile 里的 Bank 2 是 256 KiB 的空白镜像；刷写结果留在 `UserData/sessions/<profile id>/bank2.bin`。运行中的卡是会话里的 `sdcard.img`。
 
 ```sh
 scripts/build_sd_patch.sh
@@ -137,3 +137,5 @@ GnW("zelda", internal=..., bank2=..., sdcard="card.img", sd_snapshot=True,
 - 只验证过 FAT32 镜像（mtools 生成）。exFAT 在 FatFs 里是打开的，但这台 Mac 上没有生成 exFAT 镜像的工具。
 - SPI 和 DMA 的传输瞬间完成；软件 SPI 接法里固件自己的 NOP 延时会照常消耗虚拟时间。
 - 没有模拟 MDMA（固件没有用到）。
+
+Electron 一键入口、资产复用与参数说明见 [launchers.md](desktop/launchers.md)。

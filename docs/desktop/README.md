@@ -2,6 +2,8 @@
 
 Electron 游戏主窗口支持加载 `.gnw.json` 和将已有 Flash/SD 镜像组合为 ROM 配置。第一阶段没有机身外观、设置、改键、手柄或调试页面。
 
+- [一键启动原版、dump 和 SD 固件](launchers.md)
+- [界面语言与菜单](localization.md)
 - [开发、运行与打包](development.md)
 - [进程边界与生命周期](architecture.md)
 - [JSON 格式及存档](json-format.md)

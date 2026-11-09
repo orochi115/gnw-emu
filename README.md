@@ -16,8 +16,8 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 | `qemu-gnw/hw/arm/gnw/` | 机器与外设源码；`externals/qemu/hw/arm/gnw` 是指向这里的软链接 |
 | `externals/` | 子模块：qemu、Retro-Go SD、各核心与 bootloader、game-and-watch-patch/backup、gnwmanager、HAL、旧版 Retro-Go（见 `docs/sdcard.md`） |
 | `scripts/build.sh` | 用 `externals/qemu`（orochi115/qemu 的 `gnw` 分支 = v11.1.3 + 钩子）编译 `build/qemu-system-arm` |
-| `scripts/run.sh` | 带窗口运行 |
-| `scripts/probe.sh` | 调试用：跑 N 秒，打印寄存器、截图，并汇总 `-d unimp` 日志 |
+| `scripts/run.sh`、`run_backup.sh` | 原版/JSON ROM 与完整 dump 一键运行 |
+| `scripts/probe.sh` | 隔离运行 N 秒，输出寄存器 JSON 与截图 |
 | `harness/` | Python headless 驱动（QMP），也提供命令行 |
 | `tests/` | pytest 端到端用例；`golden.json` 只记录画面哈希 |
 | `tools/gnwcrypt.py` | 离线 OTFDEC 解密，移植自 `game-and-watch-patch` 的 `crypt()`，测试里用作参照 |
@@ -56,7 +56,7 @@ npm run build
 npm run dev
 ```
 
-也可在项目根目录使用 `scripts/run.sh zelda` / `mario` / `FILE.gnw.json`。主窗口通过“文件 → 加载 ROM…”和“制作 ROM…”操作。制作只组合已有的 Flash/SD 镜像，不编译固件。源镜像不修改，新格式存档位于 `UserData/sessions/<id>/`。完整说明见 [桌面应用文档](docs/desktop/README.md)。
+也可在项目根目录使用 `scripts/run.sh zelda` / `mario` / `FILE.gnw.json`。主窗口通过“文件 → 加载 ROM…”和“制作 ROM…”操作。制作只组合已有的 Flash/SD 镜像，不编译固件。源镜像不修改，新格式存档位于 `UserData/sessions/<id>/`。支持简体中文/英文，`--language=en` 可覆盖。一键原版/dump/SD 命令见 [启动脚本](docs/desktop/launchers.md)，完整说明见 [桌面应用文档](docs/desktop/README.md)。
 
 | 键盘 | 设备操作 |
 |---|---|
@@ -71,7 +71,7 @@ npm run dev
 
 ## 完整设备备份
 
-`../run_backup_emu.sh BACKUP_DIR` 将 bank1.bin、bank2.bin、ext.bin 组合为 JSON 配置。新脚本不迁移旧存档；`FRESH=1` 创建新 UUID，保留以前的存档。尚在开发工作区时用 `GNW_EMU_DIR=/path/to/gnw-emu-electron-ui` 指定项目。
+`../run_backup_emu.sh BACKUP_DIR` 将 bank1.bin、bank2.bin、ext.bin 组合为 JSON 配置。新脚本不迁移旧存档；`FRESH=1` 创建新 UUID，保留以前的存档。父目录脚本自动选择 Electron worktree，`GNW_EMU_DIR=/path/to/project` 可显式覆盖。
 
 原厂时钟中按住 **← + G** 进入 Retro-Go；Retro-Go 中 G 对应 START、T 对应 SELECT、P 打开游戏菜单。Headless 固件/设备测试仍使用 Python `GnW`，参数和测试隔离行为不变。
 
@@ -98,7 +98,7 @@ SD_WIRING=ospi scripts/run_sd.sh   # 软件 SPI 接法
     "press a" "wait 3000" "shot title.png"
 ```
 
-可用的步骤有 `wait MS`、`press BUTTONS [MS]`、`hold BUTTONS`、`release`、`shot FILE`、`regs`、`mem ADDR LEN FILE`；也可以用 `--script 文件` 每行写一步。其他选项：`--model mario`、`--wav out.wav`（录 SAI1 音频；不接声卡）、`--overlay`、`--log`、`--rtc`。窗口里的声音由 `scripts/run.sh` 的 `audio=on` 打开。
+可用的步骤有 `wait MS`、`press BUTTONS [MS]`、`hold BUTTONS`、`release`、`shot FILE`、`regs`、`mem ADDR LEN FILE`；也可以用 `--script 文件` 每行写一步。其他选项：`--model mario`、`--wav out.wav`（录 SAI1 音频；不接声卡）、`--overlay`、`--log`、`--rtc`。窗口里的声音由 settings.json 的 audio 开关控制，默认开启。
 
 Python：
 
