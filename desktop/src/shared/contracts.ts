@@ -1,11 +1,21 @@
 import type { ProfileFields } from "../core/schemas";
 export type AppStatus = "idle" | "starting" | "running" | "stopping" | "error";
+export interface InputState {
+  runtimeSessionId?: string;
+  desiredMask: number;
+  appliedMask: number;
+  resetGeneration: number;
+}
+export interface ViewPreferences {
+  showChassis: boolean;
+}
 export interface AppState {
   status: AppStatus;
   stage?: string;
   runtimeSessionId?: string;
   profileName?: string;
   profilePath?: string;
+  model?: "zelda" | "mario";
   error?: string;
   errorCode?: string;
   errorParams?: Record<string, string | number>;
@@ -15,6 +25,17 @@ export interface DesktopApi {
   locale(): Promise<"zh-CN" | "en">;
   state(): Promise<AppState>;
   onState(callback: (state: AppState) => void): () => void;
+  preferences(): Promise<ViewPreferences>;
+  onPreferences(callback: (value: ViewPreferences) => void): () => void;
+  inputState(): Promise<InputState>;
+  onInput(callback: (value: InputState) => void): () => void;
+  button(
+    bit: number,
+    down: boolean,
+    source: string,
+    runtimeSessionId: string,
+  ): void;
+  releaseChassis(runtimeSessionId: string): void;
   openRom(): Promise<void>;
   makeRom(): Promise<void>;
   pickImage(field: string): Promise<string | null>;

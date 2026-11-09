@@ -6,7 +6,7 @@ import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import type { Logger } from "pino";
 import type { DisplayEndpoint } from "../display/receiver";
-import type { AppState } from "../shared/contracts";
+import type { AppState, InputState } from "../shared/contracts";
 import { loadProfile } from "./profile-store";
 import { prepareSession, saveSession, type Session } from "./session-store";
 import { acquireLease } from "./session-lease";
@@ -85,6 +85,7 @@ export class SessionController extends EventEmitter {
         runtimeSessionId: id,
         profileName: basename(path, ".gnw.json"),
         profilePath: path,
+        model: profile.model,
       });
       let lease: Awaited<ReturnType<typeof acquireLease>> | undefined;
       let qmp: QmpClient | undefined;
@@ -104,12 +105,37 @@ export class SessionController extends EventEmitter {
         );
         const qmpPort = await qmp.listen();
         display = await this.options.createDisplay(id);
-        const input = new InputController((mask) =>
-          qmp!.command("qom-set", {
-            path: "/machine",
-            property: "buttons",
-            value: mask,
-          }),
+        const input = new InputController(
+          async (mask) => {
+            try {
+              return await qmp!.command("qom-set", {
+                path: "/machine",
+                property: "buttons",
+                value: mask,
+              });
+            } catch (error) {
+              this.options.logFor?.("input").error(
+                {
+                  event: "submit.failure",
+                  err: error,
+                  runtimeSessionId: id,
+                  mask,
+                },
+                "Input submission failed",
+              );
+              throw error;
+            }
+          },
+          (snapshot) => {
+            if (this.runtime?.id !== id) return;
+            this.options
+              .logFor?.("input")
+              .debug(
+                { event: "mask", runtimeSessionId: id, ...snapshot },
+                "Input state",
+              );
+            this.emit("input", { runtimeSessionId: id, ...snapshot });
+          },
         );
         const runtime: Runtime = {
           id,
@@ -268,6 +294,35 @@ export class SessionController extends EventEmitter {
   releaseInput() {
     this.runtime?.input.releaseAll();
   }
+  button(bit: number, down: boolean, source: string, runtimeSessionId: string) {
+    if (
+      this.runtime?.id !== runtimeSessionId ||
+      this.state.status !== "running"
+    )
+      return;
+    this.options
+      .logFor?.("input")
+      .debug(
+        { event: "button", runtimeSessionId, bit, down, source },
+        "Chassis input",
+      );
+    this.runtime.input.button(bit, down, source);
+  }
+  releaseChassis(runtimeSessionId: string) {
+    if (this.runtime?.id !== runtimeSessionId) return;
+    this.runtime.input.releaseSources("pointer:");
+    this.runtime.input.releaseSources("chassis-key:");
+  }
+  inputState(): InputState {
+    return {
+      runtimeSessionId: this.runtime?.id,
+      ...(this.runtime?.input.snapshot ?? {
+        desiredMask: 0,
+        appliedMask: 0,
+        resetGeneration: 0,
+      }),
+    };
+  }
   async probe(filename: string) {
     if (!this.runtime || this.state.status !== "running")
       throw new Error("No running emulator");
@@ -284,6 +339,7 @@ export class SessionController extends EventEmitter {
     return {
       ...this.runtime?.display.diagnostics(),
       buttons: this.runtime?.input.buttons ?? 0,
+      input: this.inputState(),
       qemuPid: this.runtime?.child?.pid,
       runtimeSessionId: this.runtime?.id,
     };

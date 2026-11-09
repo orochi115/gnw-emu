@@ -6,6 +6,8 @@
 
 主要事件：app.ready、operation.failure、session.state/failure、QEMU output，显示握手/故障/统计。QEMU stderr 保留原文及source=qemu，级别默认info，不把stderr本身当作error。高频输入/QMP诊断只在debug/trace记录，显示统计最多每秒，不打印逐帧像素。
 
+机身：view 模块 `chassis.visibility`（info）记录持久化后的开关；input 模块 `button`（debug）记录 bit/down/source，`key` 记录键盘来源，`mask` 记录 desiredMask/appliedMask；`submit.failure`（error）保留失败的 mask 和会话 ID。按键反馈不要求开启 debug 日志，状态通过 IPC 推送。
+
 ```sh
 node desktop/dist-cli/ui-cli.js UserData/automation.json logging.getConfig
 node desktop/dist-cli/ui-cli.js UserData/automation.json logging.configure '{"level":"debug","modules":{"session":"debug","renderer":"warn"}}'

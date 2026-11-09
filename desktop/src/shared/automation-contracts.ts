@@ -25,6 +25,7 @@ const schemas: Record<string, z.ZodType> = {
       id: z.enum([
         "file.open",
         "file.make",
+        "view.chassis",
         "app.quit",
         "edit.undo",
         "edit.redo",
@@ -45,6 +46,19 @@ const schemas: Record<string, z.ZodType> = {
   "ui.key": z
     .object({ key: z.string().min(1).max(32), down: z.boolean().optional() })
     .strict(),
+  "ui.pointer": z
+    .object({
+      id: id.optional(),
+      phase: z.enum(["down", "up"]),
+      x: z.number().int().min(0).max(10000).optional(),
+      y: z.number().int().min(0).max(10000).optional(),
+    })
+    .strict()
+    .refine(
+      (v) =>
+        !!v.id || (v.phase === "up" && v.x !== undefined && v.y !== undefined),
+      "Expected a control or release coordinates",
+    ),
   "ui.screenshot": z
     .object({
       path: z

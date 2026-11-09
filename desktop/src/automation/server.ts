@@ -22,6 +22,7 @@ const actions = new Set([
   "ui.fill",
   "ui.select",
   "ui.key",
+  "ui.pointer",
 ]);
 export async function startAutomationServer(options: {
   directory: string;

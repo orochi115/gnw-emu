@@ -18,6 +18,28 @@ test("automation rejects unbounded log queries and invalid typed UI parameters",
     validateAutomationParams("ui.key", { key: "Left", down: false }),
   ).toEqual({ key: "Left", down: false });
 });
+test("pointer commands require a real target or bounded release coordinates", () => {
+  expect(
+    validateAutomationParams("ui.pointer", {
+      id: "chassis.button.a",
+      phase: "down",
+    }),
+  ).toEqual({ id: "chassis.button.a", phase: "down" });
+  expect(
+    validateAutomationParams("ui.pointer", { phase: "up", x: 2, y: 2 }),
+  ).toEqual({ phase: "up", x: 2, y: 2 });
+  for (const params of [
+    { phase: "down" },
+    { phase: "up", x: 2 },
+    { phase: "down", x: 2, y: 2 },
+    { phase: "up", x: -1, y: 2 },
+    { phase: "move", id: "chassis.button.a" },
+  ])
+    expect(() => validateAutomationParams("ui.pointer", params)).toThrow();
+  expect(validateAutomationParams("ui.menu", { id: "view.chassis" })).toEqual({
+    id: "view.chassis",
+  });
+});
 test("stable edit/window/quit menu actions are accepted without accepting arbitrary IDs", () => {
   for (const id of ["app.quit", "edit.copy", "window.close"])
     expect(validateAutomationParams("ui.menu", { id })).toEqual({ id });

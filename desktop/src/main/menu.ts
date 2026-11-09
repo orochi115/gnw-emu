@@ -3,7 +3,12 @@ import { t } from "../shared/locale";
 /** Explicit role lists keep Electron's default extra menus out of the product. */
 export function menuTemplate(
   platform: string,
-  actions: { open: () => void; make: () => void },
+  actions: {
+    open: () => void;
+    make: () => void;
+    toggleChassis?: () => void;
+    showChassis?: boolean;
+  },
 ): Item[] {
   const separator: Item = { type: "separator" };
   const quit: Item = { id: "app.quit", label: t("menu.quit"), role: "quit" };
@@ -56,6 +61,19 @@ export function menuTemplate(
         { id: "edit.paste", label: t("menu.paste"), role: "paste" },
         separator,
         { id: "edit.selectAll", label: t("menu.selectAll"), role: "selectAll" },
+      ],
+    },
+    {
+      id: "menu.view",
+      label: t("menu.view"),
+      submenu: [
+        {
+          id: "view.chassis",
+          label: t("menu.chassis"),
+          type: "checkbox",
+          checked: actions.showChassis ?? true,
+          click: actions.toggleChassis,
+        },
       ],
     },
     {

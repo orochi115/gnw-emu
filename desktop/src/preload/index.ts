@@ -9,6 +9,18 @@ contextBridge.exposeInMainWorld("desktop", {
   locale: () => ipcRenderer.invoke("app.locale"),
   state: () => ipcRenderer.invoke("app.state"),
   onState: (cb: (v: unknown) => void) => subscribe("app.state", cb),
+  preferences: () => ipcRenderer.invoke("view.preferences"),
+  onPreferences: (cb: (v: unknown) => void) =>
+    subscribe("view.preferences", cb),
+  inputState: () => ipcRenderer.invoke("input.state"),
+  onInput: (cb: (v: unknown) => void) => subscribe("input.state", cb),
+  button: (
+    bit: number,
+    down: boolean,
+    source: string,
+    runtimeSessionId: string,
+  ) => ipcRenderer.send("input.button", bit, down, source, runtimeSessionId),
+  releaseChassis: (id: string) => ipcRenderer.send("input.releaseChassis", id),
   onMake: (cb: () => void) => subscribe("ui.make", cb),
   openRom: () => ipcRenderer.invoke("rom.open"),
   makeRom: () => ipcRenderer.invoke("rom.make"),

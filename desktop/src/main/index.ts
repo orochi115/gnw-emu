@@ -7,9 +7,10 @@ import {
   type Locale,
 } from "../shared/locale";
 import { UserError } from "../shared/user-error";
-import { loadSettings } from "../core/settings-store";
+import { loadSettings, updateSettings } from "../core/settings-store";
+import { ChassisPreference } from "../core/chassis-preference";
 import { menuTemplate } from "./menu";
-import type { AppState } from "../shared/contracts";
+import type { AppState, ViewPreferences } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
@@ -55,8 +56,12 @@ const uiEvents = new EventEmitter();
 let bridgeDropped = 0;
 let locale: Locale = "en";
 let closeLogs: () => Promise<void> = async () => {};
+let preferences: ViewPreferences = { showChassis: true };
+let preferenceChange: Promise<void> = Promise.resolve();
+let viewPreference: ChassisPreference;
 async function main() {
   const settings = await loadSettings(paths.userData);
+  preferences = { showChassis: settings.showChassis };
   locale = chooseLocale(
     app.getLocale(),
     settings.language,
@@ -121,8 +126,8 @@ async function main() {
     level: argv.includes("--debug") ? "debug" : "info",
   });
   window = new BrowserWindow({
-    width: 640,
-    height: 480,
+    width: 960,
+    height: 640,
     useContentSize: true,
     minWidth: 320,
     minHeight: 280,
@@ -142,6 +147,28 @@ async function main() {
     logFor: (module) => logger.child(module),
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
   });
+  viewPreference = new ChassisPreference(settings.showChassis, {
+    persist: (showChassis) => updateSettings(paths.userData, { showChassis }),
+    release: () => {
+      const id = controller.state.runtimeSessionId;
+      if (id) controller.releaseChassis(id);
+    },
+    publish: (value) => {
+      preferences = value;
+      if (!window.isDestroyed())
+        window.webContents.send("view.preferences", preferences);
+      logger
+        .child("view")
+        .info(
+          {
+            event: "chassis.visibility",
+            ...value,
+            runtimeSessionId: controller.state.runtimeSessionId,
+          },
+          "Device frame visibility changed",
+        );
+    },
+  });
   dialogs = new DialogAdapter(
     window,
     argv.includes("--automation") && argv.includes("--test-dialogs"),
@@ -149,11 +176,16 @@ async function main() {
   controller.on("state", (state) => {
     if (!window.isDestroyed()) {
       window.webContents.send("app.state", stateForUi(state));
+      window.webContents.send("input.state", controller.inputState());
       window.setTitle(
         state.profileName ? `gnw-emu — ${state.profileName}` : "gnw-emu",
       );
       updateMenu();
     }
+    uiEvents.emit("changed");
+  });
+  controller.on("input", (state) => {
+    if (!window.isDestroyed()) window.webContents.send("input.state", state);
     uiEvents.emit("changed");
   });
   window.on("blur", () => controller.releaseInput());
@@ -204,6 +236,18 @@ function updateMenu() {
       const item = menu.getMenuItemById(id);
       if (item) item.enabled = !blocked;
     }
+  const chassis = menu?.getMenuItemById("view.chassis");
+  if (chassis) chassis.checked = preferences.showChassis;
+}
+/** Queue toggles against the last committed preference; rollback native checks on failure. */
+function toggleChassis() {
+  const work = viewPreference.toggle().finally(() => {
+    updateMenu();
+    uiEvents.emit("changed");
+  });
+  preferenceChange = work;
+  observedActivity = work;
+  return work;
 }
 function createMenu() {
   Menu.setApplicationMenu(
@@ -213,6 +257,10 @@ function createMenu() {
           void openRom().catch(showError);
         },
         make: () => makeRom(),
+        showChassis: preferences.showChassis,
+        toggleChassis: () => {
+          void toggleChassis().catch(showError);
+        },
       }),
     ),
   );
@@ -291,6 +339,14 @@ function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) {
     throw new Error("Unauthorized renderer");
 }
 function registerIpc() {
+  ipcMain.handle("view.preferences", (event) => {
+    trusted(event);
+    return preferences;
+  });
+  ipcMain.handle("input.state", (event) => {
+    trusted(event);
+    return controller.inputState();
+  });
   ipcMain.handle("app.locale", (event) => {
     trusted(event);
     return locale;
@@ -360,6 +416,25 @@ function registerIpc() {
   ipcMain.on("input.release", (event) => {
     trusted(event);
     controller.releaseInput();
+  });
+  ipcMain.on("input.button", (event, bit, down, source, runtimeSessionId) => {
+    trusted(event);
+    if (
+      Number.isInteger(bit) &&
+      bit >= 0 &&
+      bit <= 11 &&
+      typeof down === "boolean" &&
+      typeof source === "string" &&
+      /^(pointer:\d{1,10}|chassis-key:[a-z]+:(Space|Enter))$/.test(source) &&
+      typeof runtimeSessionId === "string" &&
+      (!down || (!makerOpen && !nativeDialog && preferences.showChassis))
+    )
+      controller.button(bit, down, source, runtimeSessionId);
+  });
+  ipcMain.on("input.releaseChassis", (event, runtimeSessionId) => {
+    trusted(event);
+    if (typeof runtimeSessionId === "string")
+      controller.releaseChassis(runtimeSessionId);
   });
   ipcMain.on("ui.modal", (event, open) => {
     trusted(event);
@@ -443,6 +518,8 @@ async function dispatch(method: string, params: any) {
       return ui.select(params.id, params.value);
     case "ui.key":
       return ui.key(params.key, params.down !== false);
+    case "ui.pointer":
+      return ui.pointer(params);
     case "ui.menu": {
       observedActivity = undefined;
       const result = await ui.menu(params.id);
@@ -457,6 +534,7 @@ async function dispatch(method: string, params: any) {
       return {
         ...controller.diagnostics(),
         ...((await ui.inspect()).canvas ?? {}),
+        chassis: (await ui.inspect()).chassis,
         memory: process.memoryUsage(),
         instanceId,
         logBridge: { dropped: bridgeDropped },
@@ -553,6 +631,7 @@ async function shutdown() {
   shuttingDown = true;
   try {
     await active?.catch(() => {});
+    await preferenceChange.catch(() => {});
     await controller.stop();
   } catch (error) {
     await dialog.showMessageBox(window, {

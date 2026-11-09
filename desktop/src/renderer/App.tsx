@@ -1,6 +1,10 @@
 import { t } from "../shared/locale";
 import { useEffect, useState } from "react";
-import type { AppState } from "../shared/contracts";
+import type {
+  AppState,
+  InputState,
+  ViewPreferences,
+} from "../shared/contracts";
 import { GameScreen } from "./components/GameScreen";
 import { MakeRomDialog } from "./components/MakeRomDialog";
 const gameKeys = new Set([
@@ -16,6 +20,7 @@ const gameKeys = new Set([
   "KeyO",
   "Enter",
   "Tab",
+  "KeyQ",
   "Minus",
   "Equal",
   "KeyC",
@@ -24,10 +29,42 @@ export function App() {
   const [state, setState] = useState<AppState>({ status: "idle" });
   const [maker, setMaker] = useState(false);
   const [error, setError] = useState("");
+  const [preferences, setPreferences] = useState<ViewPreferences>({
+    showChassis: true,
+  });
+  const [input, setInput] = useState<InputState>({
+    desiredMask: 0,
+    appliedMask: 0,
+    resetGeneration: 0,
+  });
   useEffect(() => {
     window.desktop.state().then(setState);
     const off = window.desktop.onState(setState);
     const offMake = window.desktop.onMake(() => setMaker(true));
+    let receivedPrefs = false,
+      receivedInput = false;
+    const offPrefs = window.desktop.onPreferences((value) => {
+      receivedPrefs = true;
+      setPreferences(value);
+    });
+    const offInput = window.desktop.onInput((value) => {
+      receivedInput = true;
+      setInput(value);
+    });
+    window.desktop.preferences().then((value) => {
+      if (!receivedPrefs) setPreferences(value);
+    });
+    window.desktop.inputState().then((value) => {
+      if (!receivedInput) setInput(value);
+    });
+    return () => {
+      off();
+      offMake();
+      offPrefs();
+      offInput();
+    };
+  }, []);
+  useEffect(() => {
     const key = (e: KeyboardEvent) => {
       if (
         document.querySelector("dialog[open]") ||
@@ -35,6 +72,17 @@ export function App() {
         e.metaKey ||
         e.altKey ||
         e.repeat
+      )
+        return;
+      const focusedChassis = (e.target as Element)?.closest?.(
+        ".chassis-button",
+      );
+      if (preferences.showChassis && e.code === "Tab" && e.type === "keydown")
+        return;
+      if (
+        focusedChassis &&
+        e.type === "keydown" &&
+        ["Space", "Enter", "Tab"].includes(e.code)
       )
         return;
       if (state.status === "running" && gameKeys.has(e.code)) {
@@ -47,21 +95,37 @@ export function App() {
     window.addEventListener("keyup", key);
     window.addEventListener("blur", release);
     return () => {
-      off();
-      offMake();
       window.removeEventListener("keydown", key);
       window.removeEventListener("keyup", key);
       window.removeEventListener("blur", release);
     };
-  }, [state.status]);
+  }, [state.status, preferences.showChassis]);
   const running =
     state.status === "running" ||
     state.status === "starting" ||
     state.status === "stopping";
+  const desiredMask =
+    input.runtimeSessionId === state.runtimeSessionId ? input.desiredMask : 0;
+  const appliedMask =
+    input.runtimeSessionId === state.runtimeSessionId ? input.appliedMask : 0;
   return (
-    <main data-ui="app" data-status={state.status}>
+    <main
+      data-ui="app"
+      data-status={state.status}
+      data-desired-mask={desiredMask}
+      data-applied-mask={appliedMask}
+    >
       <GameScreen
         runtimeSessionId={running ? state.runtimeSessionId : undefined}
+        model={state.model}
+        showChassis={preferences.showChassis}
+        mask={desiredMask}
+        disabled={state.status !== "running" || maker}
+        resetGeneration={
+          input.runtimeSessionId === state.runtimeSessionId
+            ? input.resetGeneration
+            : 0
+        }
       />
       {!running && (
         <div className="empty-state">

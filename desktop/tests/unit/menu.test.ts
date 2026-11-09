@@ -29,3 +29,22 @@ test("menus group editing roles and provide one stable quit on every platform", 
     ).toBe(platform !== "darwin");
   }
 });
+test("localized chassis checkbox mirrors the stored preference on every platform", () => {
+  initializeLocale("zh-CN");
+  for (const platform of ["darwin", "win32", "linux"]) {
+    const template = menuTemplate(platform, {
+      open() {},
+      make() {},
+      toggleChassis() {},
+      showChassis: false,
+    });
+    const view: any = template.find((i) => i.id === "menu.view");
+    expect(view?.label).toBe("视图");
+    const item = view?.submenu.find((i: any) => i.id === "view.chassis");
+    expect(item).toMatchObject({
+      type: "checkbox",
+      checked: false,
+      label: "显示机身边框",
+    });
+  }
+});

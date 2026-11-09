@@ -51,6 +51,19 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
       })
     ).json()) as any;
     expect(reply.result.status).toBe("running");
+    await expect(page.locator('[data-ui="chassis"]')).toHaveAttribute(
+      "data-model",
+      "zelda",
+    );
+    await expect
+      .poll(() =>
+        page
+          .locator(".chassis-frame")
+          .evaluate(
+            (image: any) => image.complete && image.naturalWidth === 950,
+          ),
+      )
+      .toBe(true);
     for (const method of [
       "automation.capabilities",
       "ui.inspect",

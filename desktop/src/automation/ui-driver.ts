@@ -9,7 +9,7 @@ export class UiDriver {
   async inspect() {
     this.check();
     const dom = await this.window.webContents.executeJavaScript(
-      `({locale:document.documentElement.lang,dialogOpen:!!document.querySelector('dialog[open]'),status:document.querySelector('main')?.dataset.status,controls:Array.from(document.querySelectorAll('[data-ui]')).map(e=>({id:e.dataset.ui,role:e.getAttribute('role')||e.tagName.toLowerCase(),label:e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText?.slice(0,160),value:e.value,checked:e.type==="radio"?e.checked:undefined,disabled:!!e.disabled,visible:!!e.getClientRects().length,invalid:e.getAttribute('aria-invalid')})),canvas:(()=>{const e=document.querySelector('canvas');return e?{...e.dataset,width:e.width,height:e.height,displayWidth:e.clientWidth,displayHeight:e.clientHeight}:null})()})`,
+      `({locale:document.documentElement.lang,dialogOpen:!!document.querySelector('dialog[open]'),status:document.querySelector('main')?.dataset.status,controls:Array.from(document.querySelectorAll('[data-ui]')).map(e=>({id:e.dataset.ui,role:e.getAttribute('role')||e.tagName.toLowerCase(),label:e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText?.slice(0,160),value:e.value,checked:e.type==="radio"?e.checked:undefined,pressed:e.getAttribute('aria-pressed'),disabled:!!e.disabled,visible:!!e.getClientRects().length,invalid:e.getAttribute('aria-invalid')})),chassis:(()=>{const e=document.querySelector('[data-ui="chassis"]');const main=document.querySelector('main');return {visible:!!e?.getClientRects().length,model:e?.dataset.model,input:{desiredMask:Number(main?.dataset.desiredMask||0),appliedMask:Number(main?.dataset.appliedMask||0)}}})(),canvas:(()=>{const e=document.querySelector('canvas');return e?{...e.dataset,width:e.width,height:e.height,displayWidth:e.clientWidth,displayHeight:e.clientHeight}:null})()})`,
     );
     return {
       ...dom,
@@ -24,6 +24,11 @@ export class UiDriver {
             id: v.id,
             label: v.label,
             enabled: v.enabled,
+            type: v.type,
+            checked:
+              v.type === "checkbox" || v.type === "radio"
+                ? v.checked
+                : undefined,
           })) ?? [],
       ),
     };
@@ -150,6 +155,7 @@ export class UiDriver {
         this.window.webContents.selectAll();
         break;
       default:
+        if (item.type === "checkbox") item.checked = !item.checked;
         item.click(undefined, this.window, undefined);
     }
     return {
@@ -168,6 +174,27 @@ export class UiDriver {
     });
     await this.settle();
     return { key, down };
+  }
+  async pointer(params: {
+    id?: string;
+    phase: "down" | "up";
+    x?: number;
+    y?: number;
+  }) {
+    this.check();
+    const info = params.id
+      ? await this.control(params.id)
+      : { x: params.x!, y: params.y! };
+    this.window.focus();
+    this.window.webContents.sendInputEvent({
+      type: params.phase === "down" ? "mouseDown" : "mouseUp",
+      button: "left",
+      clickCount: 1,
+      x: Math.round(info.x),
+      y: Math.round(info.y),
+    });
+    await this.settle();
+    return { phase: params.phase, id: params.id };
   }
   async screenshot(path: string) {
     this.check();

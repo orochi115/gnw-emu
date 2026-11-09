@@ -18,7 +18,7 @@ UTF-8 标准 JSON；`formatVersion: 1`。拒绝未知字段、错误类型和未
 
 `session.json` 保存 formatVersion、电量 battery（整数0..100）、usbPower（boolean）、rtc（host 或 YYYY-MM-DDTHH:mm:ss）、batteryLifeMinutes、chargeTimeMinutes（非负整数，0 禁用相应变化）。默认100、false、host、480、180。
 
-`settings.json` 保存 formatVersion、language（system/zh-CN/en，默认 system）、audio、realtime；后两项默认 true。缺文件按默认写入，损坏文件报错而不是静默覆盖。
+`settings.json` 保存 formatVersion、language（system/zh-CN/en，默认 system）、showChassis（是否显示机身）、audio、realtime；后三项默认 true。缺文件按默认写入，损坏文件报错而不是静默覆盖。边框切换使用串行的读取/修改/原子保存，保留其他偏好；保存失败时 UI 和原生菜单保留之前的选择。
 
 开发默认 `<项目>/UserData`；打包默认系统应用数据目录下的 UserData；`--user-data-dir=/绝对/可写路径` 显式指定便携数据目录。Electron 自己的缓存位于该目录的 electron-host，和业务 JSON 分开。
 

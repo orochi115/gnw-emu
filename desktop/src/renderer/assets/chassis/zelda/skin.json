@@ -1,0 +1,369 @@
+{
+  "version": 1,
+  "model": "zelda",
+  "size": {
+    "width": 950,
+    "height": 567
+  },
+  "source": {
+    "path": "retro-go-assets/images/official/eu/NSwitch_GameWatch_TLOZ_Lifestyle_04_image950w.png",
+    "sha256": "2f6fabea62be3a009bd3a18c9cd610027bdbf60f9b2364698feccf29e7a88068"
+  },
+  "screen": {
+    "x": 267,
+    "y": 129,
+    "width": 416,
+    "height": 312
+  },
+  "buttons": [
+    {
+      "id": "left",
+      "bit": 0,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            50,
+            391
+          ],
+          [
+            93,
+            391
+          ],
+          [
+            103,
+            402
+          ],
+          [
+            103,
+            420
+          ],
+          [
+            93,
+            431
+          ],
+          [
+            50,
+            431
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 47,
+        "y": 388,
+        "width": 59,
+        "height": 46
+      },
+      "states": {
+        "normal": "left-normal.png",
+        "hover": "left-hover.png",
+        "pressed": "left-pressed.png"
+      }
+    },
+    {
+      "id": "up",
+      "bit": 1,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            97,
+            342
+          ],
+          [
+            139,
+            342
+          ],
+          [
+            139,
+            387
+          ],
+          [
+            127,
+            393
+          ],
+          [
+            109,
+            393
+          ],
+          [
+            97,
+            387
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 94,
+        "y": 339,
+        "width": 48,
+        "height": 57
+      },
+      "states": {
+        "normal": "up-normal.png",
+        "hover": "up-hover.png",
+        "pressed": "up-pressed.png"
+      }
+    },
+    {
+      "id": "right",
+      "bit": 2,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            145,
+            391
+          ],
+          [
+            188,
+            391
+          ],
+          [
+            188,
+            431
+          ],
+          [
+            145,
+            431
+          ],
+          [
+            133,
+            420
+          ],
+          [
+            133,
+            402
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 130,
+        "y": 388,
+        "width": 61,
+        "height": 46
+      },
+      "states": {
+        "normal": "right-normal.png",
+        "hover": "right-hover.png",
+        "pressed": "right-pressed.png"
+      }
+    },
+    {
+      "id": "down",
+      "bit": 3,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            97,
+            437
+          ],
+          [
+            109,
+            432
+          ],
+          [
+            127,
+            432
+          ],
+          [
+            139,
+            437
+          ],
+          [
+            139,
+            479
+          ],
+          [
+            97,
+            479
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 94,
+        "y": 429,
+        "width": 48,
+        "height": 53
+      },
+      "states": {
+        "normal": "down-normal.png",
+        "hover": "down-hover.png",
+        "pressed": "down-pressed.png"
+      }
+    },
+    {
+      "id": "b",
+      "bit": 5,
+      "shape": {
+        "kind": "ellipse",
+        "bounds": [
+          750,
+          419,
+          809,
+          478
+        ]
+      },
+      "spriteRect": {
+        "x": 747,
+        "y": 416,
+        "width": 65,
+        "height": 65
+      },
+      "states": {
+        "normal": "b-normal.png",
+        "hover": "b-hover.png",
+        "pressed": "b-pressed.png"
+      }
+    },
+    {
+      "id": "a",
+      "bit": 4,
+      "shape": {
+        "kind": "ellipse",
+        "bounds": [
+          852,
+          419,
+          911,
+          479
+        ]
+      },
+      "spriteRect": {
+        "x": 849,
+        "y": 416,
+        "width": 65,
+        "height": 66
+      },
+      "states": {
+        "normal": "a-normal.png",
+        "hover": "a-hover.png",
+        "pressed": "a-pressed.png"
+      }
+    },
+    {
+      "id": "game",
+      "bit": 7,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          770,
+          67,
+          813,
+          91
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 767,
+        "y": 64,
+        "width": 49,
+        "height": 30
+      },
+      "states": {
+        "normal": "game-normal.png",
+        "hover": "game-hover.png",
+        "pressed": "game-pressed.png"
+      }
+    },
+    {
+      "id": "time",
+      "bit": 6,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          770,
+          132,
+          813,
+          156
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 767,
+        "y": 129,
+        "width": 49,
+        "height": 30
+      },
+      "states": {
+        "normal": "time-normal.png",
+        "hover": "time-hover.png",
+        "pressed": "time-pressed.png"
+      }
+    },
+    {
+      "id": "pause",
+      "bit": 8,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          770,
+          196,
+          813,
+          220
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 767,
+        "y": 193,
+        "width": 49,
+        "height": 30
+      },
+      "states": {
+        "normal": "pause-normal.png",
+        "hover": "pause-hover.png",
+        "pressed": "pause-pressed.png"
+      }
+    },
+    {
+      "id": "select",
+      "bit": 11,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          750,
+          355,
+          810,
+          378
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 747,
+        "y": 352,
+        "width": 66,
+        "height": 29
+      },
+      "states": {
+        "normal": "select-normal.png",
+        "hover": "select-hover.png",
+        "pressed": "select-pressed.png"
+      }
+    },
+    {
+      "id": "start",
+      "bit": 10,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          852,
+          354,
+          911,
+          378
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 849,
+        "y": 351,
+        "width": 65,
+        "height": 30
+      },
+      "states": {
+        "normal": "start-normal.png",
+        "hover": "start-hover.png",
+        "pressed": "start-pressed.png"
+      }
+    }
+  ]
+}

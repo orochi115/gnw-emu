@@ -21,3 +21,17 @@
 四条父目录启动脚本分别实际启动原版、完整 dump、SD 直启、SD 升级的 Electron/QEMU，4 passed；每次使用临时 UserData，检查 Canvas 递增、app.quit 正常退出、session.json 保存和 endpoint 清理。SD 实際使用原目录已有的 1 GiB 卡镜像，但本轮测试只验证启动/退出，不代替完整升级刷写和核心游戏回归。shell/JSON 服务测试 7 项通过，另外显示/退出快照/锁相关原生测试通过，合计 12 passed。源镜像不变、空格路径、参数透传、FRESH 新身份与原存档保留均有 fixture 验证。
 
 本轮 typecheck/build/package:dir 成功；更新后的 macOS 目录包及 CLI smoke 1 passed。实际查看中文分段单选表单、英文和深色窄窗口；原生 role 菜单自动化采用对应 Electron 原生命令，因为 macOS MenuItem.click 不执行系统角色，仍不等于物理展开菜单的人工检查。Linux/Windows 实机状态保持未验证；十分钟数据来自首版，没有为本轮无显示管道变更的菜单/脚本补齐重复测试。
+
+## 第二阶段：交互机身（2026-11-09）
+
+新增 Mario/Zelda 官方图片提取、透明 LCD、独立按钮状态；原图不修改。离线验证覆盖完整透明孔、其余机身像素不变、60 张状态 PNG 的尺寸/alpha/范围，以及字节级可复现。运行应用不依赖 Python。
+
+最终 typecheck/build 退出 0；Vitest **40 passed / 16 files**；普通 Electron E2E **6 passed / 6 skipped**，后六项仍为显式 soak、四个固件启动与 package。更新 macOS 目录包构建成功，独立目录包/CLI smoke **1 passed**，同时核对包内 Zelda 机身图片完成加载且 naturalWidth=950。
+
+实际 Electron/QEMU 验证：两个机型 LCD 对齐与有效像素，View checkbox 与持久化/写入失败恢复，纯画面切换时运行 UUID 不变且帧序号继续递增；鼠标长按、键盘同键所有权、组合键、控件外释放、双来源同键取消、Chromium 双指触摸与 touchCancel、真实 Tab/Space 导航、Return 松开后焦点变化、失焦/模态清理、迟到旧运行输入拒绝。检查了浅/深主题、380/1000 CSS px、Retina 内容截图。
+
+审阅发现的三个问题均有回归证据：异步保存期间新按下在隐藏前再次释放；Tab 从画面进入真实按键；旧聚合快照不能清理刚开始的本地来源，使用明确 resetGeneration，注入迟到快照的 E2E 在旧实现失败、修复后通过。设置测试覆盖连续切换、有序写入及失败后恢复。
+
+稳定性备注：早期回归曾出现一次原有表单注入末尾字符重复，单独复核及三轮重复未再出现；一次长按重复场景收到提前的 pointer 来源释放。补充 DOM/Pino 失败诊断后，机身输入连续 **8 次通过**，最终全量也通过；这两项偶发现象未定位，不将重复通过表述为已彻底修复。后续失败 trace 附输入来源日志与 DOM 事件，以便复现分析。
+
+本轮没有修改 QEMU/帧协议，未重复十分钟 soak 与完整原生 pytest。Linux/Windows 实机、实际触摸硬件和物理输入到显示延迟仍未验证；Chromium 触摸注入不等于触摸设备实测。原生菜单自动化仍覆盖 handler/checkbox 边界，不能替代逐平台真实菜单展开检查。

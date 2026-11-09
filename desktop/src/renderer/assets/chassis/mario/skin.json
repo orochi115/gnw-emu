@@ -1,0 +1,319 @@
+{
+  "version": 1,
+  "model": "mario",
+  "size": {
+    "width": 919,
+    "height": 550
+  },
+  "source": {
+    "path": "retro-go-assets/images/official/eu/NSwitch_GameWatch_Legendary_Hardware.png",
+    "sha256": "ddb76a38fc33f2280e745490a7729f826ad316aecf2cc84cb6232b221a4fd382"
+  },
+  "screen": {
+    "x": 258,
+    "y": 124,
+    "width": 404,
+    "height": 303
+  },
+  "buttons": [
+    {
+      "id": "left",
+      "bit": 0,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            48,
+            379
+          ],
+          [
+            90,
+            379
+          ],
+          [
+            100,
+            390
+          ],
+          [
+            100,
+            407
+          ],
+          [
+            90,
+            418
+          ],
+          [
+            48,
+            418
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 45,
+        "y": 376,
+        "width": 58,
+        "height": 45
+      },
+      "states": {
+        "normal": "left-normal.png",
+        "hover": "left-hover.png",
+        "pressed": "left-pressed.png"
+      }
+    },
+    {
+      "id": "up",
+      "bit": 1,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            94,
+            332
+          ],
+          [
+            134,
+            332
+          ],
+          [
+            134,
+            375
+          ],
+          [
+            123,
+            381
+          ],
+          [
+            105,
+            381
+          ],
+          [
+            94,
+            375
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 91,
+        "y": 329,
+        "width": 46,
+        "height": 55
+      },
+      "states": {
+        "normal": "up-normal.png",
+        "hover": "up-hover.png",
+        "pressed": "up-pressed.png"
+      }
+    },
+    {
+      "id": "right",
+      "bit": 2,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            140,
+            379
+          ],
+          [
+            182,
+            379
+          ],
+          [
+            182,
+            418
+          ],
+          [
+            140,
+            418
+          ],
+          [
+            129,
+            407
+          ],
+          [
+            129,
+            390
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 126,
+        "y": 376,
+        "width": 59,
+        "height": 45
+      },
+      "states": {
+        "normal": "right-normal.png",
+        "hover": "right-hover.png",
+        "pressed": "right-pressed.png"
+      }
+    },
+    {
+      "id": "down",
+      "bit": 3,
+      "shape": {
+        "kind": "polygon",
+        "points": [
+          [
+            94,
+            424
+          ],
+          [
+            105,
+            419
+          ],
+          [
+            123,
+            419
+          ],
+          [
+            134,
+            424
+          ],
+          [
+            134,
+            465
+          ],
+          [
+            94,
+            465
+          ]
+        ]
+      },
+      "spriteRect": {
+        "x": 91,
+        "y": 416,
+        "width": 46,
+        "height": 52
+      },
+      "states": {
+        "normal": "down-normal.png",
+        "hover": "down-hover.png",
+        "pressed": "down-pressed.png"
+      }
+    },
+    {
+      "id": "b",
+      "bit": 5,
+      "shape": {
+        "kind": "ellipse",
+        "bounds": [
+          725,
+          369,
+          782,
+          427
+        ]
+      },
+      "spriteRect": {
+        "x": 722,
+        "y": 366,
+        "width": 63,
+        "height": 64
+      },
+      "states": {
+        "normal": "b-normal.png",
+        "hover": "b-hover.png",
+        "pressed": "b-pressed.png"
+      }
+    },
+    {
+      "id": "a",
+      "bit": 4,
+      "shape": {
+        "kind": "ellipse",
+        "bounds": [
+          823,
+          369,
+          881,
+          427
+        ]
+      },
+      "spriteRect": {
+        "x": 820,
+        "y": 366,
+        "width": 64,
+        "height": 64
+      },
+      "states": {
+        "normal": "a-normal.png",
+        "hover": "a-hover.png",
+        "pressed": "a-pressed.png"
+      }
+    },
+    {
+      "id": "game",
+      "bit": 7,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          744,
+          65,
+          786,
+          89
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 741,
+        "y": 62,
+        "width": 48,
+        "height": 30
+      },
+      "states": {
+        "normal": "game-normal.png",
+        "hover": "game-hover.png",
+        "pressed": "game-pressed.png"
+      }
+    },
+    {
+      "id": "time",
+      "bit": 6,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          744,
+          128,
+          786,
+          152
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 741,
+        "y": 125,
+        "width": 48,
+        "height": 30
+      },
+      "states": {
+        "normal": "time-normal.png",
+        "hover": "time-hover.png",
+        "pressed": "time-pressed.png"
+      }
+    },
+    {
+      "id": "pause",
+      "bit": 8,
+      "shape": {
+        "kind": "roundedRect",
+        "bounds": [
+          744,
+          190,
+          786,
+          214
+        ],
+        "radius": 12
+      },
+      "spriteRect": {
+        "x": 741,
+        "y": 187,
+        "width": 48,
+        "height": 30
+      },
+      "states": {
+        "normal": "pause-normal.png",
+        "hover": "pause-hover.png",
+        "pressed": "pause-pressed.png"
+      }
+    }
+  ]
+}
