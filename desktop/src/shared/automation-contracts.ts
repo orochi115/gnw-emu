@@ -20,11 +20,34 @@ const schemas: Record<string, z.ZodType> = {
   "app.getDiagnostics": empty,
   "automation.capabilities": empty,
   "logging.getConfig": empty,
+  "ui.contextMenu": z
+    .object({
+      id: z.enum([
+        "view.clock",
+        "view.chassis",
+        "audio.mute",
+        "app.quit",
+        "clock.dock.none",
+        "clock.dock.topLeft",
+        "clock.dock.topRight",
+        "clock.dock.bottomLeft",
+        "clock.dock.bottomRight",
+        "view.scale.half",
+        "view.scale.1",
+        "view.scale.2",
+        "view.scale.3",
+        "view.scale.4",
+        "view.scale.5",
+        "view.scale.6",
+      ]),
+    })
+    .strict(),
   "ui.menu": z
     .object({
       id: z.enum([
         "file.open",
         "file.make",
+        "audio.mute",
         "file.recent.0",
         "file.recent.1",
         "file.recent.2",

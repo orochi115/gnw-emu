@@ -25,3 +25,7 @@ view 的 `window.scale`（info）记录像素倍率选择（包括 1×）；`win
 倍率与持久化：view 的 `window.scale`（info）记录预设选择，携带 pixelScale/renderScale、normalScale/clockScale、scaleFactor 与当前模式；`window.mode` 的 reason=preference 标识启动/加载后的自动恢复。`window.state`（debug）也包含 preferredClockMode/transitioning，避免将暂时返回误判为用户关闭。`view.settings.saved`（debug）记录合并后的倍率/位置/模式设置写入，`view.settings.failure`（error）记录原始错误；拖动/缩放按 250ms 合并写入，非逐指针事件。正常退出等待 flush，磁盘失败不暂停或重启游戏。
 
 app 的 `recent.record` / `recent.clear`（info）记录成功保存历史和清空；`operation.failure` 包含历史写入或加载失败原因。历史写入失败不改变已运行的 QEMU。
+
+view 的 `window.dock`（info）记录角落与实际窗口边界；audio 的 `audio.mute`（info）记录已提交静音状态和 runtimeSessionId。QMP 日志记录 audio-muted 的请求/响应耗时；失败沿用 operation.failure，写设置失败会回滚 QMP 静音。
+
+若日志出现 `coreaudio: Could not resume playback ... -536870186`，对应 macOS I/O Timeout（0xe00002d6），应先检查其他应用是否同样无声及当前系统输出设备。USB/耳机重新连接或切换输出设备可用于判断设备状态；静音菜单不会修复系统输出设备故障。应用不自动重启系统音频服务。

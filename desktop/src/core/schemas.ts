@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DOCK_CORNERS } from "../shared/dock-geometry";
 const path = z
   .string()
   .min(1)
@@ -52,6 +53,7 @@ export const settingsSchema = z
     normalScale: z.number().finite().min(0.05).max(64).default(4),
     clockScale: z.number().finite().min(0.05).max(64).default(1),
     clockMode: z.boolean().default(false),
+    clockDock: z.enum(DOCK_CORNERS).default("none"),
     clockBounds: z
       .object({
         x: z.number().int(),

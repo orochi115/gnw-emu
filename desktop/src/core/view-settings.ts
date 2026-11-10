@@ -1,6 +1,9 @@
 import type { Settings } from "./schemas";
 export type ViewSettingsPatch = Partial<
-  Pick<Settings, "normalScale" | "clockScale" | "clockMode" | "clockBounds">
+  Pick<
+    Settings,
+    "normalScale" | "clockScale" | "clockMode" | "clockBounds" | "clockDock"
+  >
 >;
 
 /** Coalesce drag/resize events; ordered writes and exit flush share one queue. */

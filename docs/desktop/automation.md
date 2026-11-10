@@ -17,12 +17,12 @@ node dist-cli/ui-cli.js ../UserData/automation.json ui.click '{"id":"rom.saveAnd
 
 目录包：`gnw-emu.app/Contents/MacOS/gnw-emu --automation --user-data-dir=/absolute/data`。使用桌面构建中的同一 ui-cli.js 连接其 data/automation.json。CLI stdout 严格 JSON，日志/错误走 stderr；错误退出码非零。不重启已有实例、不自动重试有副作用请求。
 
-ui.menu/click/fill/select/key/pointer 返回 operationId。用 `automation.getOperation {"operationId":"..."}` 查询 pending/succeeded/failed 和结果/错误。动作串行、最多保留200条；客户端超时应查询原 operationId，不能重复提交保存/加载。日志查询是另一个最多2000条的有界历史。
+ui.menu/contextMenu/click/fill/select/key/pointer 返回 operationId。用 `automation.getOperation {"operationId":"..."}` 查询 pending/succeeded/failed 和结果/错误。动作串行、最多保留200条；客户端超时应查询原 operationId，不能重复提交保存/加载。日志查询是另一个最多2000条的有界历史。
 
 | 方法                             | 参数与读取                                                                              |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
 | ui.inspect                       | 实际语言、DOM 控件、可见/禁用/错误/单选状态、表单值、原生菜单、窗口、Canvas最后收到/呈现帧        |
-| ui.menu                          | id=file.open / file.make / file.recent.0～9 / file.recent.clear / view.chassis / view.clock / view.scale.half / view.scale.1～6 / app.quit / edit.* / window.*；执行 Menu handler 或对应原生 role 命令；checkbox 同步 checked 状态 |
+| ui.menu                          | id=file.open / file.make / file.recent.0～9 / file.recent.clear / audio.mute / view.chassis / view.clock / view.scale.half / view.scale.1～6 / app.quit / edit.* / window.*；执行 Menu handler 或对应原生 role 命令；checkbox 同步 checked 状态 |
 | ui.click                         | id=真实 data-ui 控件；发送 Electron 鼠标事件                                            |
 | ui.fill                          | id/value；真实点击、选择文本、insertText触发输入                                        |
 | ui.select                        | id/value；真实 select DOM 的 input/change事件                                           |
@@ -77,3 +77,7 @@ UiDriver 的 click/key/pointer 会主动 focus 窗口，适合操作 UI，不能
 `window.controlWidth` 为工作区域与窗口宽度的较小值，限制超大窗口的标题栏/悬浮控件，避免控件落在屏幕之外。边框切换可能为保持控件可达而调整中心；测试应优先断言 canvas.pixelScale 不变。
 
 最近加载：`ui.inspect.menus` 返回 `file.recent.0`～`file.recent.9` 的实际文件名、父目录和 enabled 状态。索引按最近成功加载顺序排列，每次操作前重新 inspect；`ui.menu` 执行同一原生 handler。`file.recent.clear` 清空历史，不停止当前游戏。制作 ROM、原生对话框、时钟模式和加载期间父菜单与子项均禁用。
+
+时钟原生右键菜单：`ui.inspect.contextMenus` 在时钟模式下返回实际菜单项、enabled/type/checked，普通模式为 []。`ui.contextMenu {"id":"clock.dock.bottomRight"}` 执行与真实右键菜单相同的 native handler；四角使用 topLeft/topRight/bottomLeft/bottomRight，none 取消停靠。其他动作 ID 为 view.chassis、audio.mute、view.clock（返回普通窗口）、view.scale.half、view.scale.1～6、app.quit。接口沿用 operationId/串行操作/生命周期校验，不能执行 File 或编辑命令。
+
+`ui.inspect.window.clockDock` 读取停靠设置；`app.getDiagnostics.audio` 读取应用已提交的 enabled/muted，`audioMuted` 为当前 QEMU 已确认的属性（无 runtime 时不存在）。可以用这些字段与 qemuPid/runtimeSessionId 验证静音不重启游戏。测试覆盖保存失败后 QMP 回滚、启动静音后取消静音和同一 UserData 重启。

@@ -18,6 +18,7 @@ import {
 export { METHODS };
 const actions = new Set([
   "ui.menu",
+  "ui.contextMenu",
   "ui.click",
   "ui.fill",
   "ui.select",

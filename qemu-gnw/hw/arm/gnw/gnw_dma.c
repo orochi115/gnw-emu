@@ -208,6 +208,14 @@ static void wav_capture(GnwDmaState *s, uint32_t addr, uint32_t len,
 
 /* ------------------------------------------------------------------ */
 /* Host playback uses QEMU's selected backend on every platform. */
+void gnw_dma_set_muted(GnwDmaState *s, bool muted)
+{
+    s->muted = muted;
+    s->pcm_r = s->pcm_fill = 0;
+    if (s->voice) {
+        audio_be_set_volume_out_lr(s->audio_be, s->voice, muted, 255, 255);
+    }
+}
 
 /* Audio callbacks and guest DMA execute under QEMU's main-loop lock.
  * Only owned PCM enters this bounded queue; no guest RAM is retained. */
@@ -255,6 +263,7 @@ static void host_open(GnwDmaState *s, uint32_t rate, int channels)
     }
     s->voice_rate = rate;
     s->voice_ch = channels;
+    audio_be_set_volume_out_lr(s->audio_be, s->voice, s->muted, 255, 255);
     audio_be_set_active_out(s->audio_be, s->voice, true);
 }
 
@@ -753,6 +762,7 @@ static const Property gnw_dma_props[] = {
     DEFINE_PROP_STRING("wav", GnwDmaState, wav_path),
     DEFINE_PROP_BOOL("playback", GnwDmaState, playback, false),
     DEFINE_AUDIO_PROPERTIES(GnwDmaState, audio_be),
+    DEFINE_PROP_BOOL("muted", GnwDmaState, muted, false),
 };
 
 static void gnw_dma_audio_exit(Notifier *notifier, void *data)

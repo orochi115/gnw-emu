@@ -1,5 +1,33 @@
 import { expect, test } from "vitest";
-import { menuTemplate } from "../../src/main/menu";
+import { menuTemplate, clockMenuTemplate } from "../../src/main/menu";
+test("clock context offers localized docking, frame and mute with real handlers", () => {
+  initializeLocale("zh-CN");
+  const calls: string[] = [];
+  const menu: any[] = clockMenuTemplate({
+    normal: () => calls.push("normal"),
+    dock: (corner) => calls.push(corner),
+    clockDock: "topRight",
+    canInteract: true,
+    showChassis: false,
+    toggleChassis: () => calls.push("frame"),
+    muted: true,
+    toggleMute: () => calls.push("mute"),
+    quit() {},
+  });
+  const docking = menu.find((i) => i.id === "clock.dock");
+  expect(docking.label).toBe("停靠");
+  expect(
+    docking.submenu.filter((i: any) => i.checked).map((i: any) => i.id),
+  ).toEqual(["clock.dock.topRight"]);
+  docking.submenu.find((i: any) => i.id === "clock.dock.bottomLeft").click();
+  const frame = menu.find((i) => i.id === "view.chassis");
+  expect(frame.checked).toBe(false);
+  frame.click();
+  const mute = menu.find((i) => i.id === "audio.mute");
+  expect(mute.checked).toBe(true);
+  mute.click();
+  expect(calls).toEqual(["bottomLeft", "frame", "mute"]);
+});
 import { initializeLocale } from "../../src/shared/locale";
 test("recent labels preserve literal ampersands on macOS and escape native mnemonics elsewhere", () => {
   initializeLocale("en");

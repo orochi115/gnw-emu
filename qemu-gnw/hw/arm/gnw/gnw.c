@@ -101,6 +101,7 @@ struct GnwMachineState {
     int session_lock_fd;
     Notifier exit_notify;
     bool audio;
+    bool audio_muted;
     bool realtime;
     uint32_t battery;           /* QOM view of level, percent */
     bool usb;
@@ -637,6 +638,7 @@ static void gnw_init(MachineState *machine)
         qdev_prop_set_string(dev, "wav", m->wav_path);
     }
     qdev_prop_set_bit(dev, "playback", m->audio);
+    qdev_prop_set_bit(dev, "muted", m->audio_muted);
     sbd = map_dev(dev, (hwaddr[]){ 0x40020000, 0x40020400, 0x40020800,
                                    0x40015800 }, 4);
     for (int i = 0; i < 8; i++) {
@@ -891,6 +893,18 @@ static void gnw_set_audio(Object *obj, bool v, Error **errp)
 {
     GNW_MACHINE(obj)->audio = v;
 }
+static bool gnw_get_audio_muted(Object *obj, Error **errp)
+{
+    return GNW_MACHINE(obj)->audio_muted;
+}
+static void gnw_set_audio_muted(Object *obj, bool v, Error **errp)
+{
+    GnwMachineState *m = GNW_MACHINE(obj);
+    m->audio_muted = v;
+    if (m->dma) {
+        gnw_dma_set_muted(m->dma, v);
+    }
+}
 
 static void gnw_get_u32(Object *obj, Visitor *v, const char *name,
                         void *opaque, Error **errp)
@@ -1044,6 +1058,10 @@ static void gnw_machine_class_init(ObjectClass *oc, const void *data)
         gnw_get_audio, gnw_set_audio);
     object_class_property_set_description(oc, "audio",
         "Play SAI1 on the host speakers");
+    object_class_property_add_bool(oc, "audio-muted",
+        gnw_get_audio_muted, gnw_set_audio_muted);
+    object_class_property_set_description(oc, "audio-muted",
+        "Mute host playback at runtime without changing guest DMA timing");
     object_class_property_add(oc, "buttons", "uint32", gnw_get_u32,
                               gnw_set_u32, NULL,
                               (void *)offsetof(GnwMachineState, buttons));

@@ -19,7 +19,9 @@ export function qemuArguments(
     "usb-power": session.usbPower ? "on" : "off",
     "battery-life-min": session.batteryLifeMinutes,
     "charge-time-min": session.chargeTimeMinutes,
-    audio: settings.audio ? "on" : "off",
+    // Keep backend support initialized so a muted startup can unmute live.
+    audio: "on",
+    "audio-muted": settings.audio ? "off" : "on",
     realtime: settings.realtime ? "on" : "off",
     "frame-endpoint": `127.0.0.1:${endpoints.framePort}`,
     "session-lock": join(session.directory, "qemu.lock"),

@@ -31,6 +31,7 @@ export function App() {
   const [state, setState] = useState<AppState>({ status: "idle" });
   const [host, setHost] = useState<WindowState>({
     clockMode: false,
+    clockDock: "none",
     pixelPerfect: false,
     scaleFactor: 1,
     pixelScale: 4,

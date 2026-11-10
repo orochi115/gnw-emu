@@ -22,3 +22,5 @@
 默认映射和输入来源位掩码由 core 管理；短按的每次转换串行提交 `qom-set /machine buttons`，不合并掉按下/松开。设备模型不认识配置或 UI。未来运行时改键应先释放旧来源，复用相同输入服务；重启 ROM 应复用停止/启动流程，不能把 `system_reset` 叫作游戏重开。
 
 主要可维护入口：`src/core/session-controller.ts`、`src/main/index.ts`、`src/display/utility.ts`、`src/renderer/components/GameScreen.tsx`。新增 UI 功能必须同时定义真实控件 ID、自动化路径和日志事件。
+
+声音偏好属于 Electron，主机混音器静音属于 QEMU。桌面启动保持 audio=on 并用 audio-muted 传递初始静音；运行时通过 QMP qom-set /machine audio-muted 修改。gnw-dma 使用 QEMU 可移植 mixer volume mute，并清理有界主机 PCM 队列；不影响固件的 SAI/DMA 时序。裸 QEMU 的 audio=off 仍可禁用整个主机播放后端；audio-muted 不负责初始化一个被禁用的后端。

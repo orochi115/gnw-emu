@@ -1,4 +1,5 @@
 import type { ProfileFields } from "../core/schemas";
+import type { DockCorner } from "./dock-geometry";
 export type AppStatus = "idle" | "starting" | "running" | "stopping" | "error";
 export interface InputState {
   runtimeSessionId?: string;
@@ -8,6 +9,7 @@ export interface InputState {
 }
 export interface WindowState {
   clockMode: boolean;
+  clockDock: DockCorner;
   pixelPerfect: boolean;
   scaleFactor: number;
   pixelScale: number;

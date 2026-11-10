@@ -11,9 +11,11 @@ import { loadSettings, updateSettings } from "../core/settings-store";
 import { ChassisPreference } from "../core/chassis-preference";
 import { ViewSettings } from "../core/view-settings";
 import { RecentRoms } from "../core/recent-roms";
+import { AudioPreference } from "../core/audio-preference";
+import type { DockCorner } from "../shared/dock-geometry";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { WindowMode } from "./window-mode";
-import { menuTemplate, scaleMenuTemplate } from "./menu";
+import { menuTemplate, clockMenuTemplate } from "./menu";
 import type { AppState, ViewPreferences } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join, resolve } from "node:path";
@@ -66,6 +68,7 @@ let viewPreference: ChassisPreference;
 let windowMode: WindowMode;
 let viewSettings: ViewSettings;
 let recentRoms: RecentRoms;
+let audioPreference: AudioPreference;
 let fittedModel: AppState["model"];
 async function main() {
   const settings = await loadSettings(paths.userData);
@@ -197,6 +200,10 @@ async function main() {
     logFor: (module) => logger.child(module),
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
   });
+  audioPreference = new AudioPreference(settings.audio, {
+    apply: (enabled) => controller.setMuted(!enabled),
+    persist: (audio) => updateSettings(paths.userData, { audio }),
+  });
   viewPreference = new ChassisPreference(settings.showChassis, {
     persist: (showChassis) => updateSettings(paths.userData, { showChassis }),
     release: () => {
@@ -254,28 +261,7 @@ async function main() {
     uiEvents.emit("changed");
   });
   window.webContents.on("context-menu", () => {
-    if (windowMode.state.clockMode)
-      Menu.buildFromTemplate([
-        {
-          label: t("window.normal"),
-          click: () => {
-            void toggleClock().catch(showError);
-          },
-        },
-        scaleMenuTemplate({
-          pixelScale: windowMode.state.pixelScale,
-          canScale: (factor) => canSetScale(factor),
-          setScale: (factor) => {
-            void setScale(factor).catch(showError);
-          },
-        }),
-        {
-          label: t("menu.quit"),
-          click: () => {
-            void shutdown();
-          },
-        },
-      ]).popup({ window });
+    createClockMenu()?.popup({ window });
   });
   window.webContents.on("before-input-event", (_e, input) => {
     if (input.control || input.meta || input.alt || input.key === "F10")
@@ -337,6 +323,17 @@ function updateMenu() {
     chassis.checked = preferences.showChassis;
     chassis.enabled =
       !makerOpen && !nativeDialog && !active && !windowMode.transitioning;
+  }
+  const mute = menu?.getMenuItemById("audio.mute");
+  if (mute) {
+    mute.checked = !audioPreference.enabled;
+    mute.enabled =
+      !shuttingDown &&
+      !makerOpen &&
+      !nativeDialog &&
+      !active &&
+      !windowMode.transitioning &&
+      !["starting", "stopping"].includes(controller.state.status);
   }
   for (const factor of SCALE_PRESETS) {
     const item = menu?.getMenuItemById(scaleMenuId(factor));
@@ -416,8 +413,10 @@ function canSetScale(factor: number) {
 }
 async function setScale(factor: number) {
   if (!canSetScale(factor)) throw new UserError("error.busy");
-  await perform(() => windowMode.setScale(factor));
-  await viewSettings.flush();
+  await perform(async () => {
+    await windowMode.setScale(factor);
+    await viewSettings.flush();
+  });
   logger
     .child("view")
     .info(
@@ -431,8 +430,10 @@ async function toggleClock() {
   if (!windowMode.state.clockMode && controller.state.status !== "running")
     throw new UserError("error.busy");
   try {
-    await perform(() => windowMode.toggle());
-    await viewSettings.flush();
+    await perform(async () => {
+      await windowMode.toggle();
+      await viewSettings.flush();
+    });
     logger.child("view").info(
       {
         event: "window.mode",
@@ -462,6 +463,10 @@ function createMenu() {
         },
         showChassis: preferences.showChassis,
         clockMode: windowMode.state.clockMode,
+        muted: !audioPreference.enabled,
+        toggleMute: () => {
+          void toggleMute().catch(showError);
+        },
         pixelScale: windowMode.state.pixelScale,
         setScale: (factor) => {
           void setScale(factor).catch(showError);
@@ -476,6 +481,81 @@ function createMenu() {
       }),
     ),
   );
+}
+function canClockInteract() {
+  return (
+    windowMode.state.clockMode &&
+    !shuttingDown &&
+    !makerOpen &&
+    !nativeDialog &&
+    !active &&
+    !windowMode.transitioning &&
+    controller.state.status === "running"
+  );
+}
+function createClockMenu() {
+  if (!windowMode.state.clockMode) return undefined;
+  return Menu.buildFromTemplate(
+    clockMenuTemplate({
+      normal: () => {
+        void toggleClock().catch(showError);
+      },
+      clockDock: windowMode.state.clockDock,
+      canInteract: canClockInteract(),
+      dock: (corner) => {
+        void setDock(corner).catch(showError);
+      },
+      showChassis: preferences.showChassis,
+      toggleChassis: () => {
+        void toggleChassis().catch(showError);
+      },
+      muted: !audioPreference.enabled,
+      toggleMute: () => {
+        void toggleMute().catch(showError);
+      },
+      pixelScale: windowMode.state.pixelScale,
+      canScale: (factor) => canSetScale(factor),
+      setScale: (factor) => {
+        void setScale(factor).catch(showError);
+      },
+      quit: () => {
+        void shutdown();
+      },
+    }),
+  );
+}
+async function setDock(corner: DockCorner) {
+  if (!canClockInteract()) throw new UserError("error.busy");
+  await perform(async () => {
+    windowMode.setDock(corner);
+    await viewSettings.flush();
+  });
+  logger
+    .child("view")
+    .info(
+      { event: "window.dock", corner, bounds: window.getBounds() },
+      "Clock dock changed",
+    );
+}
+async function toggleMute() {
+  if (
+    makerOpen ||
+    nativeDialog ||
+    shuttingDown ||
+    windowMode.transitioning ||
+    ["starting", "stopping"].includes(controller.state.status)
+  )
+    throw new UserError("error.busy");
+  await perform(() => audioPreference.toggle());
+  logger.child("audio").info(
+    {
+      event: "audio.mute",
+      muted: !audioPreference.enabled,
+      runtimeSessionId: controller.state.runtimeSessionId,
+    },
+    "Audio mute changed",
+  );
+  uiEvents.emit("changed");
 }
 function stateForUi(state: AppState): AppState {
   return {
@@ -787,7 +867,7 @@ async function dispatch(method: string, params: any) {
     },
     "Automation request",
   );
-  const ui = new UiDriver(window);
+  const ui = new UiDriver(window, createClockMenu);
   if (
     params.runtimeSessionId &&
     params.runtimeSessionId !== controller.state.runtimeSessionId
@@ -812,9 +892,10 @@ async function dispatch(method: string, params: any) {
       return ui.key(params.key, params.down !== false);
     case "ui.pointer":
       return ui.pointer(params);
-    case "ui.menu": {
+    case "ui.menu":
+    case "ui.contextMenu": {
       observedActivity = undefined;
-      const result = await ui.menu(params.id);
+      const result = await ui.menu(params.id, method === "ui.contextMenu");
       if (observedActivity) await observedActivity;
       return result;
     }
@@ -825,6 +906,10 @@ async function dispatch(method: string, params: any) {
     case "app.getDiagnostics":
       return {
         ...controller.diagnostics(),
+        audio: {
+          enabled: audioPreference.enabled,
+          muted: !audioPreference.enabled,
+        },
         ...((await ui.inspect()).canvas ?? {}),
         chassis: (await ui.inspect()).chassis,
         window: {

@@ -2,6 +2,64 @@ import type { MenuItemConstructorOptions as Item } from "electron";
 import { t } from "../shared/locale";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { basename, dirname } from "node:path";
+import { DOCK_CORNERS, type DockCorner } from "../shared/dock-geometry";
+
+type ScaleActions = Parameters<typeof scaleMenuTemplate>[0];
+export function clockMenuTemplate(
+  actions: ScaleActions & {
+    normal: () => void;
+    dock: (corner: DockCorner) => void;
+    clockDock: DockCorner;
+    canInteract: boolean;
+    showChassis: boolean;
+    toggleChassis: () => void;
+    muted: boolean;
+    toggleMute: () => void;
+    quit: () => void;
+  },
+): Item[] {
+  return [
+    {
+      id: "view.clock",
+      label: t("window.normal"),
+      enabled: actions.canInteract,
+      click: actions.normal,
+    },
+    { type: "separator" },
+    {
+      id: "clock.dock",
+      label: t("menu.dock"),
+      enabled: actions.canInteract,
+      submenu: DOCK_CORNERS.map((corner) => ({
+        id: `clock.dock.${corner}`,
+        label: t(`menu.dock.${corner}`),
+        type: "radio" as const,
+        checked: actions.clockDock === corner,
+        enabled: actions.canInteract,
+        click: () => actions.dock(corner),
+      })),
+    },
+    {
+      id: "view.chassis",
+      label: t("menu.chassis"),
+      type: "checkbox",
+      checked: actions.showChassis,
+      enabled: actions.canInteract,
+      click: actions.toggleChassis,
+    },
+    {
+      id: "audio.mute",
+      label: t("menu.mute"),
+      type: "checkbox",
+      checked: actions.muted,
+      enabled: actions.canInteract,
+      click: actions.toggleMute,
+    },
+    scaleMenuTemplate(actions),
+    { type: "separator" },
+    { id: "app.quit", label: t("menu.quit"), click: actions.quit },
+  ];
+}
 
 export function scaleMenuTemplate(actions: {
   pixelScale?: number;
@@ -45,6 +103,8 @@ export function menuTemplate(
     showChassis?: boolean;
     clockMode?: boolean;
     toggleClock?: () => void;
+    muted?: boolean;
+    toggleMute?: () => void;
     pixelScale?: number;
     setScale?: (value: number) => void;
     canScale?: (value: number) => boolean;
@@ -147,6 +207,13 @@ export function menuTemplate(
           click: actions.toggleClock,
         },
         scaleMenuTemplate(actions),
+        {
+          id: "audio.mute",
+          label: t("menu.mute"),
+          type: "checkbox",
+          checked: actions.muted ?? false,
+          click: actions.toggleMute,
+        },
       ],
     },
     {

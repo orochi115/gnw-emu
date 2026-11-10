@@ -53,6 +53,10 @@ renderer 负责真实按键控件、指针捕获和图片叠层；main 的输入
 失焦立即清空输入，主进程也会拒绝失焦时的新键盘/机身按下，有效松开仍可清理。没有全局键盘监听，因此其他应用中的按键不会送给游戏。恢复焦点后需重新按键。全屏动画完成后会重新核验运行状态，避免运行已停止却进入紧凑模式；运行出错或结束会恢复普通窗口显示错误。关闭仍先正常退出 QEMU 并保存。
 
 
+时钟右键菜单提供“停靠 → 左上/右上/左下/右下角/自由悬浮”、边框、静音和像素倍率。停靠使用当前显示器可用工作区，在正常可容纳时距离边缘 12 逻辑像素，避开系统菜单栏和 Dock。切换机身或倍率仍保持角落，游戏画面像素倍率不变；手动拖动取消停靠。clockDock 与 clockBounds 一起持久化，重启或重新进入时钟模式后恢复。超大窗口保留左上方控制区域可达，不自动降低倍率。
+
+静音通过 QMP 的 `/machine` 属性 audio-muted 即时控制主机混音器，QEMU 进程、固件 DMA/RTC 和运行会话保持不变；settings.audio 保存是否启用声音。启动时静音也可直接取消静音。设置保存失败时回滚运行时静音和菜单状态，并显示错误；普通窗口的“视图 → 静音”使用相同设置。
+
 ## 自动化、日志与验收
 
 自动化沿用 UI Driver/JSON-RPC，操作真实的 `view.chassis` 菜单与控件。`ui.pointer` 长按/松开发送 Electron 鼠标事件，结合 `ui.key` 测试混合来源。`ui.inspect` 返回 `chassis.visible/model/input`、按钮 `pressed` 和菜单 `checked/type`。`app.getDiagnostics.input.desiredMask/appliedMask` 区分期望状态与 QMP 已确认状态，原 `buttons` 保留为 desiredMask 别名；应等待确认后断言。

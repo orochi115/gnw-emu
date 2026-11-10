@@ -235,6 +235,7 @@ struct GnwDmaState {
     FILE *wav;
     uint32_t wav_bytes;
     bool playback;              /* host speakers via QEMU audio backend */
+    bool muted;                 /* host mixer only; guest DMA keeps running */
     AudioBackend *audio_be;
     Notifier audio_exit;
     bool audio_registered;
@@ -256,6 +257,7 @@ struct GnwDmaState {
  * stream is ready, so the peripheral falls back to its registers.
  */
 bool gnw_dma_req_active(GnwDmaState *s, int req);
+void gnw_dma_set_muted(GnwDmaState *s, bool muted);
 bool gnw_dma_req_mem_to_periph(GnwDmaState *s, int req, uint32_t *item);
 bool gnw_dma_req_periph_to_mem(GnwDmaState *s, int req, uint32_t item);
 

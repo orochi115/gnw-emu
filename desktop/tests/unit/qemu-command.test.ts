@@ -26,4 +26,5 @@ test("QEMU options escape commas without shell interpolation", () => {
   expect(args[args.indexOf("-M") + 1]).toContain("internal=/tmp/中文,, a.bin");
   expect(args).toContain("tcp:127.0.0.1:1234,server=off");
   expect(args).toContain("none");
+  expect(args[args.indexOf("-M") + 1]).toContain("audio=on,audio-muted=on");
 });

@@ -15,6 +15,46 @@ vi.mock("electron", async () => {
 import { screen } from "electron";
 import { WindowMode } from "../../src/main/window-mode";
 
+test("clock docking survives scale/frame changes, persists and releases on manual drag", async () => {
+  display.density = 2;
+  const host = resizingHost();
+  const patches: any[] = [];
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {},
+    (patch) => patches.push(patch),
+  );
+  await mode.fit("zelda", false);
+  await mode.toggle();
+  mode.setDock("bottomRight");
+  expect(host.getBounds()).toEqual({
+    x: 1428,
+    y: 868,
+    width: 160,
+    height: 120,
+  });
+  await mode.setScale(2);
+  expect(host.getBounds()).toEqual({
+    x: 1268,
+    y: 748,
+    width: 320,
+    height: 240,
+  });
+  await mode.fit("zelda", true);
+  const bounds = host.getBounds();
+  expect(bounds.x + bounds.width).toBe(1588);
+  expect(bounds.y + bounds.height).toBe(988);
+  expect(mode.state.pixelScale).toBe(2);
+  expect(mode.state.clockDock).toBe("bottomRight");
+  host.setBounds({ x: 400, y: 300 });
+  expect(mode.state.clockDock).toBe("none");
+  expect(patches).toContainEqual({ clockDock: "none" });
+  host.emit("closed");
+});
+
 function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
   let bounds = { ...initial };
   const host = Object.assign(new EventEmitter(), {
@@ -27,9 +67,11 @@ function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
     getNormalBounds: () => ({ ...bounds }),
     getContentSize: () => [bounds.width, bounds.height],
     setBounds: (next: any) => {
+      const old = bounds;
       bounds = { ...bounds, ...next };
-      host.emit("resize");
-      host.emit("move");
+      if (bounds.width !== old.width || bounds.height !== old.height)
+        host.emit("resize");
+      if (bounds.x !== old.x || bounds.y !== old.y) host.emit("move");
     },
     setContentSize: (width: number, height: number) => {
       bounds = { ...bounds, width, height };

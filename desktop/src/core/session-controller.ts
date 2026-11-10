@@ -37,6 +37,7 @@ export async function deadline<T>(
   }
 }
 interface Runtime {
+  audioMuted: boolean;
   id: string;
   session: Session;
   lease: Awaited<ReturnType<typeof acquireLease>>;
@@ -138,6 +139,7 @@ export class SessionController extends EventEmitter {
           },
         );
         const runtime: Runtime = {
+          audioMuted: !settings.audio,
           id,
           session,
           lease,
@@ -337,6 +339,7 @@ export class SessionController extends EventEmitter {
   }
   diagnostics() {
     return {
+      audioMuted: this.runtime?.audioMuted,
       ...this.runtime?.display.diagnostics(),
       buttons: this.runtime?.input.buttons ?? 0,
       input: this.inputState(),
@@ -351,6 +354,18 @@ export class SessionController extends EventEmitter {
       this.stopPromise = undefined;
     });
     return this.stopPromise;
+  }
+  async setMuted(muted: boolean) {
+    const runtime = this.runtime;
+    if (!runtime) return;
+    if (this.busy || this.state.status !== "running")
+      throw new UserError("error.busy");
+    await runtime.qmp.command("qom-set", {
+      path: "/machine",
+      property: "audio-muted",
+      value: muted,
+    });
+    runtime.audioMuted = muted;
   }
   private async stopRuntime() {
     const runtime = this.runtime!;

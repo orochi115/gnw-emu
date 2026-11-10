@@ -1,5 +1,17 @@
 import { test, expect } from "vitest";
 import { validateAutomationParams } from "../../src/shared/automation-contracts";
+test("clock context actions are bounded separately from File and native menu roles", () => {
+  for (const id of [
+    "clock.dock.topLeft",
+    "clock.dock.none",
+    "view.chassis",
+    "audio.mute",
+    "view.scale.half",
+  ])
+    expect(validateAutomationParams("ui.contextMenu", { id })).toEqual({ id });
+  for (const id of ["file.open", "clock.dock.unknown", "edit.paste"])
+    expect(() => validateAutomationParams("ui.contextMenu", { id })).toThrow();
+});
 test("automation rejects unbounded log queries and invalid typed UI parameters", () => {
   expect(() =>
     validateAutomationParams("logging.tail", { limit: 201 }),

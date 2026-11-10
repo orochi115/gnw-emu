@@ -19,7 +19,10 @@ function menuItems(menu?: Electron.Menu): Record<string, unknown>[] {
   );
 }
 export class UiDriver {
-  constructor(private window: BrowserWindow) {}
+  constructor(
+    private window: BrowserWindow,
+    private contextMenu?: () => Electron.Menu | undefined,
+  ) {}
   private check() {
     if (this.window.isDestroyed()) throw new RpcError(-32004, "Window closed");
   }
@@ -38,6 +41,7 @@ export class UiDriver {
         focused: this.window.isFocused(),
       },
       menus: menuItems(Menu.getApplicationMenu() ?? undefined),
+      contextMenus: menuItems(this.contextMenu?.()),
     };
   }
   private async control(id: string) {
@@ -116,9 +120,9 @@ export class UiDriver {
     await this.settle();
     return { selected: id };
   }
-  async menu(id: string) {
+  async menu(id: string, context = false) {
     this.check();
-    const menu = Menu.getApplicationMenu();
+    const menu = context ? this.contextMenu?.() : Menu.getApplicationMenu();
     const item = menu?.getMenuItemById(id);
     if (!item || !item.enabled)
       throw new RpcError(-32003, "Menu disabled or missing");

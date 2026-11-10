@@ -1,5 +1,10 @@
 import { BrowserWindow, screen } from "electron";
 import { clockGeometry } from "../shared/clock-geometry";
+import {
+  dockBounds,
+  DOCK_CORNERS,
+  type DockCorner,
+} from "../shared/dock-geometry";
 import type { WindowState } from "../shared/contracts";
 import type { Settings } from "../core/schemas";
 import type { ViewSettingsPatch } from "../core/view-settings";
@@ -14,6 +19,8 @@ export class WindowMode {
   private normalScale: number;
   private clockScale: number;
   private placement?: Placement;
+  private dock: DockCorner;
+  private dockTarget?: { x: number; y: number };
   private model?: "mario" | "zelda";
   private frame = true;
   private density = 1;
@@ -46,9 +53,21 @@ export class WindowMode {
     this.clockScale = settings.clockScale ?? 1;
     this.preferredClock = settings.clockMode ?? false;
     this.placement = settings.clockBounds;
+    this.dock = settings.clockDock ?? "none";
     this.density = screen.getDisplayMatching(window.getBounds()).scaleFactor;
     window.on("move", () => {
       if (this.applyingBounds || this.transitioning) return;
+      const bounds = window.getBounds();
+      if (
+        this.clock &&
+        this.dock !== "none" &&
+        this.dockTarget &&
+        (bounds.x !== this.dockTarget.x || bounds.y !== this.dockTarget.y)
+      ) {
+        this.dock = "none";
+        this.dockTarget = undefined;
+        this.persist({ clockDock: "none" });
+      }
       this.refreshDensity();
       this.recordPlacement();
       this.changed();
@@ -68,6 +87,7 @@ export class WindowMode {
           this.queueManualScale();
         }
         this.recordPlacement();
+        this.applyDock();
       }
       this.changed();
     });
@@ -190,6 +210,7 @@ export class WindowMode {
         : (this.exactScale ?? null);
     return {
       clockMode: this.clock,
+      clockDock: this.dock,
       preferredClockMode: this.preferredClock,
       transitioning: this.transitioning,
       pixelPerfect: renderScale !== null && Number.isInteger(renderScale),
@@ -237,6 +258,38 @@ export class WindowMode {
       displayId: screen.getDisplayMatching(this.window.getBounds()).id,
     };
     this.persist({ clockBounds: this.placement });
+  }
+  setDock(corner: DockCorner) {
+    if (!DOCK_CORNERS.includes(corner)) throw Error("Invalid dock corner");
+    if (!this.clock || this.transitioning || this.modal)
+      throw Error("Clock mode is busy");
+    this.commitManualScale();
+    this.release();
+    this.dock = corner;
+    this.dockTarget = undefined;
+    this.persist({ clockDock: corner });
+    this.applyDock();
+    this.recordPlacement();
+    this.changed();
+  }
+  private applyDock() {
+    if (!this.clock || this.dock === "none" || this.applyingBounds) return;
+    const bounds = this.window.getBounds();
+    const next = dockBounds(
+      bounds,
+      screen.getDisplayMatching(bounds).workArea,
+      this.dock,
+    );
+    this.dockTarget = { x: next.x, y: next.y };
+    if (next.x !== bounds.x || next.y !== bounds.y) {
+      this.applyingBounds = true;
+      try {
+        this.window.setBounds(next);
+      } finally {
+        this.applyingBounds = false;
+      }
+    }
+    this.recordPlacement();
   }
   /** Empty/error and maker views have their own minimum, never a game scale. */
   setGameAvailable(available: boolean) {
@@ -325,7 +378,11 @@ export class WindowMode {
     const density = screen.getDisplayMatching(
       this.window.getBounds(),
     ).scaleFactor;
-    if (density === this.density) return;
+    if (density === this.density) {
+      this.applyDock();
+      this.changed();
+      return;
+    }
     this.density = density;
     if (
       this.model &&
@@ -376,6 +433,16 @@ export class WindowMode {
       );
     }
     this.target = { width, height };
+    if (this.clock && this.dock !== "none") {
+      const pinned = dockBounds(
+        { x, y, width, height },
+        display.workArea,
+        this.dock,
+      );
+      x = pinned.x;
+      y = pinned.y;
+      this.dockTarget = { x, y };
+    } else this.dockTarget = undefined;
     this.exactScale = factor;
     this.fixedExpanded = false;
     // Keep the center stable and ignore intermediate native resize/move events.
