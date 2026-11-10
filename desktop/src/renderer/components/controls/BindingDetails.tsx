@@ -13,18 +13,12 @@ interface CaptureChoice extends ControlBinding {
 export type InputSubscription = (
   listener: (event: ControlInputEvent) => void,
 ) => () => void;
-export const turboOptions: (null | "default" | number)[] = [
-  null,
-  "default",
-  6,
-  10,
-  15,
-];
+export const turboOptions: (null | number)[] = [null, 6, 10, 15];
 export function turboLabel(value: ControlBinding["turbo"], defaultHz: number) {
   return value === null
     ? t("controls.normal")
     : value === "default"
-      ? t("controls.defaultHz", { hz: defaultHz })
+      ? t("controls.hz", { hz: defaultHz })
       : t("controls.hz", { hz: value });
 }
 export function TurboSegments({
@@ -92,8 +86,8 @@ export function BindingDetails({
   );
   const currentRef = useRef(current);
   currentRef.current = current;
-  const [listening, setListening] = useState(true);
-  const [navigationKeys, setNavigationKeys] = useState(false);
+  const [listening, setListening] = useState(false);
+  const recordingStart = useRef(current);
   const [warning, setWarning] = useState("");
   const [choices, setChoices] = useState<CaptureChoice[]>([]);
   const candidateInputs = useRef<
@@ -203,15 +197,6 @@ export function BindingDetails({
     const off = subscribeInput?.(process);
     let keyboardCandidate: ControlBinding | null = null;
     const key = (event: KeyboardEvent) => {
-      if (event.code === "Escape" && !navigationKeys) return;
-      if (event.code === "Tab" && !navigationKeys) return;
-      if (
-        event.target instanceof HTMLElement &&
-        event.target.closest(
-          ".controls-detail-actions,.controls-segments,.controls-modifiers,.controls-navigation-toggle",
-        )
-      )
-        return;
       event.preventDefault();
       event.stopPropagation();
       if (event.repeat) return;
@@ -266,7 +251,7 @@ export function BindingDetails({
         gamepadTimer.current = null;
       }
     };
-  }, [listening, navigationKeys, hotkey, subscribeInput]);
+  }, [listening, hotkey, subscribeInput]);
   const editValue = (next: ControlBinding) => {
     setCurrent(next);
     setListening(false);
@@ -283,7 +268,7 @@ export function BindingDetails({
       data-ui="controls.detail"
       onCancel={(event) => {
         event.preventDefault();
-        close();
+        if (!listening) close();
       }}
     >
       <h2 id="controls-detail-title">
@@ -312,10 +297,14 @@ export function BindingDetails({
         ref={capture}
         className={`controls-capture ${listening ? "listening" : ""}`}
         data-ui="controls.capture"
+        aria-pressed={listening}
         onClick={() => {
+          if (listening) return;
+          recordingStart.current = current;
           setChoices([]);
           setWarning("");
           setListening(true);
+          capture.current?.focus();
         }}
       >
         <span>
@@ -324,21 +313,26 @@ export function BindingDetails({
               ? hotkey
                 ? "controls.listenChord"
                 : "controls.listen"
-              : "controls.recordAgain",
+              : current.inputs.length > 0
+                ? "controls.recordAgain"
+                : "controls.record",
           )}
         </span>
-        <small>
-          {t(listening ? "controls.captureHint" : "controls.recorded")}
-        </small>
       </button>
-      <label className="controls-navigation-toggle">
-        <input
-          type="checkbox"
-          checked={navigationKeys}
-          onChange={(event) => setNavigationKeys(event.target.checked)}
-        />
-        {t("controls.recordNavigation")}
-      </label>
+      {(listening || choices.length > 0) && (
+        <button
+          className="controls-stop-recording"
+          data-ui="controls.capture.cancel"
+          onClick={() => {
+            setListening(false);
+            setCurrent(recordingStart.current);
+            setChoices([]);
+            setWarning("");
+          }}
+        >
+          {t("controls.cancelRecording")}
+        </button>
+      )}
       {choices.length > 0 && (
         <div className="controls-source-choices">
           <p>{t("controls.chooseSource")}</p>
@@ -352,7 +346,7 @@ export function BindingDetails({
           ))}
         </div>
       )}
-      {hotkey && current.inputs[0]?.kind !== "gamepad" && (
+      {hotkey && current.inputs[0]?.kind === "keyboard" && !listening && (
         <div
           className="controls-modifiers"
           role="group"
@@ -382,7 +376,7 @@ export function BindingDetails({
           ))}
         </div>
       )}
-      {!hotkey && (
+      {!hotkey && !listening && (
         <div className="controls-detail-turbo">
           <h3>{t("controls.turbo")}</h3>
           <TurboSegments
@@ -390,7 +384,6 @@ export function BindingDetails({
             defaultHz={defaultHz}
             change={(turbo) => editValue({ ...current, turbo })}
           />
-          <p>{t("controls.turboHint")}</p>
         </div>
       )}
       {warning && (
@@ -421,7 +414,7 @@ export function BindingDetails({
       <footer className="controls-detail-actions">
         <button
           className="controls-danger"
-          disabled={current.inputs.length === 0}
+          disabled={current.inputs.length === 0 || listening}
           data-ui="controls.detail.delete"
           onClick={() => {
             remove(current.id);
@@ -432,6 +425,7 @@ export function BindingDetails({
         </button>
         <button
           className="controls-primary"
+          disabled={listening}
           data-ui="controls.detail.done"
           onClick={close}
         >

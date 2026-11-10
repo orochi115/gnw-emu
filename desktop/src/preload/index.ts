@@ -7,9 +7,16 @@ const subscribe = (channel: string, callback: (value: any) => void) => {
 };
 contextBridge.exposeInMainWorld("desktop", {
   controls: () => ipcRenderer.invoke("controls.get"),
-  openControls: () => ipcRenderer.invoke("controls.open"),
-  saveControls: (config: unknown) =>
-    ipcRenderer.invoke("controls.save", config),
+  openControls: (page = "buttons") => ipcRenderer.invoke("controls.open", page),
+  controlsWindow: () => ipcRenderer.invoke("controls.window"),
+  onControlsClosed: (callback: () => void) =>
+    subscribe("controls.closed", callback),
+  saveControls: (config: unknown, participation: unknown) =>
+    ipcRenderer.invoke("controls.save", config, participation),
+  reportControlDevices: (devices: unknown) =>
+    ipcRenderer.send("controls.devices", devices),
+  onControlParticipation: (cb: (value: unknown) => void) =>
+    subscribe("controls.participation", cb),
   closeControls: () => ipcRenderer.invoke("controls.close"),
   controlInput: (event: unknown) => ipcRenderer.send("controls.input", event),
   onControlsChanged: (callback: (v: unknown) => void) =>

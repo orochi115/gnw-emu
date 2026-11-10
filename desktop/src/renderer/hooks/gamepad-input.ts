@@ -1,5 +1,6 @@
 import type {
   ControlInputEvent,
+  GamepadParticipation,
   ControlsSettings,
   InputToken,
 } from "../../shared/controls";
@@ -48,6 +49,29 @@ export class GamepadInputReader {
   private instances = new Map<number, DeviceState>();
   private overrides = new Map<string, boolean>();
   private serial = 0;
+  private pendingParticipation: GamepadParticipation[] = [];
+  importParticipation(devices: GamepadParticipation[]) {
+    this.pendingParticipation = devices.filter((value) => {
+      const device = this.instances.get(value.index);
+      if (!device) return true;
+      if (device.fingerprint === value.fingerprint)
+        this.overrides.set(device.instance, value.enabled);
+      return false;
+    });
+  }
+  participation(config: ControlsSettings): GamepadParticipation[] {
+    return [
+      ...this.pendingParticipation,
+      ...[...this.instances.values()].map((device) => ({
+        index: device.index,
+        fingerprint: device.fingerprint,
+        enabled:
+          this.overrides.get(device.instance) ??
+          config.devices[device.fingerprint]?.enabled ??
+          true,
+      })),
+    ];
+  }
   participate(instance: string, enabled: boolean) {
     this.overrides.set(instance, enabled);
   }
@@ -108,6 +132,11 @@ export class GamepadInputReader {
         };
         this.instances.set(pad.index, device);
       }
+      const imported = this.pendingParticipation.find(
+        (value) =>
+          value.index === pad.index && value.fingerprint === fingerprint,
+      );
+      if (imported) this.overrides.set(device.instance, imported.enabled);
       seen.add(pad.index);
       const enabled =
         this.overrides.get(device.instance) ??
@@ -183,6 +212,10 @@ export class GamepadInputReader {
         this.overrides.delete(device.instance);
         this.instances.delete(index);
       }
+    // Chromium can initially hide pads until an interaction in this renderer.
+    this.pendingParticipation = this.pendingParticipation.filter(
+      (value) => !seen.has(value.index),
+    );
     const counts = new Map<string, number>();
     for (const device of this.instances.values())
       counts.set(device.fingerprint, (counts.get(device.fingerprint) ?? 0) + 1);

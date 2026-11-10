@@ -350,3 +350,17 @@ export function findConflicts(
     }
   return result;
 }
+
+/** Runtime connection selection is transferred between renderers, never persisted by index. */
+export const gamepadParticipationSchema = z
+  .array(
+    z.object({
+      index: z.number().int().min(0).max(255),
+      fingerprint: z.string().min(1).max(512),
+      enabled: z.boolean(),
+    }),
+  )
+  .max(16);
+export type GamepadParticipation = z.infer<
+  typeof gamepadParticipationSchema
+>[number];

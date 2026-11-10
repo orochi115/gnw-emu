@@ -801,3 +801,86 @@
   border-radius: 4px;
   padding: 3px;
 }
+
+/* The settings renderer also uses app.css: size these widgets by content. */
+.controls-dialog button,
+.controls-detail button {
+  height: auto;
+  min-height: 0;
+  line-height: 1.4;
+}
+.controls-dialog.controls-embedded {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  overflow: hidden;
+}
+.controls-embedded .controls-header,
+.controls-embedded .controls-footer {
+  flex-shrink: 0;
+  border-radius: 0;
+}
+.controls-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.controls-dialog .controls-page-arrow {
+  height: 36px;
+}
+.controls-dialog .controls-plus {
+  height: 34px;
+}
+.controls-dialog .controls-binding {
+  height: 38px;
+}
+.controls-dialog .controls-remove {
+  height: 17px;
+  line-height: 13px;
+}
+.controls-detail .controls-capture {
+  min-height: 70px;
+  height: auto;
+  padding: 18px 12px;
+}
+.controls-detail .controls-stop-recording {
+  display: block;
+  margin: 0 auto 14px;
+  border: 0;
+  background: none;
+  color: #6e8065;
+}
+.controls-device-panel input[type="checkbox"] {
+  appearance: auto;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  padding: 0;
+  margin: 2px 0 0;
+  border: 0;
+  background: transparent;
+  accent-color: #537850;
+}
+.controls-device-panel input[type="range"] {
+  appearance: auto;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.controls-device-panel .controls-axis-fields input {
+  height: 28px;
+  background: #fff;
+  color: #26362d;
+}
+.controls-device-panel {
+  position: absolute;
+  float: none;
+  margin-top: 0;
+  max-height: calc(100% - 20px);
+  overflow-y: auto;
+}

@@ -84,11 +84,6 @@ export function ControlsDiagram({
         style={{ zoom: scale }}
         data-ui={`controls.diagram.${model}`}
       >
-        <p className="controls-stage-note">
-          {t("controls.diagramHint")}
-          <br />
-          <span>⚡ {t("controls.turbo")}</span>
-        </p>
         <img
           className="controls-hardware"
           src={model === "mario" ? mario : zelda}
@@ -167,11 +162,6 @@ export function ControlsDiagram({
             </section>
           );
         })}
-        {model === "mario" && (
-          <p className="controls-extension-note">
-            {t("controls.marioExtension")}
-          </p>
-        )}
         <p className="controls-legend">
           {t("controls.keyboard")} · {t("controls.gamepad")}　⚡{" "}
           {t("controls.turbo")}　! {t("controls.conflict")}

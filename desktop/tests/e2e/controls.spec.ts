@@ -55,20 +55,34 @@ async function launch(root: string, model = "zelda") {
       .poll(async () => (await rpc("app.getDiagnostics")).input)
       .toMatchObject({ desiredMask: value, appliedMask: value });
   };
-  const open = async () => {
+  let settings: Page;
+  const open = async (mode: "buttons" | "hotkeys" = "buttons") => {
     // The running state arrives before the initial ROM's recent-file write settles.
     await expect
       .poll(() =>
-        app.evaluate(({ Menu }) =>
-          Menu.getApplicationMenu()!.getMenuItemById("controls.open")!.enabled,
+        app.evaluate(
+          ({ Menu }) =>
+            Menu.getApplicationMenu()!.getMenuItemById("controls.open")!
+              .enabled,
         ),
       )
       .toBe(true);
-    await page.evaluate(() => window.desktop.openControls());
-    await expect(page.locator('[data-ui="controls.dialog"]')).toBeVisible();
+    const opened = app.waitForEvent("window");
+    await page.evaluate((mode) => window.desktop.openControls(mode), mode);
+    settings = await opened;
+    await expect(settings.locator('[data-ui="controls.dialog"]')).toBeVisible();
     await mask(0);
   };
-  return { app, page, rpc, mask, open };
+  return {
+    app,
+    page,
+    rpc,
+    mask,
+    open,
+    get settings() {
+      return settings;
+    },
+  };
 }
 const selector = (id: string) => `[data-ui="${id}"]`;
 async function rebind(page: Page, target: string, key: string) {
@@ -77,6 +91,7 @@ async function rebind(page: Page, target: string, key: string) {
     (b) => b.target === target && b.inputs[0].kind === "keyboard",
   )!;
   await page.locator(selector(`controls.binding.${binding.id}`)).click();
+  await page.locator(selector("controls.capture")).click();
   await page.keyboard.press(key);
   await expect(page.locator(selector("controls.capture"))).not.toHaveClass(
     /listening/,
@@ -99,10 +114,10 @@ test("controls draft capture stays neutral, commits JSON, and is reused by Mario
     await live.open();
     await live.page.keyboard.up("x");
     const properties = (await live.rpc("app.getDiagnostics")).audio;
-    await rebind(live.page, "a", "k");
+    await rebind(live.settings, "a", "k");
     await live.mask(0);
     expect((await live.rpc("app.getDiagnostics")).audio).toEqual(properties);
-    await live.page.locator(selector("controls.cancel")).click();
+    await live.settings.locator(selector("controls.cancel")).click();
     expect(await live.page.evaluate(() => window.desktop.controls())).toEqual(
       original,
     );
@@ -114,16 +129,9 @@ test("controls draft capture stays neutral, commits JSON, and is reused by Mario
       )
       .toEqual(geometry);
     await live.open();
-    const id = await rebind(live.page, "a", "k");
-    await live.page.locator(selector("controls.model.mario")).click();
-    await expect(
-      live.page.locator(selector("controls.diagram.mario")),
-    ).toBeVisible();
-    await expect(
-      live.page.locator(selector("controls.target.start")),
-    ).toBeVisible();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    const id = await rebind(live.settings, "a", "k");
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     const saved = JSON.parse(
       await readFile(join(root, "settings.json"), "utf8"),
     );
@@ -148,7 +156,7 @@ test("controls draft capture stays neutral, commits JSON, and is reused by Mario
     await live.mask(0);
     await live.open();
     await expect(
-      live.page.locator(selector("controls.diagram.mario")),
+      live.settings.locator(selector("controls.diagram.mario")),
     ).toBeVisible();
   } finally {
     await live.app.close();
@@ -166,14 +174,17 @@ test("held capture keys cannot leak after close, turbo pulses, and modified hotk
     const binding = config.bindings.find(
       (b) => b.target === "a" && b.inputs[0].kind === "keyboard",
     )!;
-    await live.page.locator(selector(`controls.binding.${binding.id}`)).click();
-    await live.page.keyboard.down("j");
+    await live.settings
+      .locator(selector(`controls.binding.${binding.id}`))
+      .click();
+    await live.settings.locator(selector("controls.capture")).click();
+    await live.settings.keyboard.down("j");
     await expect(
-      live.page.locator(selector("controls.capture")),
+      live.settings.locator(selector("controls.capture")),
     ).not.toHaveClass(/listening/);
-    await live.page.locator(selector("controls.detail.done")).click();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.detail.done")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     await live.mask(0);
     await live.page.keyboard.up("j");
     await live.page.keyboard.down("j");
@@ -181,44 +192,52 @@ test("held capture keys cannot leak after close, turbo pulses, and modified hotk
     await live.page.keyboard.up("j");
     await live.mask(0);
     await live.open();
-    await live.page.locator(selector("controls.add.a")).click();
-    await live.page.keyboard.press("Space");
-    await live.page.locator(selector("controls.detail.done")).click();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.add.a")).click();
+    await live.settings.locator(selector("controls.capture")).click();
+    await live.settings.keyboard.press("Space");
+    await live.settings.locator(selector("controls.detail.done")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     await live.page.locator(selector("chassis.button.b")).focus();
     await live.page.keyboard.down("Space");
     await live.mask(16);
     await live.page.keyboard.up("Space");
     await live.mask(0);
     await live.open();
-    await live.page.locator(selector(`controls.binding.${binding.id}`)).click();
-    await live.page
+    await live.settings
+      .locator(selector(`controls.binding.${binding.id}`))
+      .click();
+    await live.settings
       .locator(selector("controls.detail"))
       .getByRole("radio", { name: "10 次/秒", exact: true })
       .click();
-    await live.page.locator(selector("controls.detail.done")).click();
-    await live.page.locator(selector("controls.page.hotkeys")).click();
-    await live.page.locator(selector("controls.add.audio.mute")).click();
-    await live.page.keyboard.press("Shift+j");
+    await live.settings.locator(selector("controls.detail.done")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await live.open("hotkeys");
+    await live.settings.locator(selector("controls.add.audio.mute")).click();
+    await live.settings.locator(selector("controls.capture")).click();
+    await live.settings.keyboard.press("Shift+j");
     await expect(
-      live.page.locator(selector("controls.capture")),
+      live.settings.locator(selector("controls.capture")),
     ).not.toHaveClass(/listening/);
-    await expect(live.page.locator(".controls-conflicts")).toBeVisible();
-    await live.page.locator(selector("controls.detail.done")).click();
+    await expect(live.settings.locator(".controls-conflicts")).toBeVisible();
+    await live.settings.locator(selector("controls.detail.done")).click();
     await expect(
-      live.page
+      live.settings
         .locator(selector("controls.action.audio.mute"))
         .locator(".controls-conflict-mark"),
     ).toHaveCount(1);
-    await live.page.locator(selector("controls.page.buttons")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await live.open();
     await expect(
-      live.page
+      live.settings
         .locator(selector(`controls.binding.${binding.id}`))
         .locator(".controls-conflict-mark"),
     ).toBeVisible();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     const masks = await live.page.evaluate(async () => {
       const samples: number[] = [];
       const off = window.desktop.onInput((v) => samples.push(v.appliedMask));
@@ -256,11 +275,11 @@ test("failed settings write retains draft and main input isolation", async () =>
   try {
     await live.open();
     const original = await live.page.evaluate(() => window.desktop.controls());
-    await rebind(live.page, "a", "k");
+    await rebind(live.settings, "a", "k");
     await rename(join(root, "settings.json"), join(root, "settings.saved"));
     await mkdir(join(root, "settings.json"));
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(".controls-save-error")).toBeVisible();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect(live.settings.locator(".controls-save-error")).toBeVisible();
     expect((await live.rpc("app.getDiagnostics")).controls.isolated).toBe(true);
     expect(await live.page.evaluate(() => window.desktop.controls())).toEqual(
       original,
@@ -274,8 +293,8 @@ test("failed settings write retains draft and main input isolation", async () =>
     await live.mask(0);
     await rm(join(root, "settings.json"), { recursive: true });
     await rename(join(root, "settings.saved"), join(root, "settings.json"));
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     await live.page.keyboard.down("k");
     await live.mask(16);
     await live.page.keyboard.up("k");
@@ -291,27 +310,32 @@ test("Gamepad API inputs aggregate with keyboard and record controller chords", 
   const root = await mkdtemp(join(tmpdir(), "gnw-controls-pad-"));
   const live = await launch(root);
   const snapshot = async (pressed: number[] = [], axis = 0) => {
-    await live.page.evaluate(
-      async ({ pressed, axis }) => {
-        (window as any).__pads = [
-          {
-            index: 0,
-            id: "Test controller",
-            mapping: "standard",
-            connected: true,
-            axes: [axis, 0],
-            buttons: Array.from({ length: 16 }, (_, i) => ({
-              pressed: pressed.includes(i),
-              value: pressed.includes(i) ? 1 : 0,
-            })),
-          },
-        ];
-        await new Promise((r) =>
-          requestAnimationFrame(() => requestAnimationFrame(() => r(null))),
-        );
-      },
-      { pressed, axis },
-    );
+    for (const target of live.app.windows())
+      await target.evaluate(
+        async ({ pressed, axis }) => {
+          Object.defineProperty(navigator, "getGamepads", {
+            configurable: true,
+            value: () => (window as any).__pads ?? [],
+          });
+          (window as any).__pads = [
+            {
+              index: 0,
+              id: "Test controller",
+              mapping: "standard",
+              connected: true,
+              axes: [axis, 0],
+              buttons: Array.from({ length: 16 }, (_, i) => ({
+                pressed: pressed.includes(i),
+                value: pressed.includes(i) ? 1 : 0,
+              })),
+            },
+          ];
+          await new Promise((r) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => r(null))),
+          );
+        },
+        { pressed, axis },
+      );
   };
   try {
     const hardware = await live.page.evaluate(() =>
@@ -343,34 +367,40 @@ test("Gamepad API inputs aggregate with keyboard and record controller chords", 
     await snapshot();
     await live.mask(0);
     await live.open();
-    await live.page.locator(selector("controls.devices")).click();
-    await live.page
+    await snapshot();
+    await live.settings.locator(selector("controls.devices")).click();
+    await live.settings
       .locator('.controls-device-panel input[type="checkbox"]')
       .uncheck();
-    await live.page.locator(selector("controls.cancel")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.cancel")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     await snapshot();
     await snapshot([0]);
     await live.mask(16);
     await snapshot();
     await live.mask(0);
     await live.open();
-    await live.page.locator(selector("controls.devices")).click();
-    await expect(live.page.locator(".controls-device-panel")).toContainText(
+    await snapshot();
+    await live.settings.locator(selector("controls.devices")).click();
+    await expect(live.settings.locator(".controls-device-panel")).toContainText(
       "Test controller",
     );
-    await live.page.locator(".controls-device-panel header button").click();
-    await live.page.locator(selector("controls.page.hotkeys")).click();
-    await live.page.locator(selector("controls.add.audio.mute")).click();
+    await live.settings.locator(".controls-device-panel header button").click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await live.open("hotkeys");
+    await live.settings.locator(selector("controls.add.audio.mute")).click();
+    await snapshot();
+    await live.settings.locator(selector("controls.capture")).click();
     await snapshot([4]);
     await snapshot([4, 5]);
     await snapshot();
     await expect(
-      live.page.locator(selector("controls.capture")),
+      live.settings.locator(selector("controls.capture")),
     ).not.toHaveClass(/listening/);
-    await live.page.locator(selector("controls.detail.done")).click();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.detail.done")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     const config = await live.page.evaluate(() => window.desktop.controls());
     expect(
       config.bindings.find((b) => b.target === "audio.mute")?.inputs,
@@ -384,16 +414,13 @@ test("Gamepad API inputs aggregate with keyboard and record controller chords", 
       .toBe(!muted);
     await snapshot();
     await live.open();
-    await live.page.locator(selector("controls.model.zelda")).click();
-    await live.page.screenshot({
+    await live.settings.screenshot({
       path: resolve("../out/ui-validation/controls-zelda.png"),
     });
-    await live.page.locator(selector("controls.model.mario")).click();
-    await live.page.screenshot({
-      path: resolve("../out/ui-validation/controls-mario.png"),
-    });
-    await live.page.locator(selector("controls.page.hotkeys")).click();
-    await live.page.screenshot({
+    await live.settings.locator(selector("controls.cancel")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await live.open("hotkeys");
+    await live.settings.screenshot({
       path: resolve("../out/ui-validation/controls-hotkeys.png"),
     });
   } finally {
@@ -415,7 +442,7 @@ test("renderer reload abandons capture and restores game geometry", async () => 
       "data-status",
       "running",
     );
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     await expect
       .poll(() =>
         live.app.evaluate(({ BrowserWindow }) =>
@@ -441,14 +468,19 @@ test("configured hotkey replaces native shortcut and deletion removes it", async
   const live = await launch(root);
   try {
     await live.open();
-    await live.page.locator(selector("controls.page.hotkeys")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await live.open("hotkeys");
     const config = await live.page.evaluate(() => window.desktop.controls());
     const binding = config.bindings.find((b) => b.target === "file.make")!;
-    await live.page.locator(selector(`controls.binding.${binding.id}`)).click();
-    await live.page.keyboard.press("Shift+m");
-    await live.page.locator(selector("controls.detail.done")).click();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings
+      .locator(selector(`controls.binding.${binding.id}`))
+      .click();
+    await live.settings.locator(selector("controls.capture")).click();
+    await live.settings.keyboard.press("Shift+m");
+    await live.settings.locator(selector("controls.detail.done")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     const shortcut = await live.app.evaluate(
       ({ Menu }) =>
         Menu.getApplicationMenu()!.getMenuItemById("file.make")!.accelerator,
@@ -468,11 +500,15 @@ test("configured hotkey replaces native shortcut and deletion removes it", async
     await expect(live.page.locator(selector("rom.cancel"))).toBeVisible();
     await live.page.locator(selector("rom.cancel")).click();
     await live.open();
-    await live.page.locator(selector("controls.page.hotkeys")).click();
-    await live.page.locator(selector(`controls.binding.${binding.id}`)).click();
-    await live.page.locator(selector("controls.detail.delete")).click();
-    await live.page.locator(selector("controls.save")).click();
-    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await live.open("hotkeys");
+    await live.settings
+      .locator(selector(`controls.binding.${binding.id}`))
+      .click();
+    await live.settings.locator(selector("controls.detail.delete")).click();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
     expect(
       await live.app.evaluate(
         ({ Menu }) =>
@@ -487,6 +523,195 @@ test("configured hotkey replaces native shortcut and deletion removes it", async
         ),
     );
     await expect(live.page.locator("dialog[open]")).toHaveCount(0);
+  } finally {
+    await live.app.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("native settings windows keep parent geometry and capture Tab/Escape without clipping", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-controls-native-"));
+  const live = await launch(root);
+  try {
+    const parent = await live.app.browserWindow(live.page);
+    const bounds = await parent.evaluate((w) => w.getBounds());
+    await live.open();
+    expect(await parent.evaluate((w) => w.getBounds())).toEqual(bounds);
+    expect(live.app.windows()).toHaveLength(2);
+    expect((await live.rpc("ui.inspect")).window.title).toContain("按键设置");
+    await expect(live.page.locator(selector("controls.dialog"))).toHaveCount(0);
+    await expect(
+      live.settings.locator('[data-ui^="controls.page."]'),
+    ).toHaveCount(0);
+    await expect(
+      live.settings.locator('[data-ui^="controls.model."]'),
+    ).toHaveCount(0);
+    const buttonsWidth = await live.settings.evaluate(() => innerWidth);
+    await live.settings.locator(selector("controls.add.a")).click();
+    const capture = live.settings.locator(selector("controls.capture"));
+    await expect(capture).toHaveAttribute("aria-pressed", "false");
+    await capture.click();
+    await live.settings.keyboard.press("Tab");
+    await expect(capture).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      live.settings.locator(".controls-current-binding"),
+    ).toContainText("Tab");
+    await capture.click();
+    await live.settings.keyboard.press("Escape");
+    await expect(capture).toHaveAttribute("aria-pressed", "false");
+    await expect(
+      live.settings.locator(".controls-current-binding"),
+    ).toContainText("Esc");
+    await capture.click();
+    await live.settings.locator(selector("controls.capture.cancel")).click();
+    await expect(
+      live.settings.locator(".controls-current-binding"),
+    ).toContainText("Esc");
+    await capture.click();
+    await live.settings.keyboard.press("Meta");
+    await expect(
+      live.settings.locator(".controls-current-binding"),
+    ).toContainText("左");
+    await expect(
+      live.settings.locator(".controls-current-binding"),
+    ).not.toContainText("MetaLeft");
+    expect(
+      await capture.evaluate((e) => ({
+        height: e.clientHeight,
+        scroll: e.scrollHeight,
+      })),
+    ).toEqual(expect.objectContaining({ height: expect.any(Number) }));
+    expect(
+      await capture.evaluate((e) => e.scrollHeight <= e.clientHeight),
+    ).toBe(true);
+    await live.settings.screenshot({
+      path: resolve("../out/ui-validation/controls-detail-fixed.png"),
+    });
+    await live.mask(0);
+    await live.settings.keyboard.press("Escape");
+    await expect(
+      live.settings.locator(selector("controls.detail")),
+    ).toHaveCount(0);
+    const native = await live.app.browserWindow(live.settings);
+    await native.evaluate((w) => w.close());
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    expect((await live.rpc("app.getDiagnostics")).controls.isolated).toBe(
+      false,
+    );
+    await live.open("hotkeys");
+    expect(await live.settings.evaluate(() => innerWidth)).toBeLessThan(
+      buttonsWidth,
+    );
+    await expect(
+      live.settings.locator(selector("controls.devices")),
+    ).toBeVisible();
+    expect(await parent.evaluate((w) => w.getBounds())).toEqual(bounds);
+    await live.settings.reload();
+    await expect(
+      live.settings.locator(selector("controls.dialog")),
+    ).toBeVisible();
+    expect((await live.rpc("app.getDiagnostics")).controls.isolated).toBe(true);
+    const child = await live.app.browserWindow(live.settings);
+    await child.evaluate((w) => w.webContents.forcefullyCrashRenderer());
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    expect((await live.rpc("app.getDiagnostics")).controls.isolated).toBe(
+      false,
+    );
+    await live.rpc("ui.menu", { id: "view.clock" });
+    await expect
+      .poll(() => live.page.evaluate(() => window.desktop.windowState()))
+      .toMatchObject({ clockMode: true, transitioning: false });
+    const clockBounds = await parent.evaluate((w) => w.getBounds());
+    await live.open();
+    expect(
+      await live.page.evaluate(() => window.desktop.windowState()),
+    ).toMatchObject({ clockMode: true });
+    expect(await parent.evaluate((w) => w.getBounds())).toEqual(clockBounds);
+    const closingWindow = await live.app.browserWindow(live.settings);
+    await closingWindow.evaluate((w) =>
+      w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" }),
+    );
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    expect(await parent.evaluate((w) => w.getBounds())).toEqual(clockBounds);
+  } finally {
+    await live.app.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("identical controller participation survives settings Save and returns on reopen", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-controls-twin-"));
+  const live = await launch(root);
+  const sample = async (pressedIndex = -1) => {
+    for (const page of live.app.windows())
+      await page.evaluate(async (pressedIndex) => {
+        Object.defineProperty(navigator, "getGamepads", {
+          configurable: true,
+          value: () => (window as any).__pads ?? [],
+        });
+        (window as any).__pads = [0, 1].map((index) => ({
+          index,
+          id: "Twin controller",
+          mapping: "standard",
+          connected: true,
+          axes: [0, 0],
+          buttons: Array.from({ length: 16 }, (_, i) => ({
+            pressed: index === pressedIndex && i === 0,
+            value: index === pressedIndex && i === 0 ? 1 : 0,
+          })),
+        }));
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(() => r(null))),
+        );
+      }, pressedIndex);
+  };
+  try {
+    await sample();
+    await live.open();
+    await sample();
+    await live.settings.locator(selector("controls.devices")).click();
+    const checkboxes = live.settings.locator(
+      '.controls-device-panel input[type="checkbox"]',
+    );
+    await expect(checkboxes).toHaveCount(2);
+    await live.settings
+      .locator('.controls-device-panel input[type="range"]')
+      .first()
+      .press("ArrowRight");
+    await checkboxes.nth(1).uncheck();
+    await live.settings.locator(selector("controls.save")).click();
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await sample();
+    await sample(1);
+    await live.mask(0);
+    await sample();
+    await sample(0);
+    await live.mask(16);
+    await sample();
+    await live.mask(0);
+    await live.open();
+    await sample();
+    await live.settings.locator(selector("controls.devices")).click();
+    await expect(
+      live.settings
+        .locator('.controls-device-panel input[type="checkbox"]')
+        .nth(1),
+    ).not.toBeChecked();
+    expect(
+      await live.settings
+        .locator('.controls-device-panel input[type="checkbox"]')
+        .first()
+        .evaluate((e) => ({ width: e.clientWidth, height: e.clientHeight })),
+    ).toEqual({ width: 16, height: 16 });
+    await live.settings.locator(".controls-device-panel header button").click();
+    const closingWindow = await live.app.browserWindow(live.settings);
+    await closingWindow.evaluate((w) =>
+      w.webContents.sendInputEvent({ type: "keyDown", keyCode: "Escape" }),
+    );
+    await expect.poll(() => live.settings.isClosed()).toBe(true);
+    await sample();
+    await sample(1);
+    await live.mask(0);
   } finally {
     await live.app.close();
     await rm(root, { recursive: true, force: true });

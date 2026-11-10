@@ -19,6 +19,7 @@ import {
 } from "./BindingDetails";
 import { ControlsDiagram } from "./ControlsDiagram";
 import "./controls.css";
+import { normalizeControlsDraft } from "./presentation";
 import { DeviceParticipationDraft } from "./device-participation";
 export interface ControlsDevice {
   instance: string;
@@ -31,6 +32,8 @@ export interface ControlsDevice {
 export interface ControlsDialogProps {
   initial: ControlsSettings;
   model?: "mario" | "zelda";
+  page?: "buttons" | "hotkeys";
+  embedded?: boolean;
   devices?: ControlsDevice[];
   deviceError?: string;
   subscribeInput?: InputSubscription;
@@ -40,7 +43,9 @@ export interface ControlsDialogProps {
 }
 export function ControlsDialog({
   initial,
-  model: initialModel = "zelda",
+  model = "zelda",
+  page = "buttons",
+  embedded = false,
   devices = [],
   deviceError,
   subscribeInput,
@@ -50,9 +55,8 @@ export function ControlsDialog({
 }: ControlsDialogProps) {
   const dialog = useRef<HTMLDialogElement>(null);
   const participationDraft = useRef(new DeviceParticipationDraft());
-  const [draft, setDraft] = useState(() => structuredClone(initial));
-  const [page, setPage] = useState<"buttons" | "hotkeys">("buttons");
-  const [model, setModel] = useState(initialModel);
+  const [draft, setDraft] = useState(() => normalizeControlsDraft(initial));
+  const Container = embedded ? "section" : "dialog";
   const [detail, setDetail] = useState<{
     target: string;
     id?: string;
@@ -79,8 +83,8 @@ export function ControlsDialog({
     [conflicts],
   );
   useEffect(() => {
-    dialog.current!.showModal();
-  }, []);
+    if (!embedded) dialog.current?.showModal();
+  }, [embedded]);
   useEffect(() => {
     if (!menu) return;
     const dismiss = (event: MouseEvent) => {
@@ -246,6 +250,17 @@ export function ControlsDialog({
       setBusy(false);
     }
   };
+  useEffect(() => {
+    if (!embedded) return;
+    const key = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !detail && !menu && !devicePanel) {
+        event.preventDefault();
+        void cancel();
+      }
+    };
+    window.addEventListener("keydown", key);
+    return () => window.removeEventListener("keydown", key);
+  }, [embedded, detail, menu, devicePanel, busy]);
   const commit = async () => {
     setBusy(true);
     setError("");
@@ -265,9 +280,11 @@ export function ControlsDialog({
     ? draft.bindings.find((binding) => binding.id === detail.id)
     : undefined;
   return (
-    <dialog
-      ref={dialog}
-      className="controls-dialog"
+    <Container
+      ref={(element) => {
+        dialog.current = element instanceof HTMLDialogElement ? element : null;
+      }}
+      className={`controls-dialog ${embedded ? "controls-embedded" : ""} controls-${page}`}
       aria-labelledby="controls-title"
       data-ui="controls.dialog"
       onCancel={(event) => {
@@ -276,92 +293,26 @@ export function ControlsDialog({
       }}
     >
       <header className="controls-header">
-        <div>
-          <h1 id="controls-title">{t("controls.title")}</h1>
-          <p>{t("controls.description")}</p>
+        <h1 id="controls-title">{t(`controls.${page}`)}</h1>
+        <div className="controls-header-actions">
+          <button
+            className="controls-device-toggle"
+            aria-expanded={devicePanel}
+            data-ui="controls.devices"
+            onClick={() => setDevicePanel(!devicePanel)}
+          >
+            {t("controls.devices")} · {devices.length}
+          </button>
+          <button
+            className="controls-close"
+            aria-label={t("controls.cancel")}
+            disabled={busy}
+            onClick={() => void cancel()}
+          >
+            ×
+          </button>
         </div>
-        <button
-          className="controls-close"
-          aria-label={t("controls.cancel")}
-          disabled={busy}
-          onClick={() => void cancel()}
-        >
-          ×
-        </button>
       </header>
-      <div className="controls-toolbar">
-        <div
-          className="controls-segments"
-          role="tablist"
-          aria-label={t("controls.title")}
-        >
-          {(["buttons", "hotkeys"] as const).map((value) => (
-            <button
-              key={value}
-              role="tab"
-              aria-selected={page === value}
-              data-ui={`controls.page.${value}`}
-              onClick={() => {
-                setPage(value);
-                setMenu(null);
-              }}
-            >
-              {t(`controls.${value}`)}
-            </button>
-          ))}
-        </div>
-        {page === "buttons" && (
-          <>
-            <div
-              className="controls-segments"
-              role="radiogroup"
-              aria-label={t("rom.model")}
-            >
-              {(["zelda", "mario"] as const).map((value) => (
-                <button
-                  key={value}
-                  role="radio"
-                  aria-checked={model === value}
-                  data-ui={`controls.model.${value}`}
-                  onClick={() => setModel(value)}
-                >
-                  {value === "zelda" ? "Zelda" : "Mario"}
-                </button>
-              ))}
-            </div>
-            <div className="controls-default-hz">
-              <span>{t("controls.defaultTurbo")}</span>
-              <div
-                className="controls-segments"
-                role="radiogroup"
-                aria-label={t("controls.defaultTurbo")}
-              >
-                {[6, 10, 15].map((hz) => (
-                  <button
-                    key={hz}
-                    role="radio"
-                    aria-checked={draft.defaultTurboHz === hz}
-                    data-ui={`controls.defaultHz.${hz}`}
-                    onClick={() =>
-                      setDraft((old) => ({ ...old, defaultTurboHz: hz }))
-                    }
-                  >
-                    {t("controls.hz", { hz })}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
-        )}
-        <button
-          className="controls-device-toggle"
-          aria-expanded={devicePanel}
-          data-ui="controls.devices"
-          onClick={() => setDevicePanel(!devicePanel)}
-        >
-          {t("controls.devices")} · {devices.length}
-        </button>
-      </div>
       <div className="controls-body">
         {page === "buttons" ? (
           <ControlsDiagram
@@ -402,7 +353,6 @@ export function ControlsDialog({
                 ))}
               </tbody>
             </table>
-            <p className="controls-table-note">{t("controls.hotkeyHint")}</p>
           </div>
         )}
         {devicePanel && (
@@ -438,8 +388,10 @@ export function ControlsDialog({
                     type="checkbox"
                     checked={
                       runtimeParticipation[device.instance] ??
-                      draft.devices[device.fingerprint]?.enabled ??
-                      device.enabled
+                      (device.collision
+                        ? device.enabled
+                        : (draft.devices[device.fingerprint]?.enabled ??
+                          device.enabled))
                     }
                     onChange={(event) =>
                       participate(device, event.target.checked)
@@ -536,7 +488,6 @@ export function ControlsDialog({
                 </div>
               </article>
             ))}
-            <p className="controls-muted">{t("controls.deviceHint")}</p>
           </section>
         )}
       </div>
@@ -573,7 +524,7 @@ export function ControlsDialog({
             ? t("controls.conflictCount", {
                 count: Object.keys(conflicts).length,
               })
-            : t("controls.draftHint")}
+            : ""}
         </span>
         <div>
           <button
@@ -698,6 +649,6 @@ export function ControlsDialog({
           close={() => setDetail(null)}
         />
       )}
-    </dialog>
+    </Container>
   );
 }

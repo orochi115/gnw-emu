@@ -20,16 +20,20 @@ function menuItems(menu?: Electron.Menu): Record<string, unknown>[] {
 }
 export class UiDriver {
   constructor(
-    private window: BrowserWindow,
+    private mainWindow: BrowserWindow,
     private contextMenu?: () => Electron.Menu | undefined,
+    private settingsWindow?: () => BrowserWindow | undefined,
   ) {}
+  private get window() {
+    return this.settingsWindow?.() ?? this.mainWindow;
+  }
   private check() {
     if (this.window.isDestroyed()) throw new RpcError(-32004, "Window closed");
   }
   async inspect() {
     this.check();
     const dom = await this.window.webContents.executeJavaScript(
-      `({locale:document.documentElement.lang,dialogOpen:!!document.querySelector('dialog[open]'),status:document.querySelector('main')?.dataset.status,controls:Array.from(document.querySelectorAll('[data-ui]')).map(e=>({id:e.dataset.ui,role:e.getAttribute('role')||e.tagName.toLowerCase(),label:e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText?.slice(0,160),value:e.value,checked:e.type==="radio"?e.checked:undefined,pressed:e.getAttribute('aria-pressed'),disabled:!!e.disabled,visible:!!e.getClientRects().length,invalid:e.getAttribute('aria-invalid')})),chassis:(()=>{const e=document.querySelector('[data-ui="chassis"]');const main=document.querySelector('main');return {visible:!!e?.getClientRects().length,model:e?.dataset.model,input:{desiredMask:Number(main?.dataset.desiredMask||0),appliedMask:Number(main?.dataset.appliedMask||0)}}})(),canvas:(()=>{const e=document.querySelector('canvas');const r=e?.getBoundingClientRect();return e?{...e.dataset,width:e.width,height:e.height,displayWidth:r.width,displayHeight:r.height,displayX:r.x,displayY:r.y,devicePixelRatio:window.devicePixelRatio,pixelScale:r.width*window.devicePixelRatio/e.width}:null})()})`,
+      `({locale:document.documentElement.lang,dialogOpen:!!document.querySelector('dialog[open], [data-ui=\"controls.dialog\"]'),status:document.querySelector('main')?.dataset.status,controls:Array.from(document.querySelectorAll('[data-ui]')).map(e=>({id:e.dataset.ui,role:e.getAttribute('role')||e.tagName.toLowerCase(),label:e.getAttribute('aria-label')||e.labels?.[0]?.innerText||e.innerText?.slice(0,160),value:e.value,checked:e.type==="radio"?e.checked:undefined,pressed:e.getAttribute('aria-pressed'),disabled:!!e.disabled,visible:!!e.getClientRects().length,invalid:e.getAttribute('aria-invalid')})),chassis:(()=>{const e=document.querySelector('[data-ui="chassis"]');const main=document.querySelector('main');return {visible:!!e?.getClientRects().length,model:e?.dataset.model,input:{desiredMask:Number(main?.dataset.desiredMask||0),appliedMask:Number(main?.dataset.appliedMask||0)}}})(),canvas:(()=>{const e=document.querySelector('canvas');const r=e?.getBoundingClientRect();return e?{...e.dataset,width:e.width,height:e.height,displayWidth:r.width,displayHeight:r.height,displayX:r.x,displayY:r.y,devicePixelRatio:window.devicePixelRatio,pixelScale:r.width*window.devicePixelRatio/e.width}:null})()})`,
     );
     return {
       ...dom,

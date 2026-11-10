@@ -139,3 +139,48 @@ it("routes a reader two-button chord from one device and rejects cross-device ha
   expect(actions).toEqual(["audio.mute"]);
   router.dispose();
 });
+
+it("transfers participation between readers by connection index and fingerprint, then forgets it on reconnect", () => {
+  const game = new GamepadInputReader(),
+    settings = new GamepadInputReader();
+  const config = defaultControls();
+  game.sample([pad(0), pad(1)], config, 1);
+  const devices = settings.sample([pad(0), pad(1)], config, 1).devices;
+  settings.participate(devices[1].instance, false);
+  const committed = settings.sample([pad(0), pad(1)], config, 1).devices;
+  game.importParticipation(committed);
+  expect(game.participation(config)).toHaveLength(2);
+  expect(
+    game.sample([pad(0), pad(1)], config, 2).devices.map((d) => d.enabled),
+  ).toEqual([true, false]);
+  const fresh = new GamepadInputReader();
+  fresh.importParticipation(committed);
+  fresh.sample([], config, 2);
+  expect(
+    fresh.sample([pad(0), pad(1)], config, 2).devices.map((d) => d.enabled),
+  ).toEqual([true, false]);
+  game.sample([], config, 2);
+  expect(
+    game.sample([pad(0), pad(1)], config, 2).devices.map((d) => d.enabled),
+  ).toEqual([true, true]);
+});
+
+it("keeps imported selections until each controller appears and exports unseen selections", () => {
+  const reader = new GamepadInputReader(),
+    config = defaultControls();
+  const fingerprint = gamepadFingerprint(pad());
+  reader.importParticipation([
+    { index: 0, fingerprint, enabled: true },
+    { index: 1, fingerprint, enabled: false },
+  ]);
+  expect(reader.participation(config)).toHaveLength(2);
+  reader.sample([pad(0)], config, 1);
+  expect(reader.participation(config).find((d) => d.index === 1)?.enabled).toBe(
+    false,
+  );
+  expect(
+    reader.sample([pad(0), pad(1)], config, 1).devices.map((d) => d.enabled),
+  ).toEqual([true, false]);
+  reader.sample([pad(0)], config, 1);
+  expect(reader.participation(config)).toHaveLength(1);
+});

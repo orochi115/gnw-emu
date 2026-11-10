@@ -15,7 +15,6 @@ import {
   type ControlsSettings,
   type Modifier,
 } from "../shared/controls";
-import { ControlsDialog } from "./components/controls/ControlsDialog";
 import { useControlInput } from "./hooks/useControlInput";
 export function App() {
   const [state, setState] = useState<AppState>({ status: "idle" });
@@ -38,16 +37,14 @@ export function App() {
   const [controls, setControls] = useState<ControlsSettings>(() =>
     defaultControls(navigator.platform.includes("Mac") ? "darwin" : ""),
   );
-  const [controlsDraft, setControlsDraft] = useState<ControlsSettings | null>(
-    null,
-  );
+  const [controlsOpen, setControlsOpen] = useState(false);
   const [epoch, setEpoch] = useState(0);
   const epochRef = useRef(epoch);
   epochRef.current = epoch;
   const controlState = useRef({ controls, modal: false, running: false });
   controlState.current = {
     controls,
-    modal: maker || controlsDraft !== null,
+    modal: maker || controlsOpen,
     running: state.status === "running",
   };
 
@@ -78,8 +75,14 @@ export function App() {
       epochRef.current = value.epoch;
       setEpoch(value.epoch);
       setControls(value.config);
-      setControlsDraft(value.config);
+      setControlsOpen(true);
     });
+    const offControlsClosed = window.desktop.onControlsClosed(() =>
+      setControlsOpen(false),
+    );
+    window.desktop
+      .controlsWindow()
+      .then((value) => setControlsOpen(value !== null));
     window.desktop.controls().then((value) => {
       if (!receivedControls) setControls(value);
     });
@@ -119,6 +122,7 @@ export function App() {
       off();
       offEpoch();
       offControls();
+      offControlsClosed();
       offControlsChanged();
       offMake();
       offPrefs();
@@ -171,7 +175,7 @@ export function App() {
       window.removeEventListener("blur", release);
     };
   }, []);
-  const gamepads = useControlInput(controls, epoch, host.focused);
+  useControlInput(controls, epoch, host.focused && !controlsOpen);
   const running =
     state.status === "running" ||
     state.status === "starting" ||
@@ -200,9 +204,7 @@ export function App() {
           showChassis={preferences.showChassis}
           renderScale={host.renderScale}
           mask={desiredMask}
-          disabled={
-            state.status !== "running" || maker || controlsDraft !== null
-          }
+          disabled={state.status !== "running" || maker || controlsOpen}
           resetGeneration={
             input.runtimeSessionId === state.runtimeSessionId
               ? input.resetGeneration
@@ -289,25 +291,6 @@ export function App() {
         )}
       </div>
       {maker && <MakeRomDialog close={() => setMaker(false)} />}
-      {controlsDraft && (
-        <ControlsDialog
-          initial={controlsDraft}
-          model={state.model}
-          devices={gamepads.devices}
-          deviceError={gamepads.deviceError}
-          subscribeInput={gamepads.subscribeInput}
-          setDeviceParticipation={gamepads.setDeviceParticipation}
-          save={async (config) => {
-            await window.desktop.saveControls(config);
-            setControls(config);
-            setControlsDraft(null);
-          }}
-          close={async () => {
-            await window.desktop.closeControls();
-            setControlsDraft(null);
-          }}
-        />
-      )}
     </main>
   );
 }

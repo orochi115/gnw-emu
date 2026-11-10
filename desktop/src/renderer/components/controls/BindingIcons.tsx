@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { keyboardLabel } from "./presentation";
 import { t } from "../../../shared/locale";
 import type { ControlBinding, InputToken } from "../../../shared/controls";
 
@@ -26,22 +27,7 @@ export function shortInput(input: InputToken): string {
             "→",
           ][input.index] ?? `B${input.index}`)
         : `B${input.index}`;
-  return (
-    (
-      {
-        ArrowUp: "↑",
-        ArrowDown: "↓",
-        ArrowLeft: "←",
-        ArrowRight: "→",
-        Space: "Space",
-        Enter: "↵",
-        Escape: "Esc",
-        Minus: "−",
-        Equal: "+",
-        Backspace: "⌫",
-      } as Record<string, string>
-    )[input.code] ?? input.code.replace(/^Key|^Digit/, "")
-  );
+  return keyboardLabel(input.code, navigator.platform).short;
 }
 function gamepadName(device: string): string {
   if (device === "standard") return t("controls.standardGamepad");
@@ -57,7 +43,7 @@ export function bindingDescription(binding: ControlBinding): string {
     ...binding.modifiers,
     ...binding.inputs.map((input) =>
       input.kind === "keyboard"
-        ? `${t("controls.keyboard")} · ${shortInput(input)}`
+        ? `${t("controls.keyboard")} · ${keyboardLabel(input.code, navigator.platform).long}`
         : `${gamepadName(input.device)} · ${shortInput(input)}`,
     ),
   ].join(" + ");

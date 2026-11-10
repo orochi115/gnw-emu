@@ -140,19 +140,13 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
       runtimeId,
     );
     // Original controls photographs and settings transactions also ship in the package.
+    const opening = app.waitForEvent("window");
     await page.evaluate(() => window.desktop.openControls());
-    await expect(page.locator('[data-ui="controls.dialog"]')).toBeVisible();
+    const controls = await opening;
+    await expect(controls.locator('[data-ui="controls.dialog"]')).toBeVisible();
     await expect
       .poll(() =>
-        page
-          .locator(".controls-hardware")
-          .evaluate((im: any) => im.complete && im.naturalWidth > 900),
-      )
-      .toBe(true);
-    await page.locator('[data-ui="controls.model.mario"]').click();
-    await expect
-      .poll(() =>
-        page
+        controls
           .locator(".controls-hardware")
           .evaluate((im: any) => im.complete && im.naturalWidth > 900),
       )
@@ -161,11 +155,14 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
     const binding = config.bindings.find(
       (b) => b.target === "a" && b.inputs[0].kind === "keyboard",
     )!;
-    await page.locator(`[data-ui="controls.binding.${binding.id}"]`).click();
-    await page.keyboard.press("k");
-    await page.locator('[data-ui="controls.detail.done"]').click();
-    await page.locator('[data-ui="controls.save"]').click();
-    await expect(page.locator('[data-ui="controls.dialog"]')).toHaveCount(0);
+    await controls
+      .locator(`[data-ui="controls.binding.${binding.id}"]`)
+      .click();
+    await controls.locator('[data-ui="controls.capture"]').click();
+    await controls.keyboard.press("k");
+    await controls.locator('[data-ui="controls.detail.done"]').click();
+    await controls.locator('[data-ui="controls.save"]').click();
+    await expect.poll(() => controls.isClosed()).toBe(true);
     const saved = JSON.parse(
       await readFile(join(root, "settings.json"), "utf8"),
     );

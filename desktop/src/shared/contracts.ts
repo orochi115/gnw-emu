@@ -1,6 +1,10 @@
 import type { ProfileFields } from "../core/schemas";
 import type { DockCorner } from "./dock-geometry";
-import type { ControlsSettings, ControlInputEvent } from "./controls";
+import type {
+  ControlsSettings,
+  ControlInputEvent,
+  GamepadParticipation,
+} from "./controls";
 export type AppStatus = "idle" | "starting" | "running" | "stopping" | "error";
 export interface InputState {
   runtimeSessionId?: string;
@@ -40,8 +44,23 @@ export interface AppState {
 }
 export interface DesktopApi {
   controls(): Promise<ControlsSettings>;
-  openControls(): Promise<void>;
-  saveControls(config: ControlsSettings): Promise<void>;
+  openControls(page?: "buttons" | "hotkeys"): Promise<void>;
+  controlsWindow(): Promise<{
+    page: "buttons" | "hotkeys";
+    model: "mario" | "zelda";
+    config: ControlsSettings;
+    epoch: number;
+    participation: GamepadParticipation[];
+  } | null>;
+  onControlsClosed(callback: () => void): () => void;
+  saveControls(
+    config: ControlsSettings,
+    participation?: GamepadParticipation[],
+  ): Promise<void>;
+  reportControlDevices(devices: GamepadParticipation[]): void;
+  onControlParticipation(
+    callback: (devices: GamepadParticipation[]) => void,
+  ): () => void;
   closeControls(): Promise<void>;
   controlInput(event: ControlInputEvent): void;
   onControlsChanged(callback: (config: ControlsSettings) => void): () => void;

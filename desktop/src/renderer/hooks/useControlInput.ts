@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   ControlInputEvent,
   ControlsSettings,
+  GamepadParticipation,
 } from "../../shared/controls";
 import type { InputSubscription } from "../components/controls/BindingDetails";
 import { GamepadInputReader, type GamepadDevice } from "./gamepad-input";
@@ -10,6 +11,8 @@ export function useControlInput(
   config: ControlsSettings,
   epochValue: number,
   focused: boolean,
+  sourcePrefix = "",
+  initialParticipation?: GamepadParticipation[],
 ) {
   const [devices, setDevices] = useState<GamepadDevice[]>([]);
   const [deviceError, setDeviceError] = useState("");
@@ -33,8 +36,23 @@ export function useControlInput(
     [],
   );
   useEffect(() => {
+    if (initialParticipation)
+      reader.current.importParticipation(initialParticipation);
+  }, [initialParticipation]);
+  useEffect(() => {
+    const off = sourcePrefix
+      ? undefined
+      : window.desktop.onControlParticipation((values) =>
+          reader.current.importParticipation(values),
+        );
+    return () => off?.();
+  }, [sourcePrefix]);
+  useEffect(() => {
     const emit = (event: ControlInputEvent) => {
-      window.desktop.controlInput(event);
+      window.desktop.controlInput({
+        ...event,
+        source: sourcePrefix + event.source,
+      });
       for (const listener of listeners.current) listener(event);
     };
     const release = () => {
@@ -64,6 +82,8 @@ export function useControlInput(
           if (serialized !== lastDevices) {
             lastDevices = serialized;
             setDevices(sample.devices);
+            if (!sourcePrefix)
+              window.desktop.reportControlDevices(sample.devices);
           }
           if (failed) {
             failed = false;
@@ -90,7 +110,20 @@ export function useControlInput(
   useEffect(() => {
     if (!focused)
       for (const event of reader.current.suspend(epoch.current))
-        window.desktop.controlInput(event);
+        window.desktop.controlInput({
+          ...event,
+          source: sourcePrefix + event.source,
+        });
   }, [focused]);
-  return { devices, deviceError, subscribeInput, setDeviceParticipation };
+  const getParticipation = useCallback(
+    () => reader.current.participation(configRef.current),
+    [],
+  );
+  return {
+    devices,
+    deviceError,
+    subscribeInput,
+    setDeviceParticipation,
+    getParticipation,
+  };
 }

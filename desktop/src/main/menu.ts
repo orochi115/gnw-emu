@@ -97,6 +97,7 @@ export function menuTemplate(
     open: () => void;
     make: () => void;
     openControls?: () => void;
+    openHotkeys?: () => void;
     controlAccelerators?: Partial<Record<string, string | undefined>>;
     recentRoms?: string[];
     loadRecent?: (path: string) => void;
@@ -194,18 +195,28 @@ export function menuTemplate(
         { id: "edit.paste", label: t("menu.paste"), role: "paste" },
         separator,
         { id: "edit.selectAll", label: t("menu.selectAll"), role: "selectAll" },
-        ...(actions.openControls
-          ? [
-              separator,
+      ],
+    },
+    ...(actions.openControls
+      ? [
+          {
+            id: "menu.settings",
+            label: t("menu.settings"),
+            submenu: [
               {
                 id: "controls.open",
                 label: t("menu.controls"),
                 click: actions.openControls,
               },
-            ]
-          : []),
-      ],
-    },
+              {
+                id: "controls.hotkeys",
+                label: t("menu.hotkeys"),
+                click: actions.openHotkeys,
+              },
+            ],
+          },
+        ]
+      : []),
     {
       id: "menu.view",
       label: t("menu.view"),

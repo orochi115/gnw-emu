@@ -12,11 +12,15 @@ import { ChassisPreference } from "../core/chassis-preference";
 import { ViewSettings } from "../core/view-settings";
 import { RecentRoms } from "../core/recent-roms";
 import { AudioPreference } from "../core/audio-preference";
+import { ControlWindow } from "./control-window";
+import type { ControlPage } from "./control-window-geometry";
 import { ControlRouter } from "../core/control-router";
 import { ControlSettingsTransaction } from "../core/control-settings-transaction";
 import {
   controlInputSchema,
   controlsSchema,
+  gamepadParticipationSchema,
+  type GamepadParticipation,
   type ControlsSettings,
   type HotkeyAction,
 } from "../shared/controls";
@@ -82,10 +86,14 @@ let controlRouter: ControlRouter;
 let controlSettings: ControlSettingsTransaction;
 let routedSessionId: string | undefined;
 let rendererReady = true;
-const controlWindowSize = { width: 1320, height: 940 };
+let controlHost: ControlWindow;
+let controlParticipation: GamepadParticipation[] = [];
+let lastControlModel: "mario" | "zelda" = "zelda";
 function publishInputEpoch() {
-  if (controlRouter && window && !window.isDestroyed())
-    window.webContents.send("input.epoch", controlRouter.epoch);
+  if (!controlRouter) return;
+  for (const host of [window, controlHost?.window])
+    if (host && !host.isDestroyed())
+      host.webContents.send("input.epoch", controlRouter.epoch);
 }
 function syncControlBlock() {
   if (!controlRouter || !controller) return;
@@ -132,8 +140,11 @@ async function runControlAction(id: HotkeyAction) {
       break;
   }
 }
-async function openControlSettings() {
-  if (controlSettings.opened) return;
+async function openControlSettings(page: ControlPage = "buttons") {
+  if (controlSettings.opened) {
+    controlHost.window?.focus();
+    return;
+  }
   if (
     !rendererReady ||
     makerOpen ||
@@ -147,11 +158,13 @@ async function openControlSettings() {
   const revision = controlSettings.revision;
   const config = await opening;
   try {
-    if (windowMode.state.clockMode) await windowMode.toggle(false);
     if (!controlSettings.isOpen(revision) || !rendererReady)
       throw new UserError("error.busy");
-    windowMode.setModal(true, controlWindowSize);
-    window.webContents.setIgnoreMenuShortcuts(true);
+    await controlHost.open(page);
+    if (!controlSettings.isOpen(revision) || !rendererReady) {
+      controlHost.destroy();
+      throw new UserError("error.busy");
+    }
     window.webContents.send("controls.open", {
       config,
       epoch: controlRouter.epoch,
@@ -167,14 +180,20 @@ async function openControlSettings() {
     throw error;
   }
 }
-function closeControlSettings() {
-  controlSettings.close();
-  windowMode.setModal(false, controlWindowSize);
-  window.webContents.setIgnoreMenuShortcuts(false);
+function controlsClosed() {
+  controlSettings.abandon();
+  controlRouter.releaseDevice("capture:");
+  if (!window.isDestroyed()) {
+    window.webContents.send("controls.closed");
+    if (!shuttingDown) window.focus();
+  }
   syncControlBlock();
   publishInputEpoch();
   updateMenu();
-  restorePreferredClock();
+}
+function closeControlSettings() {
+  controlSettings.close();
+  controlHost.destroy();
 }
 function controlAccelerators(
   config: ControlsSettings,
@@ -369,10 +388,32 @@ async function main() {
     persist: (controls) => updateSettings(paths.userData, { controls }),
     apply: (controls) => {
       controlRouter.setConfig(controls);
-      window.webContents.send("controls.changed", controls);
+      for (const host of [window, controlHost?.window])
+        if (host && !host.isDestroyed())
+          host.webContents.send("controls.changed", controls);
       publishInputEpoch();
       createMenu();
     },
+  });
+  controlHost = new ControlWindow({
+    parent: window,
+    preload: join(__dirname, "../preload/index.cjs"),
+    renderer: join(__dirname, "../renderer/index.html"),
+    devUrl: process.env.ELECTRON_RENDERER_URL,
+    title: (page) =>
+      t(page === "buttons" ? "menu.controls" : "menu.hotkeys").replace(
+        /…$/,
+        "",
+      ),
+    canClose: () => {
+      try {
+        controlSettings.close();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    closed: controlsClosed,
   });
   audioPreference = new AudioPreference(settings.audio, {
     apply: (enabled) => controller.setMuted(!enabled),
@@ -404,6 +445,7 @@ async function main() {
     argv.includes("--automation") && argv.includes("--test-dialogs"),
   );
   controller.on("state", (state) => {
+    if (state.model) lastControlModel = state.model;
     if (state.runtimeSessionId !== routedSessionId) {
       routedSessionId = state.runtimeSessionId;
       controlRouter.reset();
@@ -454,7 +496,7 @@ async function main() {
     syncControlBlock();
     controlRouter.reset();
     controlSettings.abandon();
-    windowMode.setModal(false, controlWindowSize);
+    controlHost.destroy();
     window.webContents.setIgnoreMenuShortcuts(false);
     publishInputEpoch();
     updateMenu();
@@ -508,14 +550,16 @@ function updateMenu() {
     windowMode?.transitioning ||
     ["starting", "stopping"].includes(controller.state.status);
   const menu = Menu.getApplicationMenu();
-  const controlsItem = menu?.getMenuItemById("controls.open");
-  if (controlsItem)
-    controlsItem.enabled =
-      !makerOpen &&
-      !nativeDialog &&
-      !active &&
-      !shuttingDown &&
-      !controlSettings?.opened;
+  for (const id of ["controls.open", "controls.hotkeys"]) {
+    const item = menu?.getMenuItemById(id);
+    if (item)
+      item.enabled =
+        !makerOpen &&
+        !nativeDialog &&
+        !active &&
+        !shuttingDown &&
+        !controlSettings?.opened;
+  }
   if (menu)
     for (const id of ["file.open", "file.make"]) {
       const item = menu.getMenuItemById(id);
@@ -669,6 +713,9 @@ function createMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
       menuTemplate(process.platform, {
+        openHotkeys: () => {
+          void openControlSettings("hotkeys").catch(showError);
+        },
         openControls: () => {
           void openControlSettings().catch(showError);
         },
@@ -711,6 +758,7 @@ function canClockInteract() {
   return (
     windowMode.state.clockMode &&
     !shuttingDown &&
+    !controlSettings?.opened &&
     !makerOpen &&
     !nativeDialog &&
     !active &&
@@ -902,37 +950,74 @@ function showError(error: Error) {
       error: userMessage(error),
     });
 }
-function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) {
+function trusted(
+  event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent,
+  scope: "game" | "shared" | "controls" = "game",
+) {
+  const hosts =
+    scope === "game"
+      ? [window]
+      : scope === "controls"
+        ? [controlHost?.window]
+        : [window, controlHost?.window];
   if (
-    event.sender !== window.webContents ||
-    event.senderFrame !== window.webContents.mainFrame
+    !hosts.some(
+      (host) =>
+        host &&
+        !host.isDestroyed() &&
+        event.sender === host.webContents &&
+        event.senderFrame === host.webContents.mainFrame,
+    )
   )
     throw new Error("Unauthorized renderer");
 }
 function registerIpc() {
+  ipcMain.handle("controls.window", (event) => {
+    trusted(event, "shared");
+    return controlHost.window
+      ? {
+          page: controlHost.page!,
+          model: controller.state.model ?? lastControlModel,
+          config: controlSettings.config,
+          epoch: controlRouter.epoch,
+          participation: controlParticipation,
+        }
+      : null;
+  });
   ipcMain.handle("controls.get", (event) => {
-    trusted(event);
+    trusted(event, "shared");
     return controlSettings.config;
   });
   ipcMain.handle("input.epoch", (event) => {
-    trusted(event);
+    trusted(event, "shared");
     return controlRouter.epoch;
   });
-  ipcMain.handle("controls.open", (event) => {
+  ipcMain.handle("controls.open", (event, page = "buttons") => {
     trusted(event);
-    return openControlSettings();
+    if (page !== "buttons" && page !== "hotkeys")
+      throw Error("Invalid controls page");
+    return openControlSettings(page);
   });
-  ipcMain.handle("controls.save", async (event, config) => {
-    trusted(event);
+  ipcMain.handle("controls.save", async (event, config, participation = []) => {
+    trusted(event, "controls");
+    const devices = gamepadParticipationSchema.parse(participation);
     await perform(() => controlSettings.save(controlsSchema.parse(config)));
+    controlParticipation = devices;
+    window.webContents.send("controls.participation", devices);
     closeControlSettings();
   });
   ipcMain.handle("controls.close", (event) => {
-    trusted(event);
+    trusted(event, "controls");
     closeControlSettings();
   });
-  ipcMain.on("controls.input", (event, value) => {
+  ipcMain.on("controls.devices", (event, value) => {
     trusted(event);
+    const parsed = gamepadParticipationSchema.safeParse(value);
+    if (parsed.success && !controlSettings.opened)
+      controlParticipation = parsed.data;
+  });
+  ipcMain.on("controls.input", (event, value) => {
+    trusted(event, "shared");
     const parsed = controlInputSchema.safeParse(value);
     if (!parsed.success) return;
     syncControlBlock();
@@ -974,7 +1059,7 @@ function registerIpc() {
     return controller.inputState();
   });
   ipcMain.handle("app.locale", (event) => {
-    trusted(event);
+    trusted(event, "shared");
     return locale;
   });
   ipcMain.handle("app.state", (event) => {
@@ -1101,7 +1186,7 @@ function registerIpc() {
     bridgeCount = 0;
   }, 1000).unref();
   ipcMain.on("log.renderer", (event, level, name, fields) => {
-    trusted(event);
+    trusted(event, "shared");
     if (++bridgeCount > 40) {
       bridgeDropped++;
       return;
@@ -1144,7 +1229,7 @@ async function dispatch(method: string, params: any) {
     },
     "Automation request",
   );
-  const ui = new UiDriver(window, createClockMenu);
+  const ui = new UiDriver(window, createClockMenu, () => controlHost?.window);
   if (
     params.runtimeSessionId &&
     params.runtimeSessionId !== controller.state.runtimeSessionId
@@ -1293,6 +1378,7 @@ async function dispatch(method: string, params: any) {
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  controlHost?.destroy();
   controlRouter?.dispose();
   try {
     await active?.catch(() => {});

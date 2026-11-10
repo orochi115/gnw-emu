@@ -48,6 +48,7 @@ const schemas: Record<string, z.ZodType> = {
         "file.open",
         "file.make",
         "controls.open",
+        "controls.hotkeys",
         "audio.mute",
         "file.recent.0",
         "file.recent.1",
