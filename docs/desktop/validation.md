@@ -130,3 +130,17 @@ Mario/Zelda 共享应用 controls 设置；完整官方参考图、12 个普通�
 Chromium 实测没有已连接实体手柄。手柄验收使用确定性 Gamepad API 快照加真实 QEMU；这不代表 USB/蓝牙实体连接已测试。相同指纹设备只能按本次连接选择参与，浏览器/驱动暴露不同接口时可能需重新绑定。此次原生验收为 macOS；Windows/Linux 尚未进行实体平台测试。
 
 主目录已整合实现提交 17da281，并重跑 103 项单测、类型检查、目录包构建与 6 项控制功能 E2E。验收等待真实“自定义按键”菜单可用后再打开，覆盖初次 ROM 的最近记录落盘完成边界。临时实现 worktree 已清理，原有 .superpowers 预览保留。
+
+## 独立按键 / 热键设置窗口修复（2026-11-10）
+
+设置菜单分别打开两个原生 Electron 子窗口，使用各自尺寸，参考图跟随当前机型。游戏窗口的 bounds、倍率与时钟状态在打开、取消、保存、设置 renderer 刷新 / 崩溃及主 renderer 刷新后均保持或按原有生命周期恢复。设置 renderer 的非配置 IPC 仍由 main-frame 身份和作用域校验拒绝。
+
+截图中的固定高度录入按钮、继承普通输入样式的巨大复选框和 MetaLeft 标签已修复。详情默认不录入，主动录入直接支持 Tab/Esc，成功后保留连发 / 删除 / 冲突设置；取消录入恢复预览。页顶设备入口一致，移除内部机型切换、页面标签和全局默认连发设置；旧 default 连发以实际频率编辑，JSON 格式保持兼容。
+
+独立审查发现同指纹设备的临时参与状态在不同 renderer reader 之间丢失，以及 Chromium 延迟 / 分批暴露手柄时保存丢失未出现的选择。现由主进程交接本次连接选择，reader 单独保留尚未出现的接口，已观察断开的接口清理选择。测试覆盖 Save、重新打开、取消、已有设备偏好优先级、初次空扫描、分批出现、即刻导出和断开后恢复默认。
+
+最终证据：30 个 Vitest 文件 / 110 项通过；typecheck、build、git diff --check 通过。15 项真实 Electron/QEMU 回归通过，包含 8 项配置窗口用例和 7 项既有机身 / 时钟 / 制作 ROM 用例。原生窗口测试验证主窗口几何不变、两种尺寸、无内部 tabs / model selector、Tab/Esc、录入文字边界、Command 显示、原生关闭、设置 renderer 崩溃、刷新隔离和时钟模式保持。手柄参与回归同时验证复选框实际为 16×16。
+
+实现提交 a2301bf 已整合 master。主目录重新执行 110 项单测和 typecheck，通过 package:dir 构建及 1 项显式目录包启动 / 配置保存 / QEMU 输入验收。应用位于 desktop/release/mac-arm64/gnw-emu.app。实际截图已复制到主目录 out/ui-validation/controls-detail-fixed.png、controls-zelda.png 和 controls-hotkeys.png。保留用户 .superpowers 与 KeyMapping.png。
+
+此次仍为 macOS 原生验收，Gamepad API 使用确定性输入；没有实体手柄连接，USB / 蓝牙和 Windows / Linux 原生验收未执行。
