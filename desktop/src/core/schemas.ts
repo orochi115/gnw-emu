@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { DOCK_CORNERS } from "../shared/dock-geometry";
+import { controlsSchema, defaultControls } from "../shared/controls";
 const path = z
   .string()
   .min(1)
@@ -66,6 +67,7 @@ export const settingsSchema = z
       .optional(),
     audio: z.boolean().default(true),
     realtime: z.boolean().default(true),
+    controls: controlsSchema.default(() => defaultControls()),
   })
   .strict();
 export type Settings = z.infer<typeof settingsSchema>;

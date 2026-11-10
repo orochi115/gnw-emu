@@ -96,6 +96,8 @@ export function menuTemplate(
   actions: {
     open: () => void;
     make: () => void;
+    openControls?: () => void;
+    controlAccelerators?: Partial<Record<string, string | undefined>>;
     recentRoms?: string[];
     loadRecent?: (path: string) => void;
     clearRecent?: () => void;
@@ -137,7 +139,10 @@ export function menuTemplate(
         {
           id: "file.open",
           label: t("menu.open"),
-          accelerator: "CmdOrCtrl+O",
+          accelerator: actions.controlAccelerators
+            ? actions.controlAccelerators["file.open"]
+            : "CmdOrCtrl+O",
+          registerAccelerator: !actions.controlAccelerators,
           click: actions.open,
         },
         {
@@ -168,7 +173,10 @@ export function menuTemplate(
         {
           id: "file.make",
           label: t("menu.make"),
-          accelerator: "CmdOrCtrl+N",
+          accelerator: actions.controlAccelerators
+            ? actions.controlAccelerators["file.make"]
+            : "CmdOrCtrl+N",
+          registerAccelerator: !actions.controlAccelerators,
           click: actions.make,
         },
         ...(platform === "darwin" ? [] : [separator, quit]),
@@ -186,6 +194,16 @@ export function menuTemplate(
         { id: "edit.paste", label: t("menu.paste"), role: "paste" },
         separator,
         { id: "edit.selectAll", label: t("menu.selectAll"), role: "selectAll" },
+        ...(actions.openControls
+          ? [
+              separator,
+              {
+                id: "controls.open",
+                label: t("menu.controls"),
+                click: actions.openControls,
+              },
+            ]
+          : []),
       ],
     },
     {

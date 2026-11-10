@@ -12,6 +12,14 @@ import { ChassisPreference } from "../core/chassis-preference";
 import { ViewSettings } from "../core/view-settings";
 import { RecentRoms } from "../core/recent-roms";
 import { AudioPreference } from "../core/audio-preference";
+import { ControlRouter } from "../core/control-router";
+import { ControlSettingsTransaction } from "../core/control-settings-transaction";
+import {
+  controlInputSchema,
+  controlsSchema,
+  type ControlsSettings,
+  type HotkeyAction,
+} from "../shared/controls";
 import type { DockCorner } from "../shared/dock-geometry";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { WindowMode } from "./window-mode";
@@ -70,6 +78,136 @@ let viewSettings: ViewSettings;
 let recentRoms: RecentRoms;
 let audioPreference: AudioPreference;
 let fittedModel: AppState["model"];
+let controlRouter: ControlRouter;
+let controlSettings: ControlSettingsTransaction;
+let routedSessionId: string | undefined;
+let rendererReady = true;
+const controlWindowSize = { width: 1320, height: 940 };
+function publishInputEpoch() {
+  if (controlRouter && window && !window.isDestroyed())
+    window.webContents.send("input.epoch", controlRouter.epoch);
+}
+function syncControlBlock() {
+  if (!controlRouter || !controller) return;
+  const epoch = controlRouter.epoch;
+  controlRouter.setBlocked(
+    !!controlSettings?.opened ||
+      !rendererReady ||
+      makerOpen ||
+      nativeDialog ||
+      shuttingDown ||
+      !window.isFocused() ||
+      windowMode.transitioning ||
+      ["starting", "stopping"].includes(controller.state.status),
+  );
+  if (epoch !== controlRouter.epoch) publishInputEpoch();
+}
+async function runControlAction(id: HotkeyAction) {
+  if (
+    controlSettings.opened ||
+    makerOpen ||
+    nativeDialog ||
+    shuttingDown ||
+    !window.isFocused()
+  )
+    return;
+  switch (id) {
+    case "file.open":
+      await openRom();
+      break;
+    case "file.make":
+      makeRom();
+      break;
+    case "view.chassis":
+      await toggleChassis();
+      break;
+    case "view.clock":
+      await toggleClock();
+      break;
+    case "audio.mute":
+      await toggleMute();
+      break;
+    default:
+      await controller.deviceAction(id);
+      break;
+  }
+}
+async function openControlSettings() {
+  if (controlSettings.opened) return;
+  if (
+    !rendererReady ||
+    makerOpen ||
+    nativeDialog ||
+    active ||
+    shuttingDown ||
+    windowMode.transitioning
+  )
+    throw new UserError("error.busy");
+  const opening = controlSettings.open();
+  const revision = controlSettings.revision;
+  const config = await opening;
+  try {
+    if (windowMode.state.clockMode) await windowMode.toggle(false);
+    if (!controlSettings.isOpen(revision) || !rendererReady)
+      throw new UserError("error.busy");
+    windowMode.setModal(true, controlWindowSize);
+    window.webContents.setIgnoreMenuShortcuts(true);
+    window.webContents.send("controls.open", {
+      config,
+      epoch: controlRouter.epoch,
+    });
+    logger
+      .child("input")
+      .info(
+        { event: "controls.open", epoch: controlRouter.epoch },
+        "Control configuration opened",
+      );
+  } catch (error) {
+    if (controlSettings.isOpen(revision)) controlSettings.close();
+    throw error;
+  }
+}
+function closeControlSettings() {
+  controlSettings.close();
+  windowMode.setModal(false, controlWindowSize);
+  window.webContents.setIgnoreMenuShortcuts(false);
+  syncControlBlock();
+  publishInputEpoch();
+  updateMenu();
+  restorePreferredClock();
+}
+function controlAccelerators(
+  config: ControlsSettings,
+): Record<string, string | undefined> {
+  const result: Record<string, string | undefined> = {};
+  for (const id of ["file.open", "file.make"]) {
+    const binding = config.bindings.find(
+      (b) => b.target === id && b.inputs[0]?.kind === "keyboard",
+    );
+    const key = binding?.inputs[0];
+    if (!binding || key?.kind !== "keyboard") {
+      result[id] = undefined;
+      continue;
+    }
+    const modifiers = binding.modifiers.map((m) =>
+      m === "Control" ? "Ctrl" : m === "Meta" ? "Command" : m,
+    );
+    const code = key.code.replace(/^Key|^Digit/, "");
+    result[id] = [
+      ...modifiers,
+      code === "ArrowUp"
+        ? "Up"
+        : code === "ArrowDown"
+          ? "Down"
+          : code === "ArrowLeft"
+            ? "Left"
+            : code === "ArrowRight"
+              ? "Right"
+              : code,
+    ].join("+");
+  }
+  return result;
+}
 async function main() {
   const settings = await loadSettings(paths.userData);
   recentRoms = new RecentRoms(settings.recentRoms, (recentRoms) =>
@@ -188,7 +326,11 @@ async function main() {
       updateMenu();
       uiEvents.emit("changed");
     },
-    () => controller?.releaseInput(),
+    () => {
+      controlRouter?.reset();
+      controller?.releaseInput();
+      publishInputEpoch();
+    },
     () => controller.state.status === "running" && !shuttingDown,
     settings,
     (patch) => viewSettings.update(patch),
@@ -199,6 +341,38 @@ async function main() {
     logger: logger.child("session"),
     logFor: (module) => logger.child(module),
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
+  });
+  controlRouter = new ControlRouter(settings.controls, {
+    button: (bit, down, source) => {
+      const id = controller.state.runtimeSessionId;
+      if (id) controller.button(bit, down, source, id);
+    },
+    release: () => controller.releaseInput(),
+    flush: () => controller.flushInput(),
+    action: (id) => {
+      void runControlAction(id).catch(showError);
+    },
+    failed: (error) =>
+      logger
+        .child("input")
+        .error(
+          { event: "turbo.failure", err: error },
+          "Input scheduler failed",
+        ),
+  });
+  controlSettings = new ControlSettingsTransaction(settings.controls, {
+    block: () => {
+      syncControlBlock();
+      updateMenu();
+    },
+    flush: () => controller.flushInput(),
+    persist: (controls) => updateSettings(paths.userData, { controls }),
+    apply: (controls) => {
+      controlRouter.setConfig(controls);
+      window.webContents.send("controls.changed", controls);
+      publishInputEpoch();
+      createMenu();
+    },
   });
   audioPreference = new AudioPreference(settings.audio, {
     apply: (enabled) => controller.setMuted(!enabled),
@@ -230,6 +404,12 @@ async function main() {
     argv.includes("--automation") && argv.includes("--test-dialogs"),
   );
   controller.on("state", (state) => {
+    if (state.runtimeSessionId !== routedSessionId) {
+      routedSessionId = state.runtimeSessionId;
+      controlRouter.reset();
+      publishInputEpoch();
+    }
+    syncControlBlock();
     if (!window.isDestroyed()) {
       windowMode.setGameAvailable(
         ["starting", "running", "stopping"].includes(state.status),
@@ -263,9 +443,29 @@ async function main() {
   window.webContents.on("context-menu", () => {
     createClockMenu()?.popup({ window });
   });
-  window.webContents.on("before-input-event", (_e, input) => {
-    if (input.control || input.meta || input.alt || input.key === "F10")
-      controller.releaseInput();
+  window.webContents.on("before-input-event", () => {
+    // Menu accelerators must not consume capture input or dispatch twice.
+    window.webContents.setIgnoreMenuShortcuts(!!controlSettings?.opened);
+  });
+  window.on("focus", () => syncControlBlock());
+  window.on("blur", () => syncControlBlock());
+  const rendererUnavailable = () => {
+    rendererReady = false;
+    syncControlBlock();
+    controlRouter.reset();
+    controlSettings.abandon();
+    windowMode.setModal(false, controlWindowSize);
+    window.webContents.setIgnoreMenuShortcuts(false);
+    publishInputEpoch();
+    updateMenu();
+  };
+  window.webContents.on("render-process-gone", rendererUnavailable);
+  window.webContents.on("did-start-loading", rendererUnavailable);
+  window.webContents.on("did-finish-load", () => {
+    rendererReady = true;
+    syncControlBlock();
+    publishInputEpoch();
+    restorePreferredClock();
   });
   window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   window.webContents.on("will-navigate", (e) => e.preventDefault());
@@ -302,11 +502,20 @@ function updateMenu() {
     shuttingDown ||
     !!active ||
     makerOpen ||
+    !!controlSettings?.opened ||
     nativeDialog ||
     windowMode?.state.clockMode ||
     windowMode?.transitioning ||
     ["starting", "stopping"].includes(controller.state.status);
   const menu = Menu.getApplicationMenu();
+  const controlsItem = menu?.getMenuItemById("controls.open");
+  if (controlsItem)
+    controlsItem.enabled =
+      !makerOpen &&
+      !nativeDialog &&
+      !active &&
+      !shuttingDown &&
+      !controlSettings?.opened;
   if (menu)
     for (const id of ["file.open", "file.make"]) {
       const item = menu.getMenuItemById(id);
@@ -322,7 +531,11 @@ function updateMenu() {
   if (chassis) {
     chassis.checked = preferences.showChassis;
     chassis.enabled =
-      !makerOpen && !nativeDialog && !active && !windowMode.transitioning;
+      !makerOpen &&
+      !controlSettings?.opened &&
+      !nativeDialog &&
+      !active &&
+      !windowMode.transitioning;
   }
   const mute = menu?.getMenuItemById("audio.mute");
   if (mute) {
@@ -330,6 +543,7 @@ function updateMenu() {
     mute.enabled =
       !shuttingDown &&
       !makerOpen &&
+      !controlSettings?.opened &&
       !nativeDialog &&
       !active &&
       !windowMode.transitioning &&
@@ -361,6 +575,7 @@ function updateMenu() {
     clock.checked = windowMode.state.clockMode;
     clock.enabled =
       !makerOpen &&
+      !controlSettings?.opened &&
       !nativeDialog &&
       !active &&
       !windowMode.transitioning &&
@@ -369,6 +584,8 @@ function updateMenu() {
 }
 /** Queue toggles against the last committed preference; rollback native checks on failure. */
 function toggleChassis() {
+  if (controlSettings?.opened)
+    return Promise.reject(new UserError("error.busy"));
   const work = viewPreference.toggle().finally(() => {
     updateMenu();
     uiEvents.emit("changed");
@@ -382,6 +599,7 @@ function restorePreferredClock() {
     !shuttingDown &&
     !active &&
     !makerOpen &&
+    !controlSettings?.opened &&
     !nativeDialog &&
     controller.state.status === "running" &&
     windowMode.state.preferredClockMode &&
@@ -403,6 +621,7 @@ function restorePreferredClock() {
 function canSetScale(factor: number) {
   return (
     !makerOpen &&
+    !controlSettings?.opened &&
     !nativeDialog &&
     !active &&
     !shuttingDown &&
@@ -425,7 +644,7 @@ async function setScale(factor: number) {
     );
 }
 async function toggleClock() {
-  if (makerOpen || nativeDialog || shuttingDown)
+  if (makerOpen || controlSettings?.opened || nativeDialog || shuttingDown)
     throw new UserError("error.busy");
   if (!windowMode.state.clockMode && controller.state.status !== "running")
     throw new UserError("error.busy");
@@ -450,6 +669,12 @@ function createMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
       menuTemplate(process.platform, {
+        openControls: () => {
+          void openControlSettings().catch(showError);
+        },
+        controlAccelerators: controlSettings
+          ? controlAccelerators(controlSettings.config)
+          : undefined,
         open: () => {
           void openRom().catch(showError);
         },
@@ -540,6 +765,7 @@ async function setDock(corner: DockCorner) {
 async function toggleMute() {
   if (
     makerOpen ||
+    controlSettings?.opened ||
     nativeDialog ||
     shuttingDown ||
     windowMode.transitioning ||
@@ -587,6 +813,7 @@ async function perform<T>(work: () => Promise<T>): Promise<T> {
 async function native<T>(work: () => Promise<T>) {
   if (nativeDialog) throw new UserError("error.dialogBusy");
   nativeDialog = true;
+  syncControlBlock();
   controller.releaseInput();
   updateMenu();
   try {
@@ -595,10 +822,12 @@ async function native<T>(work: () => Promise<T>) {
     nativeDialog = false;
     updateMenu();
     window.webContents.focus();
+    syncControlBlock();
   }
 }
 async function openRom() {
   if (makerOpen) throw new UserError("error.makerOpen");
+  if (controlSettings?.opened) throw new UserError("error.busy");
   if (windowMode.state.clockMode) throw new UserError("error.busy");
   return perform(async () => {
     const path = await native(() => dialogs.open(true));
@@ -622,6 +851,7 @@ async function loadRom(path: string) {
 function guardRecent() {
   if (
     makerOpen ||
+    controlSettings?.opened ||
     nativeDialog ||
     shuttingDown ||
     windowMode.state.clockMode ||
@@ -643,9 +873,17 @@ async function clearRecent() {
   });
 }
 function makeRom() {
-  if (makerOpen || nativeDialog || active || windowMode.state.clockMode) return;
+  if (
+    makerOpen ||
+    controlSettings.opened ||
+    nativeDialog ||
+    active ||
+    windowMode.state.clockMode
+  )
+    return;
   controller.releaseInput();
   makerOpen = true;
+  syncControlBlock();
   updateMenu();
   window.webContents.send("ui.make");
 }
@@ -672,6 +910,34 @@ function trusted(event: Electron.IpcMainEvent | Electron.IpcMainInvokeEvent) {
     throw new Error("Unauthorized renderer");
 }
 function registerIpc() {
+  ipcMain.handle("controls.get", (event) => {
+    trusted(event);
+    return controlSettings.config;
+  });
+  ipcMain.handle("input.epoch", (event) => {
+    trusted(event);
+    return controlRouter.epoch;
+  });
+  ipcMain.handle("controls.open", (event) => {
+    trusted(event);
+    return openControlSettings();
+  });
+  ipcMain.handle("controls.save", async (event, config) => {
+    trusted(event);
+    await perform(() => controlSettings.save(controlsSchema.parse(config)));
+    closeControlSettings();
+  });
+  ipcMain.handle("controls.close", (event) => {
+    trusted(event);
+    closeControlSettings();
+  });
+  ipcMain.on("controls.input", (event, value) => {
+    trusted(event);
+    const parsed = controlInputSchema.safeParse(value);
+    if (!parsed.success) return;
+    syncControlBlock();
+    controlRouter.event(parsed.data);
+  });
   ipcMain.handle("window.state", (event) => {
     trusted(event);
     return windowMode.state;
@@ -774,10 +1040,18 @@ function registerIpc() {
           window.isFocused() &&
           !windowMode.transitioning))
     )
-      controller.key(code, down);
+      controlRouter.event({
+        source: "legacy-keyboard",
+        input: { kind: "keyboard", code },
+        down,
+        modifiers: [],
+        epoch: controlRouter.epoch,
+      });
   });
   ipcMain.on("input.release", (event) => {
     trusted(event);
+    controlRouter.reset();
+    publishInputEpoch();
     controller.releaseInput();
   });
   ipcMain.on("input.button", (event, bit, down, source, runtimeSessionId) => {
@@ -792,6 +1066,7 @@ function registerIpc() {
       typeof runtimeSessionId === "string" &&
       (!down ||
         (!makerOpen &&
+          !controlSettings.opened &&
           !nativeDialog &&
           preferences.showChassis &&
           window.isFocused() &&
@@ -806,11 +1081,13 @@ function registerIpc() {
   });
   ipcMain.on("ui.modal", (event, open) => {
     trusted(event);
+    if (controlSettings.opened) return;
     if (typeof open === "boolean") {
       makerOpen = open;
       windowMode.setModal(open);
       if (!open) restorePreferredClock();
       controller.releaseInput();
+      syncControlBlock();
       updateMenu();
       uiEvents.emit("changed");
     }
@@ -905,6 +1182,11 @@ async function dispatch(method: string, params: any) {
       return stateForUi(controller.state);
     case "app.getDiagnostics":
       return {
+        controls: {
+          isolated: controlSettings.opened,
+          epoch: controlRouter.epoch,
+          bindingCount: controlSettings.config.bindings.length,
+        },
         ...controller.diagnostics(),
         audio: {
           enabled: audioPreference.enabled,
@@ -1011,6 +1293,7 @@ async function dispatch(method: string, params: any) {
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  controlRouter?.dispose();
   try {
     await active?.catch(() => {});
     await preferenceChange.catch(() => {});

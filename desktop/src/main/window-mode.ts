@@ -305,28 +305,38 @@ export class WindowMode {
     )
       this.applyScale(this.normalScale);
   }
-  setModal(open: boolean) {
+  setModal(open: boolean, minimum?: { width: number; height: number }) {
     if (this.modal === open) return;
     if (open) {
       this.commitManualScale();
       this.modalBounds = this.window.getBounds();
       this.modal = true;
-      this.usableMinimum();
+      this.usableMinimum(minimum);
     } else {
       this.modal = false;
       if (this.model && this.gameAvailable && !this.expanded)
         this.applyScale(this.rememberedScale, this.modalBounds);
+      else if (minimum && this.modalBounds) {
+        this.window.setMinimumSize(320, 280);
+        this.window.setBounds(this.modalBounds);
+      }
       this.modalBounds = undefined;
     }
     this.changed();
   }
-  private usableMinimum() {
+  private usableMinimum(minimum = { width: 320, height: 280 }) {
     this.applyingBounds = true;
     try {
-      this.window.setMinimumSize(320, 280);
+      const work = screen.getDisplayMatching(this.window.getBounds()).workArea;
+      const targetWidth = Math.min(minimum.width, work.width);
+      const targetHeight = Math.min(minimum.height, work.height);
+      this.window.setMinimumSize(targetWidth, targetHeight);
       const [w, h] = this.window.getContentSize();
-      if (w < 320 || h < 280)
-        this.window.setContentSize(Math.max(320, w), Math.max(280, h));
+      if (w < targetWidth || h < targetHeight)
+        this.window.setContentSize(
+          Math.max(targetWidth, w),
+          Math.max(targetHeight, h),
+        );
     } finally {
       this.applyingBounds = false;
     }

@@ -263,15 +263,6 @@ export class SessionController extends EventEmitter {
   key(code: string, down: boolean) {
     const runtime = this.runtime;
     if (!runtime || this.state.status !== "running") return;
-    if (down && ["Minus", "Equal", "KeyC"].includes(code)) {
-      void this.deviceShortcut(code).catch((e) =>
-        this.options.logger.error(
-          { err: e, event: "shortcut" },
-          "Device shortcut failed",
-        ),
-      );
-      return;
-    }
     this.options
       .logFor?.("input")
       .debug(
@@ -295,6 +286,21 @@ export class SessionController extends EventEmitter {
   }
   releaseInput() {
     this.runtime?.input.releaseAll();
+  }
+  async flushInput() {
+    await this.runtime?.input.flush();
+  }
+  async deviceAction(
+    action: "device.batteryDown" | "device.batteryUp" | "device.usb",
+  ) {
+    if (!this.runtime || this.state.status !== "running") return;
+    await this.deviceShortcut(
+      action === "device.usb"
+        ? "KeyC"
+        : action === "device.batteryDown"
+          ? "Minus"
+          : "Equal",
+    );
   }
   button(bit: number, down: boolean, source: string, runtimeSessionId: string) {
     if (

@@ -46,7 +46,7 @@ export class UiDriver {
   }
   private async control(id: string) {
     this.check();
-    if (!/^[a-zA-Z0-9.]+$/.test(id))
+    if (!/^[a-zA-Z0-9.:-]+$/.test(id))
       throw new RpcError(-32602, "Invalid control ID");
     const info = await this.window.webContents.executeJavaScript(
       `(()=>{const e=document.querySelector(${JSON.stringify('[data-ui="')}+${JSON.stringify(id)}+${JSON.stringify('"]')});if(!e)return null;const r=e.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2,visible:!!e.getClientRects().length,disabled:!!e.disabled,tag:e.tagName,inputType:e.type,insideModal:!!e.closest('dialog[open]'),modal:!!document.querySelector('dialog[open]')};})()`,

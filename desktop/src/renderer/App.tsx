@@ -1,5 +1,5 @@
 import { t } from "../shared/locale";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   AppState,
   InputState,
@@ -9,24 +9,14 @@ import type {
 import { WindowChrome } from "./components/WindowChrome";
 import { GameScreen } from "./components/GameScreen";
 import { MakeRomDialog } from "./components/MakeRomDialog";
-const gameKeys = new Set([
-  "ArrowLeft",
-  "ArrowUp",
-  "ArrowRight",
-  "ArrowDown",
-  "KeyX",
-  "KeyZ",
-  "KeyG",
-  "KeyT",
-  "KeyP",
-  "KeyO",
-  "Enter",
-  "Tab",
-  "KeyQ",
-  "Minus",
-  "Equal",
-  "KeyC",
-]);
+import {
+  inputLabel,
+  defaultControls,
+  type ControlsSettings,
+  type Modifier,
+} from "../shared/controls";
+import { ControlsDialog } from "./components/controls/ControlsDialog";
+import { useControlInput } from "./hooks/useControlInput";
 export function App() {
   const [state, setState] = useState<AppState>({ status: "idle" });
   const [host, setHost] = useState<WindowState>({
@@ -45,6 +35,22 @@ export function App() {
     maximized: false,
   });
   const [maker, setMaker] = useState(false);
+  const [controls, setControls] = useState<ControlsSettings>(() =>
+    defaultControls(navigator.platform.includes("Mac") ? "darwin" : ""),
+  );
+  const [controlsDraft, setControlsDraft] = useState<ControlsSettings | null>(
+    null,
+  );
+  const [epoch, setEpoch] = useState(0);
+  const epochRef = useRef(epoch);
+  epochRef.current = epoch;
+  const controlState = useRef({ controls, modal: false, running: false });
+  controlState.current = {
+    controls,
+    modal: maker || controlsDraft !== null,
+    running: state.status === "running",
+  };
+
   const [error, setError] = useState("");
   const [preferences, setPreferences] = useState<ViewPreferences>({
     showChassis: true,
@@ -56,6 +62,33 @@ export function App() {
   });
   useEffect(() => {
     window.desktop.state().then(setState);
+    let receivedEpoch = false,
+      receivedControls = false;
+    const offEpoch = window.desktop.onInputEpoch((value) => {
+      receivedEpoch = true;
+      epochRef.current = value;
+      setEpoch(value);
+    });
+    const offControlsChanged = window.desktop.onControlsChanged((value) => {
+      receivedControls = true;
+      setControls(value);
+    });
+    const offControls = window.desktop.onControlsOpen((value) => {
+      receivedControls = true;
+      epochRef.current = value.epoch;
+      setEpoch(value.epoch);
+      setControls(value.config);
+      setControlsDraft(value.config);
+    });
+    window.desktop.controls().then((value) => {
+      if (!receivedControls) setControls(value);
+    });
+    window.desktop.inputEpoch().then((value) => {
+      if (!receivedEpoch) {
+        epochRef.current = value;
+        setEpoch(value);
+      }
+    });
     const off = window.desktop.onState(setState);
     const offMake = window.desktop.onMake(() => setMaker(true));
     let receivedHost = false;
@@ -84,6 +117,9 @@ export function App() {
     });
     return () => {
       off();
+      offEpoch();
+      offControls();
+      offControlsChanged();
       offMake();
       offPrefs();
       offInput();
@@ -92,29 +128,50 @@ export function App() {
   }, []);
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (
-        document.querySelector("dialog[open]") ||
-        e.ctrlKey ||
-        e.metaKey ||
-        e.altKey ||
-        e.repeat
-      )
-        return;
-      if (state.status === "running" && gameKeys.has(e.code)) {
-        e.preventDefault();
-        window.desktop.key(e.code, e.type === "keydown");
-      }
+      if (e.repeat) return;
+      const modifiers: Modifier[] = (
+        ["Control", "Shift", "Alt", "Meta"] as const
+      ).filter(
+        (m) =>
+          ({
+            Control: e.ctrlKey,
+            Shift: e.shiftKey,
+            Alt: e.altKey,
+            Meta: e.metaKey,
+          })[m],
+      );
+      window.desktop.controlInput({
+        source: "keyboard",
+        input: { kind: "keyboard", code: e.code },
+        down: e.type === "keydown",
+        modifiers,
+        epoch: epochRef.current,
+      });
+      const current = controlState.current;
+      if (current.modal || document.querySelector("dialog[open]")) return;
+      const mapped = current.controls.bindings.some(
+        (binding) =>
+          binding.inputs.some(
+            (input) => input.kind === "keyboard" && input.code === e.code,
+          ) &&
+          (binding.target.includes(".")
+            ? binding.modifiers.length === modifiers.length &&
+              binding.modifiers.every((m) => modifiers.includes(m))
+            : current.running),
+      );
+      if (mapped) e.preventDefault();
     };
     const release = () => window.desktop.releaseInput();
-    window.addEventListener("keydown", key);
-    window.addEventListener("keyup", key);
+    window.addEventListener("keydown", key, true);
+    window.addEventListener("keyup", key, true);
     window.addEventListener("blur", release);
     return () => {
-      window.removeEventListener("keydown", key);
-      window.removeEventListener("keyup", key);
+      window.removeEventListener("keydown", key, true);
+      window.removeEventListener("keyup", key, true);
       window.removeEventListener("blur", release);
     };
-  }, [state.status]);
+  }, []);
+  const gamepads = useControlInput(controls, epoch, host.focused);
   const running =
     state.status === "running" ||
     state.status === "starting" ||
@@ -123,6 +180,10 @@ export function App() {
     input.runtimeSessionId === state.runtimeSessionId ? input.desiredMask : 0;
   const appliedMask =
     input.runtimeSessionId === state.runtimeSessionId ? input.appliedMask : 0;
+  const openBinding = controls.bindings.find(
+    (binding) =>
+      binding.target === "file.open" && binding.inputs[0]?.kind === "keyboard",
+  );
   return (
     <main
       className={host.clockMode ? "desktop-clock" : "normal-window"}
@@ -139,7 +200,9 @@ export function App() {
           showChassis={preferences.showChassis}
           renderScale={host.renderScale}
           mask={desiredMask}
-          disabled={state.status !== "running" || maker}
+          disabled={
+            state.status !== "running" || maker || controlsDraft !== null
+          }
           resetGeneration={
             input.runtimeSessionId === state.runtimeSessionId
               ? input.resetGeneration
@@ -174,10 +237,34 @@ export function App() {
                 {t("menu.make")}
               </button>
             </div>
-            <span className="shortcut-hint">
-              {t("app.loadHint")}{" "}
-              <kbd>{navigator.platform.includes("Mac") ? "⌘" : "Ctrl"} O</kbd>
-            </span>
+            <button
+              className="text-button"
+              data-ui="app.controls"
+              onClick={() =>
+                window.desktop.openControls().catch((e) => setError(e.message))
+              }
+            >
+              {t("menu.controls")}
+            </button>
+            {openBinding && (
+              <span className="shortcut-hint">
+                {t("app.loadHint")}{" "}
+                <kbd>
+                  {[
+                    ...openBinding.modifiers.map((m) =>
+                      m === "Meta"
+                        ? navigator.platform.includes("Mac")
+                          ? "⌘"
+                          : "Meta"
+                        : m === "Control"
+                          ? "Ctrl"
+                          : m,
+                    ),
+                    inputLabel(openBinding.inputs[0]),
+                  ].join(" + ")}
+                </kbd>
+              </span>
+            )}
           </div>
         )}
         {state.status === "starting" && (
@@ -202,6 +289,25 @@ export function App() {
         )}
       </div>
       {maker && <MakeRomDialog close={() => setMaker(false)} />}
+      {controlsDraft && (
+        <ControlsDialog
+          initial={controlsDraft}
+          model={state.model}
+          devices={gamepads.devices}
+          deviceError={gamepads.deviceError}
+          subscribeInput={gamepads.subscribeInput}
+          setDeviceParticipation={gamepads.setDeviceParticipation}
+          save={async (config) => {
+            await window.desktop.saveControls(config);
+            setControls(config);
+            setControlsDraft(null);
+          }}
+          close={async () => {
+            await window.desktop.closeControls();
+            setControlsDraft(null);
+          }}
+        />
+      )}
     </main>
   );
 }

@@ -1,5 +1,6 @@
 import type { ProfileFields } from "../core/schemas";
 import type { DockCorner } from "./dock-geometry";
+import type { ControlsSettings, ControlInputEvent } from "./controls";
 export type AppStatus = "idle" | "starting" | "running" | "stopping" | "error";
 export interface InputState {
   runtimeSessionId?: string;
@@ -38,6 +39,17 @@ export interface AppState {
   saveUncertain?: boolean;
 }
 export interface DesktopApi {
+  controls(): Promise<ControlsSettings>;
+  openControls(): Promise<void>;
+  saveControls(config: ControlsSettings): Promise<void>;
+  closeControls(): Promise<void>;
+  controlInput(event: ControlInputEvent): void;
+  onControlsChanged(callback: (config: ControlsSettings) => void): () => void;
+  onControlsOpen(
+    callback: (value: { config: ControlsSettings; epoch: number }) => void,
+  ): () => void;
+  onInputEpoch(callback: (epoch: number) => void): () => void;
+  inputEpoch(): Promise<number>;
   windowState(): Promise<WindowState>;
   onWindowState(callback: (value: WindowState) => void): () => void;
   windowAction(

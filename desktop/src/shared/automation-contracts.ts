@@ -3,7 +3,7 @@ const id = z
   .string()
   .min(1)
   .max(128)
-  .regex(/^[a-zA-Z0-9.]+$/);
+  .regex(/^[a-zA-Z0-9.:-]+$/);
 const level = z.enum([
   "trace",
   "debug",
@@ -47,6 +47,7 @@ const schemas: Record<string, z.ZodType> = {
       id: z.enum([
         "file.open",
         "file.make",
+        "controls.open",
         "audio.mute",
         "file.recent.0",
         "file.recent.1",

@@ -792,6 +792,8 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
     await mask(16);
     await action("ui.menu", { id: "view.clock" });
     await mask(0);
+    // Isolation quarantines held physical keys until their release.
+    await action("ui.key", { key: "X", down: false });
     const compact = await rpc("ui.inspect");
     expect((await rpc("app.getDiagnostics")).qemuPid).toBe(qemuPid);
     expect(compact.menus.find((m: any) => m.id === "file.open").enabled).toBe(

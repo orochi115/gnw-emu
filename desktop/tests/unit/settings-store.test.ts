@@ -3,6 +3,35 @@ import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadSettings, updateSettings } from "../../src/core/settings-store";
+import { defaultControls } from "../../src/shared/controls";
+test("old settings gain controls and concurrent preference writes preserve the actual JSON mapping", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-controls-settings-"));
+  try {
+    await writeFile(
+      join(root, "settings.json"),
+      JSON.stringify({ formatVersion: 1, audio: false, language: "en" }),
+    );
+    expect((await loadSettings(root)).controls).toEqual(defaultControls());
+    const controls = defaultControls();
+    controls.bindings[0].inputs = [{ kind: "keyboard", code: "KeyJ" }];
+    await Promise.all([
+      updateSettings(root, { controls }),
+      updateSettings(root, { showChassis: false }),
+    ]);
+    const saved = JSON.parse(
+      await readFile(join(root, "settings.json"), "utf8"),
+    );
+    expect(saved.controls).toEqual(controls);
+    expect(await loadSettings(root)).toMatchObject({
+      controls,
+      audio: false,
+      language: "en",
+      showChassis: false,
+    });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
 test("chassis defaults on and serialized updates preserve language/audio", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-settings-"));
   try {

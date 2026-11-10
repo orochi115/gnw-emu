@@ -30,9 +30,9 @@ renderer 负责真实按键控件、指针捕获和图片叠层；main 的输入
 
 每个指针使用独立来源 ID；释放 A 不影响仍按住的 B。同一按钮的键盘来源仍按下时，松开鼠标不释放该逻辑按钮。指针捕获与窗口事件兜底处理移出后的松开；取消、捕获丢失、失焦、弹窗、停止、换游戏及关闭边框均释放对应来源。失焦清空全部输入。主进程用 `resetGeneration` 明确发布重置，普通聚合快照只更新显示；不能因为较早快照未包含新按下的 bit 就清理本地来源。指针命令与清理携带 `runtimeSessionId`，旧运行的迟到事件不能操作新游戏。转换串行提交，不吞掉短按。
 
-控件有真实 button 语义、本地化名称、焦点轮廓和稳定 ID `chassis.button.<logical-id>`。照片上没有的 POWER 保留键盘入口。改键与游戏重启可作为后续独立任务。
+控件有真实 button 语义、本地化名称、焦点轮廓和稳定 ID `chassis.button.<logical-id>`。照片上没有的 POWER 保留键盘入口。改键、手柄与连发见 [自定义按键](controls.md)。
 
-游戏运行时，两种显示模式均使用 Tab=SELECT、Return/Enter=START，聚焦机身按钮也不改变含义；Q 保留为 SELECT 别名。游戏中不使用 Tab 遍历机身或 Enter 激活按钮。制作 ROM 对话框保留原生 Tab/Enter 表单行为；明确聚焦的机身按钮仍可用 Space 操作，供辅助技术使用。
+默认配置下，游戏运行时两种显示模式均使用 Tab=SELECT、Return/Enter=START，聚焦机身按钮也不改变含义；Q 保留为 SELECT 别名。游戏中不使用 Tab 遍历机身或 Enter 激活按钮。制作 ROM 对话框保留原生 Tab/Enter 表单行为；明确聚焦的机身按钮仍可用 Space 操作，供辅助技术使用。
 
 ## 桌面时钟模式
 

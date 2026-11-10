@@ -54,6 +54,7 @@ test("pointer commands require a real target or bounded release coordinates", ()
 });
 test("stable edit/window/quit menu actions are accepted without accepting arbitrary IDs", () => {
   for (const id of [
+    "controls.open",
     "app.quit",
     "edit.copy",
     "window.close",
@@ -68,4 +69,16 @@ test("stable edit/window/quit menu actions are accepted without accepting arbitr
   ).toThrow();
   for (const id of ["view.actualSize", "file.recent.10"])
     expect(() => validateAutomationParams("ui.menu", { id })).toThrow();
+});
+
+test("controls binding IDs and menu are available to UI automation", () => {
+  expect(validateAutomationParams("ui.menu", { id: "controls.open" })).toEqual({
+    id: "controls.open",
+  });
+  expect(
+    validateAutomationParams("ui.click", { id: "controls.binding.default-4" }),
+  ).toEqual({ id: "controls.binding.default-4" });
+  expect(() =>
+    validateAutomationParams("ui.click", { id: 'controls.binding.x"]' }),
+  ).toThrow();
 });

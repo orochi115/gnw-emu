@@ -124,7 +124,7 @@ function ChassisButton({
       onPointerCancel={(event) => releasePointer(event.pointerId)}
       onLostPointerCapture={(event) => releasePointer(event.pointerId)}
       onKeyDown={(event) => {
-        if (event.code !== "Space") return;
+        if (event.code !== "Space" || event.defaultPrevented) return;
         event.preventDefault();
         event.stopPropagation();
         if (event.repeat || keys.current.has(event.code)) return;

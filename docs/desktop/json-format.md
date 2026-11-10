@@ -20,6 +20,8 @@ UTF-8 标准 JSON；`formatVersion: 1`。拒绝未知字段、错误类型和未
 
 `settings.json` 保存 formatVersion、language（system/zh-CN/en，默认 system）、showChassis（是否显示机身）、audio、realtime；后三项默认 true。缺文件按默认写入，损坏文件报错而不是静默覆盖。边框切换使用串行的读取/修改/原子保存，保留其他偏好；保存失败时 UI 和原生菜单保留之前的选择。
 
+controls 为共享输入配置（version: 1），包含 bindings、defaultTurboHz（6/10/15）和 devices。每条 binding 保存 id、target、inputs、modifiers 和 turbo；普通按键单输入、无修饰键，热键支持键盘修饰键或同设备按钮组合、无连发。turbo 为 null、default 或 6/10/15。devices 按接口指纹保存 enabled 与 deadzone；运行时连接序号不保存。缺少 controls 的现有设置使用默认值，保存失败不会启用新映射。见 [自定义按键](controls.md)。
+
 clockDock 默认为 none，可选 topLeft/topRight/bottomLeft/bottomRight。角落贴合当前屏幕的可用工作区，拖动取消后保存 none。
 
 显示偏好还包括 normalScale（默认 4）、clockScale（默认 1）、clockMode（默认 false）和可选 clockBounds（x/y/width/height，可选 displayId）。倍率是 QEMU 源像素相对于输出像素的大小，范围 0.05..64；两个模式独立保存。clockMode 只恢复显示方式，不自动加载 ROM。

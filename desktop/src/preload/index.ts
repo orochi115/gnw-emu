@@ -6,6 +6,17 @@ const subscribe = (channel: string, callback: (value: any) => void) => {
   return () => ipcRenderer.removeListener(channel, listener);
 };
 contextBridge.exposeInMainWorld("desktop", {
+  controls: () => ipcRenderer.invoke("controls.get"),
+  openControls: () => ipcRenderer.invoke("controls.open"),
+  saveControls: (config: unknown) =>
+    ipcRenderer.invoke("controls.save", config),
+  closeControls: () => ipcRenderer.invoke("controls.close"),
+  controlInput: (event: unknown) => ipcRenderer.send("controls.input", event),
+  onControlsChanged: (callback: (v: unknown) => void) =>
+    subscribe("controls.changed", callback),
+  onControlsOpen: (cb: (v: unknown) => void) => subscribe("controls.open", cb),
+  onInputEpoch: (cb: (v: unknown) => void) => subscribe("input.epoch", cb),
+  inputEpoch: () => ipcRenderer.invoke("input.epoch"),
   windowState: () => ipcRenderer.invoke("window.state"),
   onWindowState: (cb: (v: unknown) => void) => subscribe("window.state", cb),
   windowAction: (action: string) => ipcRenderer.invoke("window.action", action),

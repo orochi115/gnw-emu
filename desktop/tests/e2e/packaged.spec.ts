@@ -139,6 +139,47 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
       "data-runtime-session-id",
       runtimeId,
     );
+    // Original controls photographs and settings transactions also ship in the package.
+    await page.evaluate(() => window.desktop.openControls());
+    await expect(page.locator('[data-ui="controls.dialog"]')).toBeVisible();
+    await expect
+      .poll(() =>
+        page
+          .locator(".controls-hardware")
+          .evaluate((im: any) => im.complete && im.naturalWidth > 900),
+      )
+      .toBe(true);
+    await page.locator('[data-ui="controls.model.mario"]').click();
+    await expect
+      .poll(() =>
+        page
+          .locator(".controls-hardware")
+          .evaluate((im: any) => im.complete && im.naturalWidth > 900),
+      )
+      .toBe(true);
+    const config = await page.evaluate(() => window.desktop.controls());
+    const binding = config.bindings.find(
+      (b) => b.target === "a" && b.inputs[0].kind === "keyboard",
+    )!;
+    await page.locator(`[data-ui="controls.binding.${binding.id}"]`).click();
+    await page.keyboard.press("k");
+    await page.locator('[data-ui="controls.detail.done"]').click();
+    await page.locator('[data-ui="controls.save"]').click();
+    await expect(page.locator('[data-ui="controls.dialog"]')).toHaveCount(0);
+    const saved = JSON.parse(
+      await readFile(join(root, "settings.json"), "utf8"),
+    );
+    expect(
+      saved.controls.bindings.find((b: any) => b.id === binding.id).inputs,
+    ).toEqual([{ kind: "keyboard", code: "KeyK" }]);
+    await page.keyboard.down("k");
+    await expect
+      .poll(() => page.evaluate(() => window.desktop.inputState()))
+      .toMatchObject({ desiredMask: 16, appliedMask: 16 });
+    await page.keyboard.up("k");
+    await expect
+      .poll(() => page.evaluate(() => window.desktop.inputState()))
+      .toMatchObject({ desiredMask: 0, appliedMask: 0 });
   } finally {
     await app.close();
     await rm(root, { recursive: true, force: true });
