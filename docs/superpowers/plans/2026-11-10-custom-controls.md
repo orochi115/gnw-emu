@@ -108,7 +108,7 @@ Files: create `desktop/tests/e2e/controls.spec.ts`; update UI Driver/diagnostics
 - [x] Verify native accelerators remain compatible and update after remap/delete; run targeted chassis, automation and clock regression E2Es.
 - [x] Stage/package the desktop app and run the configured controls through the packaged-environment acceptance path, verifying original image assets and settings loading are included.
 - [x] Run `npm test`, `npm run typecheck`, `npm run build`, `git diff --check`; review specification compliance and code quality, fix issues and rerun affected checks.
-- [ ] Commit scoped implementation and verification docs. Integrate the completed branch into the user's original repository so launched gnw-emu uses the new feature; preserve existing untracked design previews.
+- [x] Commit scoped implementation and verification docs. Integrate the completed branch into the user's original repository so launched gnw-emu uses the new feature; preserve existing untracked design previews.
 
 ## Progress
 
@@ -116,4 +116,4 @@ Files: create `desktop/tests/e2e/controls.spec.ts`; update UI Driver/diagnostics
 - Core, renderer/device polling, main integration: complete. Independent core and final reviews resolved all reported findings.
 - Verification: 28 unit files / 103 tests; typecheck/build; 13 Electron/QEMU feature and chassis/clock/form tests; directory package test with images, mapping save and real QEMU input passed.
 - Native controller hardware: no connected devices exposed by Chromium; deterministic Gamepad API tests cover normalization, chords, stick/dpad and mixed keyboard sources. USB/Bluetooth hardware acceptance remains manual.
-- Integration: ready to fast-forward master and rebuild the original checkout; this is the remaining completion step.
+- Integration: fast-forwarded master to feature commit 17da281, rebuilt the original checkout and directory package. Original-checkout unit/type checks and all six controls E2E passed; implementation worktree cleaned up, original design previews preserved.

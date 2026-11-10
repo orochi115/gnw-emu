@@ -56,6 +56,14 @@ async function launch(root: string, model = "zelda") {
       .toMatchObject({ desiredMask: value, appliedMask: value });
   };
   const open = async () => {
+    // The running state arrives before the initial ROM's recent-file write settles.
+    await expect
+      .poll(() =>
+        app.evaluate(({ Menu }) =>
+          Menu.getApplicationMenu()!.getMenuItemById("controls.open")!.enabled,
+        ),
+      )
+      .toBe(true);
     await page.evaluate(() => window.desktop.openControls());
     await expect(page.locator('[data-ui="controls.dialog"]')).toBeVisible();
     await mask(0);
