@@ -5,18 +5,62 @@ import { basename, dirname } from "node:path";
 import { DOCK_CORNERS, type DockCorner } from "../shared/dock-geometry";
 
 type ScaleActions = Parameters<typeof scaleMenuTemplate>[0];
+interface StateActions {
+  stateSlot?: number;
+  stateSlots?: (string | null)[];
+  canState?: boolean;
+  saveState?: () => void;
+  loadState?: () => void;
+  selectStateSlot?: (slot: number) => void;
+  controlAccelerators?: Partial<Record<string, string | undefined>>;
+}
+export function stateMenuTemplate(actions: StateActions): Item {
+  return {
+    id: "menu.state",
+    label: t("state.menu"),
+    submenu: [
+      {
+        id: "state.save",
+        label: t("state.save"),
+        enabled: actions.canState ?? false,
+        accelerator: actions.controlAccelerators?.["state.save"],
+        registerAccelerator: false,
+        click: actions.saveState,
+      },
+      {
+        id: "state.load",
+        label: t("state.load"),
+        enabled: actions.canState ?? false,
+        accelerator: actions.controlAccelerators?.["state.load"],
+        registerAccelerator: false,
+        click: actions.loadState,
+      },
+      { type: "separator" },
+      ...Array.from({ length: 10 }, (_, slot) => ({
+        id: `state.slot.${slot}`,
+        label: `${t("state.slot", { slot })} · ${actions.stateSlots?.[slot] ? new Date(actions.stateSlots[slot]!).toLocaleString() : t("state.emptyLabel")}`,
+        type: "radio" as const,
+        checked: (actions.stateSlot ?? 0) === slot,
+        enabled: actions.canState ?? false,
+        click: () => actions.selectStateSlot?.(slot),
+      })),
+    ],
+  };
+}
+
 export function clockMenuTemplate(
-  actions: ScaleActions & {
-    normal: () => void;
-    dock: (corner: DockCorner) => void;
-    clockDock: DockCorner;
-    canInteract: boolean;
-    showChassis: boolean;
-    toggleChassis: () => void;
-    muted: boolean;
-    toggleMute: () => void;
-    quit: () => void;
-  },
+  actions: ScaleActions &
+    StateActions & {
+      normal: () => void;
+      dock: (corner: DockCorner) => void;
+      clockDock: DockCorner;
+      canInteract: boolean;
+      showChassis: boolean;
+      toggleChassis: () => void;
+      muted: boolean;
+      toggleMute: () => void;
+      quit: () => void;
+    },
 ): Item[] {
   return [
     {
@@ -55,6 +99,7 @@ export function clockMenuTemplate(
       enabled: actions.canInteract,
       click: actions.toggleMute,
     },
+    stateMenuTemplate(actions),
     scaleMenuTemplate(actions),
     { type: "separator" },
     { id: "app.quit", label: t("menu.quit"), click: actions.quit },
@@ -93,7 +138,7 @@ export function scaleMenuTemplate(actions: {
 /** Explicit role lists keep Electron's default extra menus out of the product. */
 export function menuTemplate(
   platform: string,
-  actions: {
+  actions: StateActions & {
     open: () => void;
     make: () => void;
     openControls?: () => void;
@@ -180,6 +225,8 @@ export function menuTemplate(
           registerAccelerator: !actions.controlAccelerators,
           click: actions.make,
         },
+        separator,
+        stateMenuTemplate(actions),
         ...(platform === "darwin" ? [] : [separator, quit]),
       ],
     },

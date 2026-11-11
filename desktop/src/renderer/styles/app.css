@@ -562,3 +562,9 @@ main {
     visibility: hidden;
   }
 }
+
+.toast-progress,
+.toast-info,
+.toast-success {
+  color: var(--text);
+}

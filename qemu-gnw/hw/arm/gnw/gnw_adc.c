@@ -235,8 +235,31 @@ static void gnw_adc_init(Object *obj)
     }
 }
 
+static const VMStateDescription vmstate_gnw_adc_unit = {
+    .name = "gnw-adc-unit",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwAdcUnit, 64),
+        VMSTATE_TIMER_PTR(timer, GnwAdcUnit),
+        VMSTATE_END_OF_LIST()
+    },
+};
+static const VMStateDescription vmstate_gnw_adc = {
+    .name = "gnw_adc",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_STRUCT_ARRAY(unit, GnwAdcState, 2, 1, vmstate_gnw_adc_unit, GnwAdcUnit),
+        VMSTATE_UINT32_ARRAY(common, GnwAdcState, 64),
+        VMSTATE_UINT16_ARRAY(chan, GnwAdcState, 20),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_adc_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_adc;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_adc_reset);
 }
 

@@ -1,0 +1,69 @@
+{
+  "qemu": {
+    "qemu": {
+      "micro": 3,
+      "minor": 1,
+      "major": 11
+    },
+    "package": "v11.1.3-1-g586ae80"
+  },
+  "pc": "0x80189f8",
+  "source_mmio": {
+    "ospi_cr": "01034030",
+    "ltdc_gcr": "01000010",
+    "dac1_cr": "01000100",
+    "rcc_cr": "a5c1003f"
+  },
+  "source_dtcm_sha256": "35f7f5bf25878187ce82e68a82807aa586c47c33013a4138ce8c13f13bcd79a6",
+  "source_dtcm_nonzero_bytes": 2621,
+  "savevm": "Error: no block device can store vmstate for snapshot\r\n",
+  "ramblocks": "              Block Name    PSize              Offset               Used              Total                HVA  RO\r\n                ospi-xip   16 KiB  0x00000000001d0000 0x0000000000400000 0x0000000000400000 0x0000000145800000  ro\r\n                axi-sram   16 KiB  0x0000000000090000 0x0000000000100000 0x0000000000100000 0x0000000104458000  rw\r\n             flash-bank2   16 KiB  0x0000000000030000 0x0000000000040000 0x0000000000040000 0x0000000103ae0000  rw\r\n                   flash   16 KiB  0x0000000000010000 0x0000000000020000 0x0000000000020000 0x00000001034e0000  rw\r\n                    dtcm   16 KiB  0x0000000000070000 0x0000000000020000 0x0000000000020000 0x0000000103718000  rw\r\n                ahb-sram   16 KiB  0x0000000000190000 0x0000000000020000 0x0000000000020000 0x0000000103ed4000  rw\r\n                    itcm   16 KiB  0x0000000000000000 0x0000000000010000 0x0000000000010000 0x00000001034cc000  rw\r\n                srd-sram   16 KiB  0x00000000001b0000 0x0000000000008000 0x0000000000008000 0x0000000103434000  rw\r\n                bkp-sram   16 KiB  0x00000000001c0000 0x0000000000004000 0x0000000000004000 0x0000000103504000  rw\r\n                     uid   16 KiB  0x00000000005d0000 0x0000000000004000 0x0000000000004000 0x000000010373c000  ro\r\n",
+  "migration": {
+    "status": "completed",
+    "setup-time": 0,
+    "downtime": 0,
+    "total-time": 2,
+    "ram": {
+      "total": 6029312,
+      "postcopy-requests": 0,
+      "dirty-sync-count": 2,
+      "multifd-bytes": 0,
+      "pages-per-second": 0,
+      "downtime-bytes": 4651462,
+      "page-size": 1024,
+      "remaining": 0,
+      "postcopy-bytes": 0,
+      "mbps": 18666.768,
+      "transferred": 4666692,
+      "dirty-sync-missed-zero-copy": 0,
+      "precopy-bytes": 0,
+      "duplicate": 1393,
+      "dirty-pages-rate": 0,
+      "normal-bytes": 4602880,
+      "normal": 4495
+    }
+  },
+  "elapsed_seconds": 0.031,
+  "state_bytes": 4666692,
+  "serialized_devices": [
+    "timer",
+    "cpu_common",
+    "cpu",
+    "armv7m_nvic",
+    "armv7m_systick",
+    "armv7m",
+    "globalstate"
+  ],
+  "restore_status": {
+    "status": "paused",
+    "running": false
+  },
+  "restored_pc": "0x80189f8",
+  "restored_mmio": {
+    "ospi_cr": "00000000",
+    "ltdc_gcr": "00000000",
+    "dac1_cr": "00000000",
+    "rcc_cr": "25c00000"
+  },
+  "restored_dtcm_matches": true
+}

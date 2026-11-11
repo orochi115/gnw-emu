@@ -382,8 +382,38 @@ static void gnw_cryp_init(Object *obj)
     sysbus_init_irq(SYS_BUS_DEVICE(obj), &s->irq);
 }
 
+static int cryp_state_loaded(void *opaque, int version)
+{
+    GnwCrypState *s = opaque;
+    return s->nin >= 0 && s->nin <= 64 && s->nout >= 0 && s->nout <= 64 &&
+                   s->outpos >= 0 && s->outpos <= s->nout
+               ? 0
+               : -EINVAL;
+}
+static const VMStateDescription vmstate_gnw_cryp = {
+    .name = "gnw_cryp",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = cryp_state_loaded,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwCrypState, 64),
+        VMSTATE_UINT32_ARRAY(in, GnwCrypState, 64),
+        VMSTATE_UINT32_ARRAY(out, GnwCrypState, 64),
+        VMSTATE_INT32(nin, GnwCrypState),
+        VMSTATE_INT32(nout, GnwCrypState),
+        VMSTATE_INT32(outpos, GnwCrypState),
+        VMSTATE_UINT8_ARRAY(h, GnwCrypState, 16),
+        VMSTATE_UINT8_ARRAY(x, GnwCrypState, 16),
+        VMSTATE_UINT8_ARRAY(j0, GnwCrypState, 16),
+        VMSTATE_UINT64(hdr_bytes, GnwCrypState),
+        VMSTATE_UINT64(pay_bytes, GnwCrypState),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_cryp_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_cryp;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_cryp_reset);
 }
 

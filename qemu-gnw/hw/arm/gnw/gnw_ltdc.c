@@ -787,8 +787,48 @@ static void gnw_ltdc_init(Object *obj)
     s->frame_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ltdc_frame_tick, s);
 }
 
+static int ltdc_state_loaded(void *opaque, int version)
+{
+    GnwLtdcState *s = opaque;
+    return s->width > 0 && s->width <= 4096 && s->height > 0 &&
+                   s->height <= 4096 && s->phase >= 0 && s->phase <= 1
+               ? 0
+               : -EINVAL;
+}
+void gnw_ltdc_restore(GnwLtdcState *s)
+{
+    /* The console surface belongs to the host and was not migrated. */
+    qemu_console_resize(s->con, s->width, s->height);
+    ltdc_update_display(s);
+}
+static const VMStateDescription vmstate_gnw_ltdc = {
+    .name = "gnw_ltdc",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = ltdc_state_loaded,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwLtdcState, 128),
+        VMSTATE_UINT32_ARRAY(active, GnwLtdcState, 128),
+        VMSTATE_UINT32_2DARRAY(clut, GnwLtdcState, 2, 256),
+        VMSTATE_UINT32_ARRAY(d2d, GnwLtdcState, 256),
+        VMSTATE_UINT32_ARRAY(d2d_fgclut, GnwLtdcState, 256),
+        VMSTATE_UINT32_ARRAY(d2d_bgclut, GnwLtdcState, 256),
+        VMSTATE_INT32(width, GnwLtdcState),
+        VMSTATE_INT32(height, GnwLtdcState),
+        VMSTATE_INT32(phase, GnwLtdcState),
+        VMSTATE_INT64(frame_start_ns, GnwLtdcState),
+        VMSTATE_INT64(frame_ns, GnwLtdcState),
+        VMSTATE_UINT64(frame_count, GnwLtdcState),
+        VMSTATE_BOOL(rail_3v3, GnwLtdcState),
+        VMSTATE_BOOL(rail_1v8_n, GnwLtdcState),
+        VMSTATE_TIMER_PTR(frame_timer, GnwLtdcState),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_ltdc_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_ltdc;
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = gnw_ltdc_realize;

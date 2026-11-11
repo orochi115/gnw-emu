@@ -284,8 +284,40 @@ static void gnw_gpio_init(Object *obj)
                              GNW_GPIO_PORTS * 16);
 }
 
+static const VMStateDescription vmstate_gnw_port = {
+    .name = "gnw-port",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(moder, GnwGpioPort),
+        VMSTATE_UINT32(otyper, GnwGpioPort),
+        VMSTATE_UINT32(ospeedr, GnwGpioPort),
+        VMSTATE_UINT32(pupdr, GnwGpioPort),
+        VMSTATE_UINT32(odr, GnwGpioPort),
+        VMSTATE_UINT32(lckr, GnwGpioPort),
+        VMSTATE_UINT32_ARRAY(afr, GnwGpioPort, 2),
+        VMSTATE_UINT16(ext_mask, GnwGpioPort),
+        VMSTATE_UINT16(ext_val, GnwGpioPort),
+        VMSTATE_UINT16(last_in, GnwGpioPort),
+        VMSTATE_END_OF_LIST()
+    },
+};
+static const VMStateDescription vmstate_gnw_gpio = {
+    .name = "gnw_gpio",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_STRUCT_ARRAY(port, GnwGpioState, 11, 1, vmstate_gnw_port, GnwGpioPort),
+        VMSTATE_UINT32_ARRAY(exti, GnwGpioState, 64),
+        VMSTATE_UINT32_ARRAY(syscfg, GnwGpioState, 256),
+        VMSTATE_UINT16_ARRAY(last_out, GnwGpioState, 11),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_gpio_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_gpio;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_gpio_reset);
 }
 

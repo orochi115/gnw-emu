@@ -117,3 +117,34 @@ test("per-mode fractional scales, clock preference and placement survive unrelat
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test("existing mappings gain state shortcuts once, without replacing custom mappings", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-state-controls-"));
+  try {
+    const old = defaultControls();
+    old.bindings = old.bindings.filter((b) => !b.target.startsWith("state."));
+    await writeFile(
+      join(root, "settings.json"),
+      JSON.stringify({ formatVersion: 1, controls: old }),
+    );
+    const loaded = await loadSettings(root);
+    expect(
+      loaded.controls.bindings.filter((b) => b.target.startsWith("state."))
+        .length,
+    ).toBe(4);
+    expect(
+      loaded.controls.bindings.filter((b) => !b.target.startsWith("state.")),
+    ).toEqual(old.bindings);
+    loaded.controls.bindings = loaded.controls.bindings.filter(
+      (b) => !b.target.startsWith("state."),
+    );
+    await updateSettings(root, { controls: loaded.controls });
+    expect(
+      (await loadSettings(root)).controls.bindings.some((b) =>
+        b.target.startsWith("state."),
+      ),
+    ).toBe(false);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

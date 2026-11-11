@@ -20,6 +20,10 @@ export const HOTKEY_ACTIONS = [
   { id: "view.chassis" },
   { id: "view.clock" },
   { id: "audio.mute" },
+  { id: "state.save" },
+  { id: "state.load" },
+  { id: "state.previousSlot" },
+  { id: "state.nextSlot" },
   { id: "device.batteryDown" },
   { id: "device.batteryUp" },
   { id: "device.usb" },
@@ -268,6 +272,10 @@ export function defaultControls(
     platform === "darwin" ? "Meta" : "Control",
   ]);
   for (const [code, target] of [
+    ["F5", "state.save"],
+    ["F8", "state.load"],
+    ["F6", "state.previousSlot"],
+    ["F7", "state.nextSlot"],
     ["Minus", "device.batteryDown"],
     ["Equal", "device.batteryUp"],
     ["KeyC", "device.usb"],

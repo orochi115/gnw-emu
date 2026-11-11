@@ -56,7 +56,7 @@ npm run build
 npm run dev
 ```
 
-也可在项目根目录使用 `scripts/run.sh zelda` / `mario` / `FILE.gnw.json`。主窗口通过“文件 → 加载 ROM…”和“制作 ROM…”操作。制作只组合已有的 Flash/SD 镜像，不编译固件。源镜像不修改，新格式存档位于 `UserData/sessions/<id>/`。支持简体中文/英文，`--language=en` 可覆盖。一键原版/dump/SD 命令见 [启动脚本](docs/desktop/launchers.md)，完整说明见 [桌面应用文档](docs/desktop/README.md)。
+也可在项目根目录使用 `scripts/run.sh zelda` / `mario` / `FILE.gnw.json`。主窗口通过“文件 → 加载 ROM…”和“制作 ROM…”操作。制作只组合已有的 Flash/SD 镜像，不编译固件。源镜像不修改，新格式存档位于 `UserData/sessions/<id>/`。即时存档支持 F5 保存、F8 读取及 0–9 槽位，完整恢复 flash；SD 模式不支持，外部 flash 上限 64 MiB。见 [即时存档说明](docs/desktop/savestates.md)。支持简体中文/英文，`--language=en` 可覆盖。一键原版/dump/SD 命令见 [启动脚本](docs/desktop/launchers.md)，完整说明见 [桌面应用文档](docs/desktop/README.md)。
 
 “编辑 → 自定义按键…”可配置共享的键盘、手柄映射、连发和热键，保存到应用 `settings.json`。详细操作见 [自定义按键](docs/desktop/controls.md)。下表为默认键盘配置。
 

@@ -67,6 +67,7 @@ export const settingsSchema = z
       .optional(),
     audio: z.boolean().default(true),
     realtime: z.boolean().default(true),
+    stateHotkeysVersion: z.literal(1).optional(),
     controls: controlsSchema.default(() => defaultControls()),
   })
   .strict();

@@ -52,8 +52,15 @@
 #include "hw/core/qdev-properties-system.h"
 #include "exec/icount.h"
 #include "qemu/timer.h"
+#include "qemu/yank.h"
 #include "ui/input.h"
 #include "gnw.h"
+#include "io/channel-file.h"
+#include "migration/savevm.h"
+#include "migration/qemu-file.h"
+#include "migration/migration.h"
+#include "migration/global_state.h"
+#include "migration/register.h"
 #include "gnw_display.h"
 #include "gnw_session_lock.h"
 
@@ -78,6 +85,7 @@ struct GnwMachineState {
     uint32_t dwt_frozen;        /* CYCCNT while the counter is stopped */
     uint64_t dwt_base;          /* cycles at which CYCCNT was 0 */
 
+    GnwFlashState *flash;
     GnwGpioState *gpio;
     GnwOspiState *ospi;
     GnwLtdcState *ltdc;
@@ -107,7 +115,11 @@ struct GnwMachineState {
     bool usb;
     uint32_t battery_life_min, charge_time_min;
     uint32_t adc_override;      /* debug: raw channel-4 value, 0 = model */
-    double level;               /* percent, fractional */
+    union {
+        double level;
+        uint64_t level_bits;
+    }; /* migration bit representation */
+
     QEMUTimer *bat_timer;
     QEMUTimer *rt_timer;
     int64_t rt_base_v, rt_base_h;
@@ -487,6 +499,27 @@ static SysBusDevice *map_dev(DeviceState *dev, const hwaddr *bases, int n)
 
 static void gnw_write_state(Notifier *n, void *unused);
 
+static const VMStateDescription vmstate_gnw_machine = {
+    .name = "gnw-machine",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32(dwt_ctrl, GnwMachineState),
+        VMSTATE_UINT32(dwt_frozen, GnwMachineState),
+        VMSTATE_UINT64(dwt_base, GnwMachineState),
+        VMSTATE_UINT32(scr, GnwMachineState),
+        VMSTATE_UINT32(battery, GnwMachineState),
+        VMSTATE_BOOL(usb, GnwMachineState),
+        VMSTATE_UINT32(adc_override, GnwMachineState),
+        VMSTATE_UINT64(level_bits, GnwMachineState),
+        VMSTATE_TIMER_PTR(bat_timer, GnwMachineState),
+        VMSTATE_UINT32(buttons, GnwMachineState),
+        VMSTATE_UINT32(keys, GnwMachineState),
+        VMSTATE_BOOL(power_was_pressed, GnwMachineState),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_init(MachineState *machine)
 {
     GnwMachineState *m = GNW_MACHINE(machine);
@@ -524,6 +557,7 @@ static void gnw_init(MachineState *machine)
     dev = qdev_new(TYPE_GNW_FLASH);
     {
         GnwFlashState *fl = GNW_FLASH(dev);
+        m->flash = fl;
         uint8_t *b2 = NULL;
         size_t b2_len = 0;
 
@@ -772,6 +806,7 @@ static void gnw_init(MachineState *machine)
     }
     armv7m_load_kernel(ARM_CPU(first_cpu), NULL, 0, 0);
     gnw_display_start(m->frame_endpoint, &error_fatal);
+    vmstate_register(NULL, 0, &vmstate_gnw_machine, m);
 #undef NVIC
 }
 
@@ -965,8 +1000,119 @@ static void gnw_set_stop_after(Object *obj, Visitor *v, const char *name,
     }
 }
 
+/* State files are local to a session. Reject incompatible geometry before
+ * reset. */
+static char *gnw_state_support(Object *obj, Error **errp)
+{
+    GnwMachineState *m = GNW_MACHINE(obj);
+    if (!m->ospi) {
+        return g_strdup("starting");
+    }
+    if (m->sd && m->sd->blk) {
+        return g_strdup("sd");
+    }
+    return g_strdup(m->ospi->flash_size > 64 * MiB ? "flash-size" : "");
+}
+static void gnw_state_file(Object *obj, const char *path, bool load,
+                           Error **errp)
+{
+    ERRP_GUARD();
+    GnwMachineState *m = GNW_MACHINE(obj);
+    g_autofree char *unsupported = gnw_state_support(obj, errp);
+    if (*unsupported) {
+        error_setg(errp, "Instant states unsupported: %s",
+                   !strcmp(unsupported, "sd") ? "SD image mounted"
+                                              : "flash exceeds 64 MiB");
+        return;
+    }
+    if (!g_path_is_absolute(path)) {
+        error_setg(errp, "State path must be absolute");
+        return;
+    }
+    if (runstate_is_running()) {
+        error_setg(errp, "Pause the VM before saving or loading state");
+        return;
+    }
+    QIOChannelFile *ioc = qio_channel_file_new_path(
+        path, load ? O_RDONLY : O_WRONLY | O_CREAT | O_TRUNC, 0600, errp);
+    if (!ioc) {
+        return;
+    }
+    QEMUFile *f = load ? qemu_file_new_input(QIO_CHANNEL(ioc))
+                       : qemu_file_new_output(QIO_CHANNEL(ioc));
+    object_unref(OBJECT(ioc));
+    uint32_t model = GNW_MACHINE_GET_CLASS(m)->zelda;
+    uint32_t geometry[4] = {model, m->flash->size[0], m->flash->size[1],
+                            m->ospi->flash_size};
+    int ret = 0;
+    if (load) {
+        if (qemu_get_be64(f) != 0x474e575354415431ULL) {
+            error_setg(errp, "Invalid GNW state file");
+            ret = -1;
+        }
+        for (int i = 0; i < 4 && !ret; i++) {
+            if (qemu_get_be32(f) != geometry[i]) {
+                error_setg(errp, "Incompatible GNW state model or flash size");
+                ret = -1;
+            }
+        }
+        if (!ret) {
+            vm_stop(RUN_STATE_RESTORE_VM);
+            qemu_system_reset(SHUTDOWN_CAUSE_SNAPSHOT_LOAD);
+            if (!yank_register_instance(MIGRATION_YANK_INSTANCE, errp)) {
+                qemu_fclose(f);
+                return;
+            }
+            ret = qemu_loadvm_state(f, errp);
+            migration_incoming_state_destroy();
+            if (!ret && (!gnw_ospi_restore(m->ospi, errp) ||
+                         !gnw_flash_restore(m->flash, errp))) {
+                ret = -1;
+            }
+            if (!ret) {
+                gnw_ltdc_restore(m->ltdc);
+                if (m->rt_timer) {
+                    timer_mod(m->rt_timer,
+                              qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+                                  RT_SLICE_NS);
+                }
+                if (m->stop_timer) {
+                    timer_del(m->stop_timer);
+                }
+            }
+        }
+    } else {
+        global_state_store();
+        qemu_put_be64(f, 0x474e575354415431ULL);
+        for (int i = 0; i < 4; i++) {
+            qemu_put_be32(f, geometry[i]);
+        }
+        ret = qemu_savevm_state(f, errp);
+    }
+    if (ret && !*errp) {
+        error_setg(errp, "GNW state operation failed (%d)", ret);
+    }
+    int closed = qemu_fclose(f);
+    if (closed < 0 && !ret) {
+        error_setg_errno(errp, -closed, "State file I/O failed");
+    }
+}
+static void gnw_save_state(Object *obj, const char *path, Error **errp)
+{
+    gnw_state_file(obj, path, false, errp);
+}
+static void gnw_load_state(Object *obj, const char *path, Error **errp)
+{
+    gnw_state_file(obj, path, true, errp);
+}
+
 static void gnw_machine_class_init(ObjectClass *oc, const void *data)
 {
+    object_class_property_add_str(oc, "save-state", NULL, gnw_save_state);
+    object_class_property_add_str(oc, "load-state", NULL, gnw_load_state);
+    object_class_property_add_str(oc, "savestate-support", gnw_state_support,
+                                  NULL);
+
     MachineClass *mc = MACHINE_CLASS(oc);
     static const char * const valid_cpu_types[] = {
         ARM_CPU_TYPE_NAME("cortex-m7"),

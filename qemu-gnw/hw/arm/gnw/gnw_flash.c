@@ -21,6 +21,7 @@
 #include "qapi/error.h"
 #include "hw/core/irq.h"
 #include "gnw.h"
+#include "qapi/error.h"
 
 #define SECTOR_SIZE     (8 * KiB)
 
@@ -297,8 +298,23 @@ static void gnw_flash_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
+static const VMStateDescription vmstate_gnw_flash = {
+    .name = "gnw_flash",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwFlashState, 1024),
+        VMSTATE_INT32_ARRAY(key_step, GnwFlashState, 2),
+        VMSTATE_UINT8_2DARRAY(wbuf, GnwFlashState, 2, 16),
+        VMSTATE_UINT32_ARRAY(waddr, GnwFlashState, 2),
+        VMSTATE_UINT16_ARRAY(wmask, GnwFlashState, 2),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_flash_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_flash;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_flash_reset);
 }
 
@@ -316,3 +332,19 @@ static void gnw_flash_register_types(void)
 }
 
 type_init(gnw_flash_register_types)
+
+bool gnw_flash_restore(GnwFlashState *s, Error **errp)
+{
+    for (int b = 0; b < 2; b++) {
+        memory_region_flush_rom_device(&s->bank[b], 0, s->size[b]);
+        if (s->fd[b] >= 0 &&
+            (pwrite(s->fd[b], memory_region_get_ram_ptr(&s->bank[b]),
+                    s->size[b], 0) != s->size[b] ||
+             fsync(s->fd[b]) < 0)) {
+            error_setg_errno(errp, errno,
+                             "Cannot restore internal flash bank %d", b + 1);
+            return false;
+        }
+    }
+    return true;
+}

@@ -19,6 +19,7 @@
 #include "hw/core/irq.h"
 #include "system/address-spaces.h"
 #include "gnw.h"
+#include "gnw_state.h"
 
 #define XIP_BASE        0x90000000
 
@@ -563,6 +564,7 @@ void gnw_ospi_load(GnwOspiState *s, const uint8_t *data, uint32_t size,
 
     memory_region_init_rom(&s->xip, OBJECT(s), "ospi-xip", s->flash_size,
                            &error_fatal);
+    vmstate_unregister_ram(&s->xip, DEVICE(s));
     memcpy(memory_region_get_ram_ptr(&s->xip), s->flash, s->flash_size);
     sysbus_init_mmio(SYS_BUS_DEVICE(s), &s->xip);
 }
@@ -595,8 +597,95 @@ static void gnw_ospi_init(Object *obj)
     sysbus_init_irq(sbd, &s->irq);
 }
 
+static bool ospi_buffers_save(QEMUFile *f, void *pv, size_t size,
+                              const VMStateField *field, JSONWriter *vmdesc,
+                              Error **errp)
+{
+    GnwOspiState *s = pv;
+    qemu_put_byte(f, s->wbuf != NULL);
+    return gnw_put_blob(f, s->flash, s->flash_size, 64 * 1024 * 1024, errp) &&
+           gnw_put_blob(f, s->fifo, s->fifo_len, 64 * 1024 * 1024, errp) &&
+           gnw_put_blob(f, s->wbuf, s->wbuf ? s->wlen : 0, 64 * 1024 * 1024,
+                        errp);
+}
+static bool ospi_buffers_load(QEMUFile *f, void *pv, size_t size,
+                              const VMStateField *field, Error **errp)
+{
+    GnwOspiState *s = pv;
+    uint8_t *raw = NULL;
+    uint32_t n = 0, w = 0;
+    bool writing = qemu_get_byte(f);
+    if (!gnw_get_blob(f, &raw, &n, s->flash_size, errp)) {
+        return false;
+    }
+    if (n != s->flash_size) {
+        g_free(raw);
+        error_setg(errp, "Flash size mismatch");
+        return false;
+    }
+    memcpy(s->flash, raw, n);
+    g_free(raw);
+    if (!gnw_get_blob(f, &s->fifo, &s->fifo_len, 64 * 1024 * 1024, errp) ||
+        !gnw_get_blob(f, &s->wbuf, &w, 64 * 1024 * 1024, errp)) {
+        return false;
+    }
+    if (s->fifo_pos > s->fifo_len ||
+        (writing &&
+         (s->wlen != w || w > s->wexp || s->wexp > 64 * 1024 * 1024))) {
+        error_setg(errp, "Invalid OSPI transaction");
+        return false;
+    }
+    if (writing) {
+        s->wbuf = g_realloc(s->wbuf, MAX(s->wexp, 1));
+    } else {
+        g_clear_pointer(&s->wbuf, g_free);
+    }
+    return true;
+}
+static const VMStateInfo ospi_buffers = {.name = "ospi-buffers",
+                                         .save = ospi_buffers_save,
+                                         .load = ospi_buffers_load};
+bool gnw_ospi_restore(GnwOspiState *s, Error **errp)
+{
+    xip_refresh(s, 0, s->flash_size);
+    if (s->overlay_path) {
+        int fd = open(s->overlay_path, O_WRONLY);
+        if (fd < 0) {
+            error_setg_errno(errp, errno, "Cannot open flash overlay");
+            return false;
+        }
+        bool ok = pwrite(fd, s->flash, s->flash_size, 0) == s->flash_size &&
+                  fsync(fd) == 0;
+        int e = errno;
+        close(fd);
+        if (!ok) {
+            error_setg_errno(errp, e, "Cannot restore flash overlay");
+            return false;
+        }
+    }
+    return true;
+}
+
+static const VMStateDescription vmstate_gnw_ospi = {
+    .name = "gnw_ospi",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwOspiState, 256),
+        VMSTATE_UINT32_ARRAY(otfdec, GnwOspiState, 256),
+        VMSTATE_UINT8(status, GnwOspiState),
+        VMSTATE_UINT8(config, GnwOspiState),
+        VMSTATE_UINT32(fifo_pos, GnwOspiState),
+        VMSTATE_UINT32(wlen, GnwOspiState),
+        VMSTATE_UINT32(wexp, GnwOspiState),
+        GNW_STATE_BUFFERS(ospi_buffers),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_ospi_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_ospi;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_ospi_reset);
 }
 

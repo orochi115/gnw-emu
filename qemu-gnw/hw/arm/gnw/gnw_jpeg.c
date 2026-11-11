@@ -21,6 +21,7 @@
 #include <setjmp.h>
 #include <jpeglib.h>
 #include "gnw.h"
+#include "gnw_state.h"
 
 #define R_CONFR0    (0x00 / 4)
 #define R_CONFR1    (0x04 / 4)
@@ -496,8 +497,63 @@ static void gnw_jpeg_init(Object *obj)
     s->in = g_malloc(JPEG_MAX_INPUT);
 }
 
+static bool jpeg_buffers_save(QEMUFile *f, void *pv, size_t size,
+                              const VMStateField *field, JSONWriter *vmdesc,
+                              Error **errp)
+{
+    GnwJpegState *s = pv;
+    qemu_put_be64(f, s->parse_pos);
+    qemu_put_be64(f, s->out_pos);
+    return gnw_put_blob(f, s->in, s->in_len, JPEG_MAX_INPUT, errp) &&
+           gnw_put_blob(f, s->out, s->out_len, 64 * 1024 * 1024, errp);
+}
+static bool jpeg_buffers_load(QEMUFile *f, void *pv, size_t size,
+                              const VMStateField *field, Error **errp)
+{
+    GnwJpegState *s = pv;
+    uint32_t n = 0;
+    s->parse_pos = qemu_get_be64(f);
+    s->out_pos = qemu_get_be64(f);
+    if (!gnw_get_blob(f, &s->in, &n, JPEG_MAX_INPUT, errp)) {
+        return false;
+    }
+    s->in_len = n;
+    /* DIR appends into a fixed-capacity input buffer. */
+    s->in = g_realloc(s->in, JPEG_MAX_INPUT);
+    if (!gnw_get_blob(f, &s->out, &n, 64 * 1024 * 1024, errp)) {
+        return false;
+    }
+    s->out_len = n;
+    if (s->parse_pos > s->in_len || s->out_pos > s->out_len) {
+        error_setg(errp, "Invalid JPEG parser state");
+        return false;
+    }
+    return true;
+}
+static const VMStateInfo jpeg_buffers = {.name = "jpeg-buffers",
+                                         .save = jpeg_buffers_save,
+                                         .load = jpeg_buffers_load};
+
+static const VMStateDescription vmstate_gnw_jpeg = {
+    .name = "gnw_jpeg",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwJpegState, 1024),
+        VMSTATE_BOOL(running, GnwJpegState),
+        VMSTATE_BOOL(header_done, GnwJpegState),
+        VMSTATE_BOOL(hpdf, GnwJpegState),
+        VMSTATE_BOOL(input_done, GnwJpegState),
+        VMSTATE_BOOL(eocf, GnwJpegState),
+        VMSTATE_BOOL(in_scan, GnwJpegState),
+        GNW_STATE_BUFFERS(jpeg_buffers),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_jpeg_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_jpeg;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_jpeg_reset);
 }
 

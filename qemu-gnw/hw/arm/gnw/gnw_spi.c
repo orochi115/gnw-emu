@@ -302,8 +302,31 @@ void gnw_spi_connect_dma(GnwSpiState *s, GnwDmaState *dma, int req_rx,
     dma->periph_opaque = s;
 }
 
+static int spi_state_loaded(void *opaque, int version)
+{
+    GnwSpiState *s = opaque;
+    return s->rx_head < 16 && s->rx_len <= 16 ? 0 : -EINVAL;
+}
+static const VMStateDescription vmstate_gnw_spi = {
+    .name = "gnw_spi",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = spi_state_loaded,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwSpiState, 256),
+        VMSTATE_UINT32(sr, GnwSpiState),
+        VMSTATE_UINT8_ARRAY(rx, GnwSpiState, 16),
+        VMSTATE_UINT32(rx_head, GnwSpiState),
+        VMSTATE_UINT32(rx_len, GnwSpiState),
+        VMSTATE_BOOL(running, GnwSpiState),
+        VMSTATE_UINT16(ctsize, GnwSpiState),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_spi_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_spi;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_spi_reset);
 }
 

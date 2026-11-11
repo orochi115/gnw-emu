@@ -15,6 +15,14 @@ import { QmpClient } from "./qmp-client";
 import { InputController } from "./input-controller";
 import { qemuArguments } from "./qemu-command";
 import { readJson } from "./atomic-file";
+import {
+  saveSlot,
+  loadSlot,
+  restoreWithRollback,
+  RollbackError,
+  stateSlotTimes,
+} from "./savestate-store";
+import type { ToastMessage } from "../shared/contracts";
 import { exitStateSchema } from "./schemas";
 export async function deadline<T>(
   promise: Promise<T>,
@@ -53,6 +61,8 @@ export class SessionController extends EventEmitter {
   state: AppState = { status: "idle" };
   private runtime?: Runtime;
   private busy = false;
+  private stateWork?: Promise<void>;
+  private slot = 0;
   private stopPromise?: Promise<void>;
   constructor(
     private options: {
@@ -233,7 +243,14 @@ export class SessionController extends EventEmitter {
           this.options.timeout ?? 10000,
           "frame",
         );
-        this.publish({ ...this.state, status: "running", stage: undefined });
+        this.slot = 0;
+        this.publish({
+          ...this.state,
+          status: "running",
+          stage: undefined,
+          stateSlot: this.slot,
+          stateSlots: await stateSlotTimes(session.directory),
+        });
       } catch (error) {
         if (this.runtime) await this.stop().catch(() => {});
         else {
@@ -262,7 +279,7 @@ export class SessionController extends EventEmitter {
   }
   key(code: string, down: boolean) {
     const runtime = this.runtime;
-    if (!runtime || this.state.status !== "running") return;
+    if (!runtime || this.state.status !== "running" || this.stateWork) return;
     this.options
       .logFor?.("input")
       .debug(
@@ -293,7 +310,8 @@ export class SessionController extends EventEmitter {
   async deviceAction(
     action: "device.batteryDown" | "device.batteryUp" | "device.usb",
   ) {
-    if (!this.runtime || this.state.status !== "running") return;
+    if (!this.runtime || this.state.status !== "running" || this.stateWork)
+      return;
     await this.deviceShortcut(
       action === "device.usb"
         ? "KeyC"
@@ -305,7 +323,8 @@ export class SessionController extends EventEmitter {
   button(bit: number, down: boolean, source: string, runtimeSessionId: string) {
     if (
       this.runtime?.id !== runtimeSessionId ||
-      this.state.status !== "running"
+      this.state.status !== "running" ||
+      this.stateWork
     )
       return;
     this.options
@@ -353,12 +372,143 @@ export class SessionController extends EventEmitter {
       runtimeSessionId: this.runtime?.id,
     };
   }
+  selectStateSlot(slot: number) {
+    if (this.busy || !this.runtime || this.state.status !== "running") return;
+    if (!Number.isInteger(slot) || slot < 0 || slot > 9)
+      throw new Error("Invalid state slot");
+    this.slot = slot;
+    this.publish({ ...this.state, stateSlot: slot });
+    this.toast({
+      code: "state.selected",
+      params: { slot },
+      kind: "info",
+      duration: 3000,
+    });
+  }
+  private toast(message: ToastMessage) {
+    this.emit("toast", message);
+  }
+  instantState(action: "save" | "load"): Promise<void> {
+    if (
+      this.busy ||
+      this.stopPromise ||
+      !this.runtime ||
+      this.state.status !== "running"
+    )
+      return Promise.resolve();
+    this.busy = true;
+    const runtime = this.runtime,
+      slot = this.slot;
+    const work = this.performState(runtime, action, slot).finally(() => {
+      this.busy = false;
+      this.stateWork = undefined;
+      this.publish({ ...this.state, stateOperation: undefined });
+    });
+    this.stateWork = work;
+    return work;
+  }
+  private async performState(
+    runtime: Runtime,
+    action: "save" | "load",
+    slot: number,
+  ) {
+    let resume = false;
+    try {
+      const support = await runtime.qmp.command("qom-get", {
+        path: "/machine",
+        property: "savestate-support",
+      });
+      if (support) {
+        this.toast({
+          code: support === "sd" ? "state.sd" : "state.flashSize",
+          kind: "info",
+          duration: 5000,
+        });
+        return;
+      }
+      const path =
+        action === "load"
+          ? await loadSlot(runtime.session.directory, slot)
+          : undefined;
+      this.publish({ ...this.state, stateOperation: action });
+      this.toast({
+        code: action === "save" ? "state.saving" : "state.loading",
+        params: { slot },
+        kind: "progress",
+      });
+      runtime.input.releaseAll();
+      await runtime.input.flush();
+      const status = await runtime.qmp.command("query-status");
+      await runtime.qmp.command("stop");
+      resume = status.running;
+      const call = (property: string, value: string) =>
+        runtime.qmp.command(
+          "qom-set",
+          { path: "/machine", property, value },
+          120000,
+        );
+      if (action === "save")
+        await saveSlot(runtime.session.directory, slot, (p) =>
+          call("save-state", p),
+        );
+      else
+        await restoreWithRollback(
+          runtime.session.directory,
+          path!,
+          (p) => call("save-state", p),
+          (p) => call("load-state", p),
+        );
+      this.publish({
+        ...this.state,
+        stateSlots: await stateSlotTimes(runtime.session.directory),
+      });
+      await runtime.qmp.command("qom-set", {
+        path: "/machine",
+        property: "buttons",
+        value: 0,
+      });
+      if (resume) {
+        await runtime.qmp.command("cont");
+        resume = false;
+      }
+      this.toast({
+        code: action === "save" ? "state.saved" : "state.loaded",
+        params: { slot },
+        kind: "success",
+        duration: 3000,
+      });
+    } catch (error) {
+      if (error instanceof RollbackError) {
+        resume = false;
+        this.publish({
+          ...this.state,
+          status: "error",
+          ...errorState(new UserError("state.recoveryFailed")),
+        });
+      }
+      this.options.logger.error(
+        { err: error, event: "savestate.failure", action, slot },
+        "Instant state failed",
+      );
+      this.toast({
+        code: error instanceof UserError ? error.code : "state.failed",
+        params:
+          error instanceof UserError ? error.params : { detail: String(error) },
+        kind: "error",
+      });
+    } finally {
+      if (resume) await runtime.qmp.command("cont").catch(() => {});
+    }
+  }
   stop(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     if (!this.runtime) return Promise.resolve();
-    this.stopPromise = this.stopRuntime().finally(() => {
-      this.stopPromise = undefined;
-    });
+    this.stopPromise = (this.stateWork ?? Promise.resolve())
+      .catch(() => {})
+      .then(() => this.stopRuntime())
+      .finally(() => {
+        this.stopPromise = undefined;
+      });
     return this.stopPromise;
   }
   async setMuted(muted: boolean) {

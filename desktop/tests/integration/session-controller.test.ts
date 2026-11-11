@@ -114,3 +114,64 @@ test("startup endpoint failure releases lease and missing exit snapshot is never
     await rm(root, { recursive: true, force: true });
   }
 }, 20000);
+
+test("state slots survive restart, corrupt loads roll back and stop waits for save", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-controller-states-"));
+  const firmware = resolve("../../firmware");
+  const profile = await createProfile(join(root, "game.gnw.json"), {
+    model: "zelda",
+    internalFlash: join(firmware, "internal_flash_backup_zelda.bin"),
+    externalFlash: join(firmware, "flash_backup_zelda.bin"),
+  });
+  const controller = new SessionController({
+    userData: join(root, "data"),
+    qemu: resolve("../build/qemu-system-arm"),
+    logger: createLogManager({
+      appInstanceId: "states",
+      destination: new Writable({
+        write(_c, _e, done) {
+          done();
+        },
+      }),
+    }).child("session"),
+    createDisplay: () => createDisplayReceiver(() => {}),
+  });
+  const messages: any[] = [];
+  controller.on("toast", (message) => messages.push(message));
+  try {
+    await controller.load(profile.path);
+    await controller.instantState("save");
+    expect(messages.at(-1).code).toBe("state.saved");
+    const directory = join(root, "data", "sessions", profile.id);
+    const { loadSlot } = await import("../../src/core/savestate-store");
+    const path = await loadSlot(directory, 0);
+    expect((await readFile(path)).length).toBeGreaterThan(4 * 1024 * 1024);
+    controller.selectStateSlot(1);
+    await controller.instantState("load");
+    expect(messages.at(-1).code).toBe("state.empty");
+    controller.selectStateSlot(0);
+    await controller.instantState("load");
+    expect(messages.at(-1).code).toBe("state.loaded");
+    await controller.stop();
+    await controller.load(profile.path);
+    await controller.instantState("load");
+    expect(messages.at(-1).code).toBe("state.loaded");
+    const { writeFile } = await import("node:fs/promises");
+    const original = await readFile(path);
+    await writeFile(path, original.subarray(0, original.length / 2));
+    await controller.instantState("load");
+    expect(messages.at(-1).kind).toBe("error");
+    expect(controller.state.status).toBe("running");
+    const capture = await controller.probe(join(root, "after.png"));
+    expect(capture.registers).toContain("R00");
+    controller.selectStateSlot(2);
+    const saving = controller.instantState("save");
+    await controller.stop();
+    await saving;
+    expect(controller.state.status).toBe("idle");
+    expect(await loadSlot(directory, 2)).toBeTruthy();
+  } finally {
+    await controller.stop().catch(() => {});
+    await rm(root, { recursive: true, force: true });
+  }
+}, 30000);

@@ -14,6 +14,7 @@
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "gnw.h"
+#include "gnw_state.h"
 
 static uint64_t gnw_regs_read(void *opaque, hwaddr addr, unsigned size)
 {
@@ -90,8 +91,46 @@ static const Property gnw_regs_props[] = {
     DEFINE_PROP_UINT32("size", GnwRegs, size, 0x400),
 };
 
+static bool regs_buffer_save(QEMUFile *f, void *pv, size_t size,
+                             const VMStateField *field, JSONWriter *vmdesc,
+                             Error **errp)
+{
+    GnwRegs *s = pv;
+    return gnw_put_blob(f, s->hash_msg ? s->hash_msg->data : NULL,
+                        s->hash_msg ? s->hash_msg->len : 0, 64 * 1024 * 1024,
+                        errp);
+}
+static bool regs_buffer_load(QEMUFile *f, void *pv, size_t size,
+                             const VMStateField *field, Error **errp)
+{
+    GnwRegs *s = pv;
+    uint8_t *data = NULL;
+    uint32_t len = 0;
+    if (!gnw_get_blob(f, &data, &len, 64 * 1024 * 1024, errp)) {
+        return false;
+    }
+    if (s->hash_msg) {
+        g_byte_array_unref(s->hash_msg);
+    }
+    s->hash_msg = g_byte_array_new_take(data, len);
+    return true;
+}
+static const VMStateInfo regs_buffer = {
+    .name = "hash-input", .save = regs_buffer_save, .load = regs_buffer_load};
+static const VMStateDescription vmstate_gnw_regs = {
+    .name = "gnw_regs",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwRegs, 1024),
+        GNW_STATE_BUFFERS(regs_buffer),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_regs_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_regs;
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = gnw_regs_realize;
@@ -281,17 +320,16 @@ static void crc_reset(GnwRegs *s)
 /* ------------------------------------------------------------------ */
 /* HASH: SHA-1/SHA-224/SHA-256/MD5 over the words written to DIN.       */
 
-static GByteArray *hash_msg;
 
 static void hash_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
 {
     uint32_t cr = s->regs[0];
 
-    if (!hash_msg) {
-        hash_msg = g_byte_array_new();
+    if (!s->hash_msg) {
+        s->hash_msg = g_byte_array_new();
     }
     if (off == 0x00 && (v & (1 << 2))) {        /* CR.INIT */
-        g_byte_array_set_size(hash_msg, 0);
+        g_byte_array_set_size(s->hash_msg, 0);
         s->regs[0] &= ~(1 << 2);
         s->regs[0x24 / 4] &= ~(1 << 1);
     } else if (off == 0x04) {                   /* DIN */
@@ -301,7 +339,7 @@ static void hash_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
         case 1: stl_be_p(b, (v << 16) | (v >> 16)); break;
         default: stl_le_p(b, v); break;         /* 8-bit data (and bit) */
         }
-        g_byte_array_append(hash_msg, b, 4);
+        g_byte_array_append(s->hash_msg, b, 4);
     } else if (off == 0x08 && (v & (1 << 8))) { /* STR.DCAL */
         unsigned nblw = v & 0x1f;
         unsigned algo = extract32(cr, 7, 1) | extract32(cr, 18, 1) << 1;
@@ -309,7 +347,7 @@ static void hash_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
             G_CHECKSUM_SHA1, G_CHECKSUM_MD5, G_CHECKSUM_SHA256,
             G_CHECKSUM_SHA256,
         };
-        guint len = hash_msg->len;
+        guint len = s->hash_msg->len;
         uint8_t digest[32];
         gsize dlen = sizeof(digest);
         GChecksum *ck;
@@ -321,7 +359,7 @@ static void hash_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
             qemu_log_mask(LOG_UNIMP, "hash: SHA-224 not supported\n");
         }
         ck = g_checksum_new(types[algo]);
-        g_checksum_update(ck, hash_msg->data, len);
+        g_checksum_update(ck, s->hash_msg->data, len);
         g_checksum_get_digest(ck, digest, &dlen);
         g_checksum_free(ck);
         for (unsigned i = 0; i < dlen / 4; i++) {
@@ -339,7 +377,7 @@ static void hash_write(GnwRegs *s, hwaddr off, uint32_t old, uint32_t v)
         }
         s->regs[0x08 / 4] &= ~(1 << 8);
         s->regs[0x24 / 4] |= 1 << 1;            /* SR.DCIS */
-        g_byte_array_set_size(hash_msg, 0);
+        g_byte_array_set_size(s->hash_msg, 0);
     }
 }
 

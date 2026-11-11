@@ -168,8 +168,21 @@ static const Property gnw_tim_props[] = {
     DEFINE_PROP_UINT32("width-mask", GnwTimState, width_mask, 0xffff),
 };
 
+static const VMStateDescription vmstate_gnw_tim = {
+    .name = "gnw_tim",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwTimState, 256),
+        VMSTATE_INT64(start_ns, GnwTimState),
+        VMSTATE_BOOL(running, GnwTimState),
+        VMSTATE_TIMER_PTR(timer, GnwTimState),
+        VMSTATE_END_OF_LIST()
+    },
+};
 static void gnw_tim_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_tim;
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     device_class_set_legacy_reset(dc, gnw_tim_reset);
@@ -431,8 +444,23 @@ static void gnw_rtc_init(Object *obj)
     s->initialized = true;
 }
 
+static const VMStateDescription vmstate_gnw_rtc = {
+    .name = "gnw_rtc",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwRtcState, 256),
+        VMSTATE_UINT32_ARRAY(tamp, GnwRtcState, 256),
+        VMSTATE_INT32(rtc_offset, GnwRtcState),
+        VMSTATE_BOOL(initialized, GnwRtcState),
+        VMSTATE_TIMER_PTR(wut_timer, GnwRtcState),
+        VMSTATE_TIMER_PTR(sec_timer, GnwRtcState),
+        VMSTATE_END_OF_LIST()
+    },
+};
 static void gnw_rtc_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_rtc;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_rtc_reset);
 }
 

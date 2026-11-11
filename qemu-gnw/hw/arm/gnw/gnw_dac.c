@@ -159,8 +159,21 @@ static void gnw_dac_init(Object *obj)
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &s->mmio);
 }
 
+static const VMStateDescription vmstate_gnw_dac = {
+    .name = "gnw_dac",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_ARRAY(regs, GnwDacState, 256),
+        VMSTATE_UINT16_ARRAY(dhr, GnwDacState, 2),
+        VMSTATE_UINT16_ARRAY(dor, GnwDacState, 2),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_dac_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_dac;
     device_class_set_legacy_reset(DEVICE_CLASS(klass), gnw_dac_reset);
 }
 

@@ -806,8 +806,49 @@ static void gnw_dma_finalize(Object *obj)
     }
 }
 
+static const VMStateDescription vmstate_gnw_stream = {
+    .name = "gnw-stream",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_INT64(start_ns, GnwDmaStream),
+        VMSTATE_INT64(item_ns, GnwDmaStream),
+        VMSTATE_UINT32(total, GnwDmaStream),
+        VMSTATE_BOOL(half_done, GnwDmaStream),
+        VMSTATE_BOOL(periph, GnwDmaStream),
+        VMSTATE_TIMER_PTR(timer, GnwDmaStream),
+        VMSTATE_END_OF_LIST()
+    },
+};
+static int dma_state_loaded(void *opaque, int version)
+{
+    GnwDmaState *s = opaque;
+    s->pcm_r = s->pcm_fill = 0;
+    if (s->voice) {
+        audio_be_set_active_out(s->audio_be, s->voice, false);
+        audio_be_close_out(s->audio_be, s->voice);
+        s->voice = NULL;
+    }
+    s->voice_rate = s->voice_ch = 0;
+    return 0;
+}
+static const VMStateDescription vmstate_gnw_dma = {
+    .name = "gnw_dma",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .post_load = dma_state_loaded,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT32_2DARRAY(dma, GnwDmaState, 2, 64),
+        VMSTATE_UINT32_ARRAY(dmamux, GnwDmaState, 256),
+        VMSTATE_UINT32_ARRAY(sai, GnwDmaState, 256),
+        VMSTATE_STRUCT_2DARRAY(stream, GnwDmaState, 2, 8, 1, vmstate_gnw_stream, GnwDmaStream),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static void gnw_dma_class_init(ObjectClass *klass, const void *data)
 {
+    DEVICE_CLASS(klass)->vmsd = &vmstate_gnw_dma;
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = gnw_dma_realize;

@@ -24,6 +24,8 @@ subdir('gnw')
 grep -q "^source gnw/Kconfig" "$QEMU/hw/arm/Kconfig" ||
     printf "\nsource gnw/Kconfig\n" >> "$QEMU/hw/arm/Kconfig"
 
+python3 "$ROOT/scripts/qemu-savestate-hook.py" "$QEMU"
+
 # devkitPro and others ship a pkg-config that cannot see Homebrew's glib.
 if [ -x /opt/homebrew/bin/pkg-config ]; then
     export PKG_CONFIG=/opt/homebrew/bin/pkg-config

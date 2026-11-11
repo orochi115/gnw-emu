@@ -2,6 +2,7 @@ import { t } from "../shared/locale";
 import { useEffect, useRef, useState } from "react";
 import type {
   AppState,
+  ToastMessage,
   InputState,
   ViewPreferences,
   WindowState,
@@ -49,6 +50,27 @@ export function App() {
   };
 
   const [error, setError] = useState("");
+  const [toast, setToast] = useState<ToastMessage | null>(null);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const off = window.desktop.onToast((message) => {
+      clearTimeout(timer);
+      setToast((current) =>
+        current?.kind === "error" && message.kind !== "error"
+          ? current
+          : message,
+      );
+      if (message.duration)
+        timer = setTimeout(
+          () => setToast((current) => (current === message ? null : current)),
+          message.duration,
+        );
+    });
+    return () => {
+      off();
+      clearTimeout(timer);
+    };
+  }, []);
   const [preferences, setPreferences] = useState<ViewPreferences>({
     showChassis: true,
   });
@@ -273,6 +295,23 @@ export function App() {
           <div className="loading-overlay" role="status">
             <span className="spinner" />
             <p>{t(`stage.${state.stage}`)}</p>
+          </div>
+        )}
+        {toast && !error && !state.error && (
+          <div
+            role={toast.kind === "error" ? "alert" : "status"}
+            className={`toast toast-${toast.kind}`}
+          >
+            {toast.kind === "progress" && <span className="spinner" />}
+            <span>{t(toast.code, toast.params)}</span>
+            {toast.kind !== "progress" && (
+              <button
+                aria-label={t("app.dismiss")}
+                onClick={() => setToast(null)}
+              >
+                ×
+              </button>
+            )}
           </div>
         )}
         {(error || (state.status === "running" && state.error)) && (

@@ -141,3 +141,27 @@ test("pixel scale menu offers half size and six integers with one checked preset
   items[2].click();
   expect(selected).toEqual([2]);
 });
+
+test("state menu shows ten checked slots, save time and real callbacks", async () => {
+  const { stateMenuTemplate } = await import("../../src/main/menu");
+  initializeLocale("en");
+  const calls: unknown[] = [];
+  const item: any = stateMenuTemplate({
+    stateSlot: 3,
+    canState: true,
+    stateSlots: [null, null, null, "2026-11-11T00:00:00Z"],
+    saveState: () => calls.push("save"),
+    loadState: () => calls.push("load"),
+    selectStateSlot: (slot) => calls.push(slot),
+  });
+  expect(item.submenu.filter((i: any) => i.type === "radio")).toHaveLength(10);
+  expect(item.submenu.find((i: any) => i.id === "state.slot.3")).toMatchObject({
+    checked: true,
+  });
+  expect(
+    item.submenu.find((i: any) => i.id === "state.slot.3").label,
+  ).toContain("2026");
+  item.submenu.find((i: any) => i.id === "state.save").click();
+  item.submenu.find((i: any) => i.id === "state.slot.9").click();
+  expect(calls).toEqual(["save", 9]);
+});

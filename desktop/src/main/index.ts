@@ -106,7 +106,8 @@ function syncControlBlock() {
       shuttingDown ||
       !window.isFocused() ||
       windowMode.transitioning ||
-      ["starting", "stopping"].includes(controller.state.status),
+      ["starting", "stopping"].includes(controller.state.status) ||
+      !!controller.state.stateOperation,
   );
   if (epoch !== controlRouter.epoch) publishInputEpoch();
 }
@@ -131,6 +132,20 @@ async function runControlAction(id: HotkeyAction) {
       break;
     case "view.clock":
       await toggleClock();
+      break;
+    case "state.save":
+      await controller.instantState("save");
+      break;
+    case "state.load":
+      await controller.instantState("load");
+      break;
+    case "state.previousSlot":
+    case "state.nextSlot":
+      controller.selectStateSlot(
+        ((controller.state.stateSlot ?? 0) +
+          (id === "state.nextSlot" ? 1 : 9)) %
+          10,
+      );
       break;
     case "audio.mute":
       await toggleMute();
@@ -478,6 +493,9 @@ async function main() {
     }
     uiEvents.emit("changed");
   });
+  controller.on("toast", (message) => {
+    if (!window.isDestroyed()) window.webContents.send("app.toast", message);
+  });
   controller.on("input", (state) => {
     if (!window.isDestroyed()) window.webContents.send("input.state", state);
     uiEvents.emit("changed");
@@ -548,7 +566,8 @@ function updateMenu() {
     nativeDialog ||
     windowMode?.state.clockMode ||
     windowMode?.transitioning ||
-    ["starting", "stopping"].includes(controller.state.status);
+    ["starting", "stopping"].includes(controller.state.status) ||
+    !!controller.state.stateOperation;
   const menu = Menu.getApplicationMenu();
   for (const id of ["controls.open", "controls.hotkeys"]) {
     const item = menu?.getMenuItemById(id);
@@ -565,6 +584,19 @@ function updateMenu() {
       const item = menu.getMenuItemById(id);
       if (item) item.enabled = !blocked;
     }
+  const statesEnabled = !blocked && controller.state.status === "running";
+  for (const id of ["state.save", "state.load"]) {
+    const item = menu?.getMenuItemById(id);
+    if (item) item.enabled = statesEnabled;
+  }
+  for (let slot = 0; slot < 10; slot++) {
+    const item = menu?.getMenuItemById(`state.slot.${slot}`);
+    if (!item) continue;
+    item.enabled = statesEnabled;
+    const savedAt = controller.state.stateSlots?.[slot];
+    item.label = `${t("state.slot", { slot })} · ${savedAt ? new Date(savedAt).toLocaleString() : t("state.emptyLabel")}`;
+    if ((controller.state.stateSlot ?? 0) === slot) item.checked = true;
+  }
   const recent = menu?.getMenuItemById("file.recent");
   if (recent) {
     recent.enabled = !blocked && recentRoms.entries.length > 0;
@@ -709,10 +741,31 @@ async function toggleClock() {
     updateMenu();
   }
 }
+function stateMenuActions() {
+  return {
+    stateSlot: controller.state.stateSlot ?? 0,
+    stateSlots: controller.state.stateSlots,
+    canState:
+      controller.state.status === "running" &&
+      !controller.state.stateOperation &&
+      !makerOpen &&
+      !controlSettings.opened &&
+      !nativeDialog,
+    controlAccelerators: controlAccelerators(controlSettings.config),
+    saveState: () => {
+      void runControlAction("state.save").catch(showError);
+    },
+    loadState: () => {
+      void runControlAction("state.load").catch(showError);
+    },
+    selectStateSlot: (slot: number) => controller.selectStateSlot(slot),
+  };
+}
 function createMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
       menuTemplate(process.platform, {
+        ...stateMenuActions(),
         openHotkeys: () => {
           void openControlSettings("hotkeys").catch(showError);
         },
@@ -770,6 +823,7 @@ function createClockMenu() {
   if (!windowMode.state.clockMode) return undefined;
   return Menu.buildFromTemplate(
     clockMenuTemplate({
+      ...stateMenuActions(),
       normal: () => {
         void toggleClock().catch(showError);
       },

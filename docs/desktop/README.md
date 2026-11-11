@@ -9,6 +9,7 @@ Electron 游戏主窗口支持加载 `.gnw.json`、将已有 Flash/SD 镜像组�
 - [开发、运行与打包](development.md)
 - [进程边界与生命周期](architecture.md)
 - [JSON 格式及存档](json-format.md)
+- [即时存档、flash 回退与槽位](savestates.md)
 - [UI 自动化与 CLI](automation.md)
 - [日志](logging.md)
 - [像素传输协议](frame-protocol.md)

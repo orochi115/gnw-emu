@@ -30,7 +30,16 @@ export interface WindowState {
 export interface ViewPreferences {
   showChassis: boolean;
 }
+export interface ToastMessage {
+  code: string;
+  params?: Record<string, string | number>;
+  kind: "progress" | "success" | "info" | "error";
+  duration?: number;
+}
 export interface AppState {
+  stateSlot?: number;
+  stateSlots?: (string | null)[];
+  stateOperation?: "save" | "load";
   status: AppStatus;
   stage?: string;
   runtimeSessionId?: string;
@@ -43,6 +52,7 @@ export interface AppState {
   saveUncertain?: boolean;
 }
 export interface DesktopApi {
+  onToast(callback: (value: ToastMessage) => void): () => void;
   controls(): Promise<ControlsSettings>;
   openControls(page?: "buttons" | "hotkeys"): Promise<void>;
   controlsWindow(): Promise<{

@@ -6,6 +6,7 @@ const subscribe = (channel: string, callback: (value: any) => void) => {
   return () => ipcRenderer.removeListener(channel, listener);
 };
 contextBridge.exposeInMainWorld("desktop", {
+  onToast: (cb: (v: unknown) => void) => subscribe("app.toast", cb),
   controls: () => ipcRenderer.invoke("controls.get"),
   openControls: (page = "buttons") => ipcRenderer.invoke("controls.open", page),
   controlsWindow: () => ipcRenderer.invoke("controls.window"),

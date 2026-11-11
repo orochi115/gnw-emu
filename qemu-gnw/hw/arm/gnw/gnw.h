@@ -10,6 +10,7 @@
 
 #include "hw/core/sysbus.h"
 #include "qom/object.h"
+#include "migration/vmstate.h"
 #include "ui/console.h"
 #include "crypto/aes.h"
 #include "qemu/audio.h"
@@ -76,6 +77,8 @@ struct GnwRegs {
     void (*reset_fn)(GnwRegs *s);
     qemu_irq irq;
     void *opaque;
+    GByteArray
+        *hash_msg; /* in-flight HASH input; NULL on other register files */
 };
 
 GnwRegs *gnw_regs_create(const char *name, hwaddr base, uint32_t size,
@@ -389,4 +392,7 @@ struct GnwFlashState {
 void gnw_flash_load(GnwFlashState *s, int b, const uint8_t *data,
                     size_t len, uint32_t size, const char *overlay);
 
+void gnw_ltdc_restore(GnwLtdcState *s);
+bool gnw_ospi_restore(GnwOspiState *s, Error **errp);
+bool gnw_flash_restore(GnwFlashState *s, Error **errp);
 #endif
