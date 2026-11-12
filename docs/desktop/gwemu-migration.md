@@ -179,3 +179,9 @@ npm run test:e2e -- tests/e2e/gwemu-savestates.spec.ts tests/e2e/gwemu-supply.sp
 当前同一干净产物另通过四种实际 DMA/SAI/WAV 音调检查，以及 Mario、Zelda、Flash-only Retro-Go 和 SD SPI1/OSPI 五组复制固件的实际游戏供音。合成主峰误差小于 0.1%；真实稳定段记录客体采样率、AC PCM、SAI 队列与生产/消费，以及虚拟/墙钟推进。OFW 客体为 48003 Hz，Retro-Go 为 48000 Hz，宿主 WAV 均为 48000 Hz。相关原生/设施/静音/SAI 恢复回归 17 项通过；另 opt-in 五固件及三设施负例 8 项通过，无跳过。
 
 本批没有产品或原生改动，不影响真机读写。WAV 后端供音不证明 CoreAudio 扬声器延迟、主观音质或所有核心；当前 gwemu 未映射 realtime=false 偏好，本批未修改限速策略。具体截图、量测、误差与剩余边界见 [音频验收报告](../research/2026-11-12-gwemu-audio.md)。默认仍为 legacy，阶段一退出与完整工具链尚未通过。
+
+## 手柄软件输入验收
+
+现有 Chromium Gamepad API 到当前 gwemu 的标准八键、摇杆死区、键盘/双手柄聚合、断连/重连，以及失焦、设置窗口、暂停/断电/换 ROM 后的释放门禁已通过真实 Electron 回归。恢复时已持有输入不会自动重激活；无电状态下既有手柄 USB 热键可恢复供电并保持暂停。独立原生 QMP/GPIO 边界 9 项、相关 unit 33 项、gwemu Electron 3 项及既有 legacy 手柄 1 项通过，typecheck/build 通过。
+
+本批只新增测试和文档，使用软件 Gamepad API 快照，物理 USB/Bluetooth 手柄兼容性尚未实测。范围、输入证据和失败清理见 [手柄验收报告](../research/2026-11-12-gwemu-gamepad.md)。默认与原产品 session 保留；实时设置和其余迁移退出条件仍须完成。
