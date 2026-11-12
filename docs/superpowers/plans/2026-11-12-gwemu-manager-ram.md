@@ -33,7 +33,9 @@ Files: tests/test_gwemu_manager.py, tests/test_gwemu_manager_firmware.py; extern
 
 ### Task 4: SD wiring and final closeout
 Files: tests/test_gwemu_manager_firmware.py, docs/research/2026-11-12-gwemu-manager-ram.md, docs/desktop/gwemu-migration.md, plan/spec; necessary demonstrated manager SD driver/host error fixes in externals/gnwmanager/Core/Src/FatFs/user_diskio_softspi.c and gnwmanager/gnw.py, plus native SPI files for demonstrated receive availability/consumption defects.
-- [ ] 两种 SD 接线：actual manager ls/read/write/hash/delete 临时文件、chunk 和退出重开，卡及所有原始镜像只挂副本。用独立FAT工具核对卡上文件，区分guest读回与持久化写入；manager驱动逐块CRC/token处理与宿主saved error状态须按真实失败在正确层修复，不能用native虚假Nac延迟掩盖驱动错误。
-- [ ] 明确功能性 NOR/RDP/VBAT 限制，不把 manager boot/flash 当完整工具链。必要 native 变更回归 cold/supply/RTC/softSPI/savestate；桌面切换产物时运行能力预检与相应 GUI。
-- [ ] root 独立复测、最终审查、manifest/SHA/source/原 PID16603/无孤儿进程核对；报告实际 commands 和未验收项。
-- [ ] 已授权 native 发布若有变更；父仓库仅本地提交，默认 legacy。不退休旧库，不实现备份迁移或 UI 会话发现。
+- [x] 两种 SD 接线：actual manager ls/read/write/hash/delete 临时文件、chunk 和退出重开，卡及所有原始镜像只挂副本。用独立FAT工具核对卡上文件，区分guest读回与持久化写入；manager驱动逐块CRC/token处理与宿主saved error状态须按真实失败在正确层修复，不能用native虚假Nac延迟掩盖驱动错误。
+- [x] 明确功能性 NOR/RDP/VBAT 限制，不把 manager boot/flash 当完整工具链。必要 native 变更回归 cold/supply/RTC/softSPI/savestate；桌面切换产物时运行能力预检与相应 GUI。
+- [x] root 独立复测、最终审查、manifest/SHA/source/原 PID16603/无孤儿进程核对；报告实际 commands 和未验收项。
+- [x] 已授权 native 发布若有变更；父仓库仅本地提交，默认 legacy。不退休旧库，不实现备份迁移或 UI 会话发现。
+
+关闭记录：manager公开fork分支固定7a82d653f23b5e3b5802eb4ce1e5076f94aa379b，native公开分支固定ae00b68951ab44b0dffb265e3f61340d735a68e5，远程完整SHA均核对。最终干净产物169原生、197manager/harness（1既有可选fixture跳过）、26复制固件、217桌面、7实际Electron通过；能力预检/typecheck/build通过。最终审查APPROVED，独立23项通过；源10hash不变、仅原legacyPID16603。详细产物SHA、命令及限制见[验收报告](../../research/2026-11-12-gwemu-manager-ram.md)。

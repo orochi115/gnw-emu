@@ -1,7 +1,7 @@
 """gnwmanager subprocess supervision and opt-in actual RAM firmware probes.
 
 Build: GNWMANAGER_PYTHON=python3.13 scripts/build_gnwmanager_acceptance.sh
-Run: GWEMU_MANAGER_TEST=1 GWEMU_BINARY=build/gwemu-savestate/qemu-system-arm \
+Run: GWEMU_MANAGER_TEST=1 GWEMU_BINARY=build/gwemu-manager-ram/qemu-system-arm \
      build/gnwmanager-python/bin/python -m pytest -q tests/test_gwemu_manager.py
 Synthetic probes fail (rather than skip) when an opted-in prerequisite is absent.
 """
@@ -200,7 +200,9 @@ def test_actual_ram_firmware_baseline(tmp_path):
         assert result["registers"]["xpsr"] & (1 << 24)
         assert "xpsrError" not in result["registers"]
         assert result["packetSize"] >= 2 * 4096 + 32
-        assert result["firmwareBytes"] == 49432
+        manifest = json.loads(session.manifest.read_text())
+        assert result["firmwareBytes"] == manifest["artifacts"]["firmware"]["size"]
+        assert result["firmwareSha256"] == manifest["artifacts"]["firmware"]["sha256"]
         assert result["loadedPc"] >= 0x240E6800
         evidence = ROOT / "out/gnwmanager-ram"
         evidence.mkdir(parents=True, exist_ok=True)

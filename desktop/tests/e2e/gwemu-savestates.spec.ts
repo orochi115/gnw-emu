@@ -6,8 +6,8 @@ import { tmpdir } from "node:os";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(resolve("../build/gwemu-savestate/qemu-system-arm")),
-  "Build gwemu-savestate first",
+  !existsSync(resolve("../build/gwemu-manager-ram/qemu-system-arm")),
+  "Build gwemu-manager-ram first",
 );
 test("gwemu hotkeys and menu slots restore repeatedly, paused and off, and survive isolated relaunch", async ({}, testInfo) => {
   test.setTimeout(90000);

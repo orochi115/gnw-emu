@@ -44,7 +44,7 @@ test("runtime identity hashes actual executable and detects replacement before s
 });
 const native =
   process.env.GWEMU_BINARY ??
-  join(process.cwd(), "../build/gwemu-savestate/qemu-system-arm");
+  join(process.cwd(), "../build/gwemu-manager-ram/qemu-system-arm");
 test.skipIf(!existsSync(native))(
   "real preflight proves snapshot access without changing source images and captures actual build",
   async () => {

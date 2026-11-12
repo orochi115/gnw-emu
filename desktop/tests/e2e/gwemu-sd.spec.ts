@@ -10,7 +10,7 @@ const localProfile = resolve(
   "../out/profiles/sd-full_20261104_1021-spi1.gnw.json",
 );
 test.skip(
-  !existsSync(resolve("../build/gwemu-savestate/qemu-system-arm")) ||
+  !existsSync(resolve("../build/gwemu-manager-ram/qemu-system-arm")) ||
     !existsSync(localProfile),
   "Local SD firmware and fixed gwemu build required",
 );

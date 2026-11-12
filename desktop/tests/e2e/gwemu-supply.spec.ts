@@ -7,8 +7,8 @@ import { createHash } from "node:crypto";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(resolve("../build/gwemu-savestate/qemu-system-arm")),
-  "Build gwemu-savestate first",
+  !existsSync(resolve("../build/gwemu-manager-ram/qemu-system-arm")),
+  "Build gwemu-manager-ram first",
 );
 test("desktop supply loss, off reopen, explicit resume and cold startup", async () => {
   test.setTimeout(120000);

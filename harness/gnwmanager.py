@@ -115,7 +115,7 @@ class ManagerSession:
         self.python = Path(python or os.environ.get(
             "GNWMANAGER_PYTHON_ENV", ROOT / "build/gnwmanager-python/bin/python")).absolute()
         self.manifest = Path(manifest or os.environ.get(
-            "GNWMANAGER_MANIFEST", ROOT / "build/gnwmanager-ram-final/gnwmanager-build-manifest.json"))
+            "GNWMANAGER_MANIFEST", ROOT / "build/gnwmanager-ram-release/gnwmanager-build-manifest.json"))
         with socket.socket() as reservation:
             reservation.bind(("127.0.0.1", 0))
             self.port = reservation.getsockname()[1]

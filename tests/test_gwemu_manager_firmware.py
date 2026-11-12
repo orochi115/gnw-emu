@@ -1,6 +1,9 @@
 """Actual RAM manager Flash acceptance on synthetic and copied real firmware."""
 import json
 import shutil
+import hashlib
+import random
+import subprocess
 
 import pytest
 
@@ -90,3 +93,55 @@ def test_copied_firmware_actual_restore_then_application_start(tmp_path, name):
             assert result["appPc"] >= 0x08000000
             evidence(f"flash-real-{name}", result)
         # OFW may save after restart; the restored hashes above precede execution.
+
+
+@REAL
+@pytest.mark.parametrize("wiring", ["spi1", "ospi"])
+def test_actual_sd_file_api_read_write_delete_and_reopen(tmp_path, wiring):
+    source = ROOT / "out/sd/sdcard.img"
+    if not source.exists():
+        pytest.skip("local real SD card image absent")
+    assert all(shutil.which(tool) for tool in ("mtype", "mdir")), "install mtools for independent FAT acceptance"
+    small = tmp_path / "gwm-sm.bin"
+    large = tmp_path / "gwm-lg.bin"
+    small.write_bytes(random.Random(20261113).randbytes(1037))
+    large.write_bytes(random.Random(20261114).randbytes(270336))
+    card = tmp_path / "card.img"
+    payloads = [small, large]
+    results = []
+    with SourceGuard([source]):
+        shutil.copyfile(source, card)
+        for phase in ("write", "verify", "delete"):
+            machine = Native(tmp_path, f",sd-wiring={wiring}")
+            machine.args += ["-drive", f"if=sd,format=raw,file={card}"]
+            with ManagerSession(tmp_path, native=machine, source_paths=[source]) as session:
+                result = session.run("sd", {"phase": phase, "payloads": [str(p) for p in payloads]})
+                assert result["status"] == "IDLE"
+                assert result["missingDirectoryError"] == "BAD_SD_DIR"
+            independent = []
+            directory = subprocess.run(["mdir", "-i", str(card) + "@@1M", "::/"],
+                                       capture_output=True, timeout=30)
+            assert directory.returncode == 0, directory.stderr
+            for path in payloads:
+                read = subprocess.run(["mtype", "-i", str(card) + "@@1M", "::/" + path.name],
+                                      capture_output=True, timeout=30)
+                if phase == "delete":
+                    assert read.returncode != 0 and not read.stdout
+                else:
+                    assert read.returncode == 0, read.stderr
+                    assert read.stdout == path.read_bytes()
+                independent.append({"name": path.name, "exit": read.returncode,
+                                    "bytes": len(read.stdout),
+                                    "sha256": hashlib.sha256(read.stdout).hexdigest()})
+            results.append({**result, "independentFat": independent})
+        evidence(f"sd-actual-{wiring}", {"phases": results, "sourceSha256": digest(source),
+                                       "cardCopySha256": digest(card)})
+
+
+@REAL
+@pytest.mark.parametrize("wiring", ["spi1", "ospi"])
+def test_actual_no_card_directory_error_is_preserved_after_idle(tmp_path, wiring):
+    with ManagerSession(tmp_path, native=Native(tmp_path, f",sd-wiring={wiring}")) as session:
+        result = session.run("sd-no-card", budget=240)
+        assert result["error"] == "BAD_SD_FS_MOUNT"
+        assert result["statusAfterCleanup"] == "IDLE"

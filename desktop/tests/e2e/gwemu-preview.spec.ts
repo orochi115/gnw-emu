@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(resolve("../build/gwemu-savestate/qemu-system-arm")),
+  !existsSync(resolve("../build/gwemu-manager-ram/qemu-system-arm")),
   "Build the fixed gwemu desktop kernel first",
 );
 test("gwemu renders in the real desktop, handles input and mute, changes ROM and closes", async () => {

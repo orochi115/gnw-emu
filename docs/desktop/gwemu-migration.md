@@ -1,11 +1,11 @@
 # gwemu 迁移实验
 
-当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID、电量/USB 控制和正常退出持久化。电池连接状态、断电 session、暂停/继续/冷启动，以及 host/fixed RTC、固件校时及暖复位保留已验收。完整即时存档已通过原生、桌面与 Electron 验收，规范/质量及最终实现复审通过；管理工具尚待验收。
+当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID、电量/USB 控制和正常退出持久化。电池连接状态、断电 session、暂停/继续/冷启动，以及 host/fixed RTC、固件校时及暖复位保留已验收。完整即时存档已通过原生、桌面与 Electron 验收。RAM 管理固件的实际 Flash、HASH、恢复启动及两种 SD 接线已通过规格和质量审查；桌面现在使用包含 SPI 接收队列修复的干净产物，关闭记录见 [RAM 管理固件报告](../research/2026-11-12-gwemu-manager-ram.md)。完整工具链尚未验收。
 
 ## 来源与构建
 
 - 上游：`slash-proc/gwemu`，`gnw-h7b0` 基线 `3bfce5fd26a402660a8526b3a7ffc92048c3966a`，gwemu v0.0.29 / QEMU 11.0.2。
-- 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，当前存档产物固定 `830192d221a70f2dff5fc466ac5d3c3c74bca584`，公开 gnw-emu 分支已发布并核对该 SHA；前一 RTC 产物为 `60c313344b2747cb99a64bedfe958295bb575d11`；此前软件 SPI、冷循环和原生供电批次的来源见对应研究报告。首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
+- 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，当前 RAM 管理固件修复产物固定 `ae00b68951ab44b0dffb265e3f61340d735a68e5`，已公开发布并核对远程完整 SHA；此前已发布的存档产物为 `830192d221a70f2dff5fc466ac5d3c3c74bca584`，RTC 产物为 `60c313344b2747cb99a64bedfe958295bb575d11`；此前软件 SPI、冷循环和供电批次来源见对应研究报告。首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
 - 集成修复：初始化解锁 baseline 时只读取实际 NOR 容量，缺失尾部填 `0xff`；保留原 sidecar 长度。原来的 Zelda baseline 长度超过 Mario 1 MiB 映射，会阻塞初始化。
 - `patches/gwemu/0001-limit-unlock-baseline-to-flash-capacity.patch` 是修复的审查副本，代码已在固定提交中；构建不向源码注入补丁。
 
@@ -16,10 +16,10 @@
 ```sh
 git submodule sync -- externals/gwemu
 git submodule update --init externals/gwemu
-GWEMU_BUILD_DIR=build/gwemu-savestate sh scripts/build_gwemu.sh
+GWEMU_BUILD_DIR=build/gwemu-manager-ram sh scripts/build_gwemu.sh
 ```
 
-默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-savestate`，此前产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
+默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-manager-ram`，此前产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
 
 `gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、补丁审查副本哈希、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
 
@@ -50,7 +50,7 @@ npm run build:cli
 node dist-cli/compare-kernels.js \
   --profile ../profiles/mario.gnw.json \
   --legacy ../build/qemu-system-arm \
-  --gwemu ../build/gwemu-savestate/qemu-system-arm \
+  --gwemu ../build/gwemu-manager-ram/qemu-system-arm \
   --output ../out/gwemu-my-mario-run \
   --seconds 3
 ```
@@ -70,9 +70,9 @@ node dist-cli/compare-kernels.js \
 ## 回归检查
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-savestate/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py tests/test_gwemu_supply.py tests/test_gwemu_rtc.py
+GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py tests/test_gwemu_supply.py tests/test_gwemu_rtc.py
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-savestate/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-savestate/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-supply.spec.ts
@@ -100,7 +100,7 @@ cd desktop
 npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts
 ```
 
-本地固件验收需要 SD profile、对应 ELF/nm 和 mtools；所有镜像先复制，检查挂载标志、接线类型、NES core 身份和固件保存文件，并核对源镜像哈希。原生协议测试和桌面会话测试另覆盖块写入/停止/重开。GPIO 桥增加一字节响应延迟，保留普通字节边界 CS 间隔的待发响应；部分字节取消不保证任意中途命令恢复。真实卡供电和管理工具仍待后续验收；桌面完整即时存档已完成后续验收。详见 [SD 接线实测报告](../research/2026-11-12-gwemu-softspi-sd.md)。
+本地固件验收需要 SD profile、对应 ELF/nm 和 mtools；所有镜像先复制，检查挂载标志、接线类型、NES core 身份和固件保存文件，并核对源镜像哈希。原生协议测试和桌面会话测试另覆盖块写入/停止/重开。GPIO 桥增加一字节响应延迟，保留普通字节边界 CS 间隔的待发响应；部分字节取消不保证任意中途命令恢复。真实卡供电仍未验收；后续 manager SD API 验证见下文 RAM 管理固件批次；桌面完整即时存档已完成后续验收。详见 [SD 接线实测报告](../research/2026-11-12-gwemu-softspi-sd.md)。
 
 ## 原生冷循环验收
 
@@ -130,7 +130,7 @@ gwemu 隔离 session 保存 `batteryPresent`，旧元数据缺省 true，legacy 
 
 ```sh
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-savestate/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-savestate/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts tests/e2e/automation-ui.spec.ts tests/e2e/main-window.spec.ts
@@ -145,23 +145,31 @@ npm run test:e2e -- tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.
 完整冷启动、最后供电来源丢失/恢复和 BDRST 清除日历并重新初始化。USB 供电下拔电池不会清除 RTC。固件执行后可自行校时：两组 patched OFW 在备份丢失后设置 2021-01-01 12:00，模型允许该写入。session.rtc 是启动配置，固定 session 重开回到配置初值，host 重开从当前宿主时间开始。未模拟物理 VBAT、振荡器停振或掉电后的 RTC 能量来源。
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-savestate/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc.py
-GNW_FIRMWARE_RTC_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-savestate/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc_firmware.py
+GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc.py
+GNW_FIRMWARE_RTC_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc_firmware.py
 ```
 
 后者需要四组本地镜像，始终挂载副本并在 finally 检查源哈希。gwemu 验收 Retro-Go bank2，legacy 对照沿用既有 OFW 入口；启动后执行忠实 INIT 校时序列，不声称已自动操作固件的整个校时 UI。旧 supply 产物缺少新 RTC 属性时，QEMU 明确拒绝启动。默认内核仍为 legacy；后续存档批次已补齐 RTC 恢复，具体 RTC 基础证据与边界见 [RTC 报告](../research/2026-11-12-gwemu-rtc.md)。
 
 ## 完整即时存档
 
-当前 savestate 产物补齐文件映射 Flash、供电/启动控制、RTC、JPEG、LTDC、OTFDEC 和 SAI 的恢复。gwemu 使用 `states-gwemu/` v2 和实际可执行文件 SHA；legacy `states/` v1 保留，不能跨内核或跨构建读取。读取回退当前 session 的完整 Flash，源 ROM 保持不变。无 SD、外部 Flash 不超过 64 MiB 和默认非 timing 模式的边界保留。
+当前产物保留完整的文件映射 Flash、供电/启动控制、RTC、JPEG、LTDC、OTFDEC 和 SAI 恢复，并增加 SPI 接收队列状态。gwemu 使用 `states-gwemu/` v2 和实际可执行文件 SHA；legacy `states/` v1 保留，不能跨内核或跨构建读取。读取回退当前 session 的完整 Flash，源 ROM 保持不变。无 SD、外部 Flash 不超过 64 MiB 和默认非 timing 模式的边界保留。
 
 暂停/无电源读取不会发宿主按键事件，也不会自动继续。恢复失败后的临时恢复点保留；无法回滚或设备状态未知时禁止继续，关闭清理进程并报告保存不确定。规范及质量审查已经通过，桌面全套 217 项通过，typecheck/build 通过；七组真实 Electron 回归通过，包含暂停/断电 F5/F8 和 USB 热键；最终实现复审已通过。
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-savestate/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate.py tests/test_gwemu_savestate_runtime.py tests/test_gwemu_savestate_peripherals.py
-GNW_FIRMWARE_STATE_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-savestate/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate_firmware.py
+GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate.py tests/test_gwemu_savestate_runtime.py tests/test_gwemu_savestate_peripherals.py
+GNW_FIRMWARE_STATE_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate_firmware.py
 cd desktop
 npm run test:e2e -- tests/e2e/gwemu-savestates.spec.ts tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts tests/e2e/automation-ui.spec.ts tests/e2e/main-window.spec.ts tests/e2e/savestates.spec.ts
 ```
 
-详细来源、原生真实固件验证及 NOR 模型限制见 [存档验收报告](../research/2026-11-12-gwemu-savestate.md)，用户操作与失败恢复见 [即时存档](savestates.md)。gnwmanager RAM 固件及工具链全流程尚未验收，默认内核和旧仓库退出条件不变。
+详细来源、原生真实固件验证及 NOR 模型限制见 [存档验收报告](../research/2026-11-12-gwemu-savestate.md)，用户操作与失败恢复见 [即时存档](savestates.md)。后续 gnwmanager RAM 固件、Flash 与 SD 的实际验证见 [RAM 管理固件报告](../research/2026-11-12-gwemu-manager-ram.md)。工具链全流程尚未验收，默认内核和旧仓库退出条件不变。
+
+## RAM 管理固件验收
+
+使用实际 gnwmanager/GDBBackend 和源码构建 RAM 固件，在合成1/4/64 MiB及Mario/Zelda/Flash-only Retro-Go副本上验证 IDLE、容量、HASH、三个Flash bank擦写和恢复启动。拒绝越界请求发生在邮箱提交前；内部program按8192-byte扇区，显式whole-chip语义保留。两种SD接线实际列目录、写入/读回270336-byte分块文件、重开校验和删除，另用独立FAT工具核对持久化。
+
+本轮必要修复分别是manager寄存器/传输和范围验证、软件SPI读驱动逐块CRC/token处理、宿主保存目录错误，以及原生SPI1有界16-byte接收FIFO、数量/消费/IRQ恢复及VMState版本兼容。实际 Retro-Go 缓存 SR 后先写下一字节的行为需要保留未读字节顺序；没有用模拟器虚假等待字节迎合错误驱动。最终干净产物原生169项、copied真实固件26项（含供电输入复验）、manager及父harness197项通过，另有1项既有可选fixture跳过。桌面切换到新产物后，供电/存档能力预检、217项桌面测试、typecheck/build和七组实际Electron回归全部通过。此前savestate产物保留用于对照，不覆盖旧产物或槽位。
+
+验收入口只连接显式创建的临时实例，不能发现或接管当前产品会话。Flash完整操作含应用观察受父进程180秒总期限，SD每个完整API阶段240秒；timeout或错误仍清理worker/native并检查源哈希。专用构建/Python环境、命令、候选SHA和范围限制见上述报告。备份迁移、UI会话入口、调试器交接及RDP/选项字节保护转换仍属于后续工作。

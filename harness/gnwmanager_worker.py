@@ -253,8 +253,65 @@ def verify_persistence(_backend, gnw, parameters):
     return {"status": gnw._get_status(), "persistedRegions": len(parameters["observations"])}
 
 
+def sd_acceptance(_backend, gnw, parameters):
+    """Use actual file APIs; independent FAT verification is done after exit."""
+    from gnwmanager.gnw import DataError
+
+    gnw.start_gnwmanager()
+    gnw.wait_for_idle(timeout=5)
+    phase = parameters["phase"]
+    listing = gnw.sd_list_dir("/")
+    try:
+        gnw.sd_list_dir("/gwemu-manager-nonexistent-directory")
+    except DataError as error:
+        missing_error = str(error)
+        assert missing_error == "BAD_SD_DIR"
+    else:
+        raise AssertionError("missing SD directory was reported as a successful listing")
+    assert gnw.sd_list_dir("/") == listing  # Release/IDLE after error is recoverable.
+    files = []
+    for host_path in parameters["payloads"]:
+        path = Path(host_path)
+        data = path.read_bytes()
+        target = "/" + path.name
+        if phase == "write":
+            before = gnw.context_counter
+            gnw.sd_write_file(target, data)
+            contexts = gnw.context_counter - before
+            assert contexts >= (len(data) + (256 << 10) - 1) // (256 << 10)
+        else:
+            contexts = 0
+        if phase == "delete":
+            gnw.sd_unlink(target)
+            assert path.name.lower() not in gnw.sd_list_dir("/").lower()
+            readback_hash = None
+        else:
+            assert path.name.lower() in gnw.sd_list_dir("/").lower()
+            actual = gnw.sd_read_file(target)
+            assert actual == data, f"SD readback differs for {target}"
+            readback_hash = hashlib.sha256(actual).hexdigest()
+        files.append({"name": target, "bytes": len(data), "sha256": hashlib.sha256(data).hexdigest(),
+                      "readbackSha256": readback_hash, "writeContexts": contexts})
+    return {"phase": phase, "status": gnw._get_status(), "missingDirectoryError": missing_error,
+            "files": files, "directory": gnw.sd_list_dir("/")}
+
+
+def sd_no_card(_backend, gnw, _parameters):
+    from gnwmanager.gnw import DataError
+
+    gnw.start_gnwmanager()
+    try:
+        gnw.sd_list_dir("/")
+    except DataError as error:
+        assert str(error) == "BAD_SD_FS_MOUNT"
+        assert gnw._get_status() == "IDLE"
+        return {"error": str(error), "statusAfterCleanup": "IDLE"}
+    raise AssertionError("no-card mount failure was returned as a successful empty directory")
+
+
 OPERATIONS = {"baseline": baseline, "stack-selection": stack_selection, "unpowered": unpowered,
               "flash": flash_acceptance, "verify-persistence": verify_persistence,
+              "sd": sd_acceptance, "sd-no-card": sd_no_card,
               "application-observation": application_observation}
 
 
