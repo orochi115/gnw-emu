@@ -23,6 +23,11 @@ def pytest_collection_modifyitems(config, items):
     if not QEMU.exists():
         skip = pytest.mark.skip(reason="build/qemu-system-arm missing, run scripts/build.sh")
         for item in items:
+            # Manager acceptance owns its independent gwemu prerequisite. An
+            # opted-in synthetic probe must fail if it is missing, even on a
+            # machine that has never built the legacy emulator.
+            if item.path.name.startswith("test_gwemu_manager"):
+                continue
             item.add_marker(skip)
 
 
