@@ -34,7 +34,11 @@ def receive(sock, length):
 
 
 class Native:
-    def __init__(self, directory, machine="", globals=(), audio="none,id=snd0"):
+    def __init__(self, directory, machine="", globals=(), audio="none,id=snd0", environment=None):
+        self.environment = dict(environment or {})
+        self.stderr_output = b""
+        self.stderr_path = None
+        self.stderr_handle = None
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
         self.internal = self.directory / "bank1.bin"
@@ -63,14 +67,17 @@ class Native:
 
     def __enter__(self):
         try:
+            if self.stderr_path:
+                self.stderr_handle = Path(self.stderr_path).open("wb")
             self.process = subprocess.Popen(
-                self.args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                env={k: v for k, v in os.environ.items()
-                     if not k.startswith(("GNW_", "GWEMU_"))})
+                self.args, stdout=subprocess.DEVNULL,
+                stderr=self.stderr_handle if self.stderr_handle else subprocess.PIPE,
+                env={**{k: v for k, v in os.environ.items()
+                        if not k.startswith(("GNW_", "GWEMU_"))}, **self.environment})
             deadline = time.monotonic() + 5
             while not self.qmp_path.exists() or not self.qtest_path.exists():
                 if self.process.poll() is not None:
-                    raise AssertionError("native startup failed: " + self.process.stderr.read().decode())
+                    raise AssertionError("native startup failed: " + self.startup_stderr())
                 if time.monotonic() > deadline:
                     raise AssertionError("native startup timed out")
                 time.sleep(.01)
@@ -82,7 +89,7 @@ class Native:
                     break
                 except ConnectionRefusedError:
                     if self.process.poll() is not None:
-                        raise AssertionError("native startup failed: " + self.process.stderr.read().decode())
+                        raise AssertionError("native startup failed: " + self.startup_stderr())
                     if time.monotonic() > deadline:
                         raise AssertionError("native QMP connection timed out")
                     time.sleep(.01)
@@ -97,6 +104,11 @@ class Native:
         except BaseException:
             self.__exit__(None, None, None)
             raise
+
+    def startup_stderr(self):
+        if self.stderr_path:
+            return Path(self.stderr_path).read_text()
+        return self.process.stderr.read().decode()
 
     def command(self, name, arguments=None):
         self.serial += 1
@@ -148,8 +160,12 @@ class Native:
         for item in (self.stream, self.test_stream, self.qmp, self.qtest):
             if item:
                 item.close()
-        if self.process and self.process.stderr:
+        if self.process and self.process.stderr and not self.process.stderr.closed:
+            self.stderr_output = self.process.stderr.read()
             self.process.stderr.close()
+        if self.stderr_handle and not self.stderr_handle.closed:
+            self.stderr_handle.close()
+            self.stderr_output = Path(self.stderr_path).read_bytes()
         self.sockets.cleanup()
 
 

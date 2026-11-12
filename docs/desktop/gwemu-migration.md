@@ -187,3 +187,5 @@ npm run test:e2e -- tests/e2e/gwemu-savestates.spec.ts tests/e2e/gwemu-supply.sp
 现有 Chromium Gamepad API 到当前 gwemu 的标准八键、摇杆死区、键盘/双手柄聚合、断连/重连，以及失焦、设置窗口、暂停/断电/换 ROM 后的释放门禁已通过真实 Electron 回归。恢复时已持有输入不会自动重激活；无电状态下既有手柄 USB 热键可恢复供电并保持暂停。独立原生 QMP/GPIO 边界 9 项、相关 unit 33 项、gwemu Electron 3 项及既有 legacy 手柄 1 项通过，typecheck/build 通过。
 
 本批只新增测试和文档，使用软件 Gamepad API 快照，物理 USB/Bluetooth 手柄兼容性尚未实测。范围、输入证据和失败清理见 [手柄验收报告](../research/2026-11-12-gwemu-gamepad.md)。默认与原产品 session 保留；实时设置和其余迁移退出条件仍须完成。
+
+后续 [CoreAudio 回调验收](../research/2026-11-12-gwemu-coreaudio.md) 已覆盖 macOS 实际输出缓冲中的合成音调、静音、暂停/继续、读档音频恢复，以及五组实际游戏副本。使用桌面默认后端参数，扬声器设备配置前后不变；不采集麦克风或系统混音。通过范围为提交给设备回调的 PCM，不证明扬声器声学音质/端到端延迟、并发其它音频流、设备切换或全部迁移退出。默认仍为 legacy。

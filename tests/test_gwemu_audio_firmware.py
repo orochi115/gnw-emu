@@ -39,10 +39,13 @@ def run_capture(command, directory, *, env, budget):
     checkpoints = directory / "checkpoints.jsonl"
     checkpoints.write_text("")
     observations = []
-    started = time.monotonic()
+    started_ns = time.monotonic_ns()
+    started = started_ns / 1e9
     with (directory / "native.log").open("wb") as output:
         process = subprocess.Popen(command, stdout=output, stderr=output, env=env)
         try:
+            (directory / "process.json").write_text(json.dumps({"nativePid": process.pid,
+                "startedHostNs": started_ns, "args": command}, indent=2) + "\n")
             while True:
                 lines = checkpoints.read_text().splitlines(keepends=True)
                 complete = [line for line in lines if line.endswith("\n")]
@@ -59,7 +62,8 @@ def run_capture(command, directory, *, env, budget):
                                              "wavBytes": (directory / "game.wav").stat().st_size
                                              if (directory / "game.wav").exists() else 0})
                     assert process.returncode == 0, (directory / "native.log").read_text()[-3000:]
-                    return {"nativePid": process.pid, "wallSeconds": time.monotonic() - started,
+                    return {"nativePid": process.pid, "startedHostNs": started_ns,
+                            "wallSeconds": time.monotonic() - started,
                             "checkpoints": observations}
                 if time.monotonic() - started >= budget:
                     raise TimeoutError(f"native {process.pid} exceeded total deadline {budget}s")
