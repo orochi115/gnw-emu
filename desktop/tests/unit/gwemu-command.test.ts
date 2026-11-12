@@ -117,3 +117,19 @@ test.each(["spi1", "ospi", undefined] as const)(
     }
   },
 );
+
+test.each(["host", "2026-01-01T09:00:00"])(
+  "RTC %s enables clock selection, guest setting and warm-reset retention",
+  (rtc) => {
+    const args = gwemuArguments(profile, { ...session, rtc }, endpoints, sizes);
+    expect(args).toContain("gnw-h7b0-rtc.use-rtc-clock=on");
+    expect(args).toContain("gnw-h7b0-rtc.preserve-calendar=on");
+    expect(args).toContain("gnw-h7b0-rtc.sync-host=off");
+    if (rtc === "host") {
+      expect(args).toContain("base=localtime");
+      expect(
+        args.some((arg) => arg.startsWith("gnw-h7b0-rtc.initial-epoch=")),
+      ).toBe(false);
+    }
+  },
+);

@@ -74,6 +74,12 @@ export function gwemuArguments(
       : "none,id=snd0",
     "-global",
     "gnw-h7b0-sai1.audiodev=snd0",
+    "-global",
+    "gnw-h7b0-rtc.use-rtc-clock=on",
+    "-global",
+    "gnw-h7b0-rtc.preserve-calendar=on",
+    "-global",
+    "gnw-h7b0-rtc.sync-host=off",
   ];
   if (endpoints.gdbSocket)
     args.push(

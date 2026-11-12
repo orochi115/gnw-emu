@@ -14,7 +14,7 @@ import { createDisplayReceiver } from "../../src/display/receiver";
 import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
-  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-supply/qemu-system-arm",
+  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-rtc/qemu-system-arm",
 );
 test.skipIf(!existsSync(binary))(
   "gwemu controller isolates data, preserves active ROM on unsupported input and stops cleanly",

@@ -1,11 +1,11 @@
 # gwemu 迁移实验
 
-当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID、电量/USB 控制和正常退出持久化。本批接入电池连接状态、断电 session 与暂停/继续/冷启动；完整即时存档和管理工具仍待后续验收。
+当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID、电量/USB 控制和正常退出持久化。已接入电池连接状态、断电 session 与暂停/继续/冷启动；本批补齐 host/fixed RTC、固件校时及暖复位保留；完整即时存档和管理工具仍待后续验收。
 
 ## 来源与构建
 
 - 上游：`slash-proc/gwemu`，`gnw-h7b0` 基线 `3bfce5fd26a402660a8526b3a7ffc92048c3966a`，gwemu v0.0.29 / QEMU 11.0.2。
-- 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，当前桌面供电产物固定 `eabbd8cc1476722a6f8d8e981189a9aede99d917`；此前软件 SPI、冷循环和原生供电批次的来源见对应研究报告。首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
+- 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，当前桌面 RTC 产物固定 `60c313344b2747cb99a64bedfe958295bb575d11`；此前软件 SPI、冷循环和原生供电批次的来源见对应研究报告。首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
 - 集成修复：初始化解锁 baseline 时只读取实际 NOR 容量，缺失尾部填 `0xff`；保留原 sidecar 长度。原来的 Zelda baseline 长度超过 Mario 1 MiB 映射，会阻塞初始化。
 - `patches/gwemu/0001-limit-unlock-baseline-to-flash-capacity.patch` 是修复的审查副本，代码已在固定提交中；构建不向源码注入补丁。
 
@@ -16,10 +16,10 @@
 ```sh
 git submodule sync -- externals/gwemu
 git submodule update --init externals/gwemu
-GWEMU_BUILD_DIR=build/gwemu-supply sh scripts/build_gwemu.sh
+GWEMU_BUILD_DIR=build/gwemu-rtc sh scripts/build_gwemu.sh
 ```
 
-默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-supply`，此前产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
+默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-rtc`，此前产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
 
 `gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、补丁审查副本哈希、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
 
@@ -40,7 +40,7 @@ GNW_KERNEL=gwemu npx electron . --user-data-dir=/tmp/gnw-gwemu-preview ../profil
 
 电量/USB 复用现有热键（默认 - / = 调整电量，C 切换 USB）和隔离 session 的电量/充放电周期配置。「设备」菜单另提供电池连接、暂停、继续、冷启动；时钟窗口菜单同样支持。周期以虚拟时间计算，暂停时不消耗；0 周期固定相应状态。正常关闭先等待电源操作、暂停并严格读回电量/USB/电池存在，退出0且同步文件后再保存；读回失败或操作队列超时仍终止子进程并标记保存不确定。
 
-该板级模型使用 Retro-Go 标尺 11000..13000、PA2 PGOOD 与 PE7 CHG；0% 不代表物理断开或电源域失电，真实曲线与充电器 CE 限流未建模。上游原生默认不开启此模型，桌面显式传入 power-model=on。即时存档菜单仍禁用，热键明确提示暂不支持，旧 slots 不读不写。详见 [电量与 USB 实测报告](../research/2026-11-12-gwemu-power-controls.md)。音频后端已接通且静音有实际 PCM 证据，但音质、延迟、宿主实时限速设置和完整 RTC 仍待回归。该入口只供开发验收，详细证据见 [桌面预览报告](../research/2026-11-12-gwemu-desktop-preview.md)。普通桌面 CLI 启动/探针仍使用旧内核，不能通过该环境变量切换。
+该板级模型使用 Retro-Go 标尺 11000..13000、PA2 PGOOD 与 PE7 CHG；0% 不代表物理断开或电源域失电，真实曲线与充电器 CE 限流未建模。上游原生默认不开启此模型，桌面显式传入 power-model=on。即时存档菜单仍禁用，热键明确提示暂不支持，旧 slots 不读不写。详见 [电量与 USB 实测报告](../research/2026-11-12-gwemu-power-controls.md)。音频后端已接通且静音有实际 PCM 证据，但音质、延迟、宿主实时限速设置仍需更广泛固件回归，RTC 基础语义已验收。该入口只供开发验收，详细证据见 [桌面预览报告](../research/2026-11-12-gwemu-desktop-preview.md)。普通桌面 CLI 启动/探针仍使用旧内核，不能通过该环境变量切换。
 
 ## 同镜像实验
 
@@ -50,7 +50,7 @@ npm run build:cli
 node dist-cli/compare-kernels.js \
   --profile ../profiles/mario.gnw.json \
   --legacy ../build/qemu-system-arm \
-  --gwemu ../build/gwemu-supply/qemu-system-arm \
+  --gwemu ../build/gwemu-rtc/qemu-system-arm \
   --output ../out/gwemu-my-mario-run \
   --seconds 3
 ```
@@ -63,16 +63,16 @@ node dist-cli/compare-kernels.js \
 
 已支持容量：外部 Flash 1/4/8/16/32/64/128/256 MiB，按容量选择上游 Macronix 芯片；片内每个 bank 至多 256 KiB。较短 bank 在 gwemu session 内填 `0xff` 扩展，不修改源。显式 UID 按 `.gnw.json` 的 12 raw bytes 契约传入，缺省时保留上游合成 UID。SD 支持 `spi1`（缺省）和 `ospi`。后者为 PB2/PB1/PD12/PE11 的 GPIO 软件 SPI 接线；未支持容量会明确拒绝。芯片选择只提供容量匹配，没有给 profile 新增真实 JEDEC 身份。
 
-固定时间同时映射到 gwemu 自定义 RTC 的 `initial-epoch`，初始寄存器读回已验证；完整 RTC 用户流程仍需回归。实验关闭音频，不能据此宣称音频通过。
+固定时间同时映射到 gwemu 自定义 RTC 的 `initial-epoch`，日历/SSR、暂停、校时与复位读回已验证；详见下文 RTC 验收。实验关闭音频，不能据此宣称音频通过。
 
 `captured` 只表示拿到观察数据，不能等同于固件、存档或管理工具全功能通过。失败或源哈希变化时 CLI 返回非零退出码。实测范围与后续缺口见 [基线报告](../research/2026-11-12-gwemu-baseline.md)。
 
 ## 回归检查
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-supply/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py tests/test_gwemu_supply.py
+GWEMU_BINARY="$PWD/build/gwemu-rtc/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py tests/test_gwemu_supply.py tests/test_gwemu_rtc.py
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-supply/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-supply/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-rtc/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-rtc/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-supply.spec.ts
@@ -124,16 +124,29 @@ GNW_FIRMWARE_COLD_TEST=1 GNW_FIRMWARE_SUPPLY_TEST=1 GWEMU_BINARY="$PWD/build/gwe
 
 ## 桌面供电与冷启动
 
-当前桌面开发入口已切换到上述 supply 产物。「设备」菜单提供电池连接、USB 供电、暂停、继续和冷启动，时钟窗口同样可操作。拔掉最后来源进入无电源状态；接回来源保持暂停，选择继续才执行。冷启动会等待 host-ui RESET 及主循环确认后运行，不用固定延时猜测复位完成。
+供电批次曾将桌面开发入口切换到 supply 产物，当前使用下文的 RTC 产物。「设备」菜单提供电池连接、USB 供电、暂停、继续和冷启动，时钟窗口同样可操作。拔掉最后来源进入无电源状态；接回来源保持暂停，选择继续才执行。冷启动会等待 host-ui RESET 及主循环确认后运行，不用固定延时猜测复位完成。
 
 gwemu 隔离 session 保存 `batteryPresent`，旧元数据缺省 true，legacy session 格式不变。无电源关闭重开时可正常加载控制连接，不执行 cont 或等待画面。设备操作和暂停/断电时禁用硬件按键，已持有/连发输入需先松开再按；供电热键仍可使用。读取未知状态时禁用继续/冷启动并提示连接问题。
 
 ```sh
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-supply/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-supply/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-rtc/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-rtc/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts tests/e2e/automation-ui.spec.ts tests/e2e/main-window.spec.ts
 ```
 
-测试只挂载临时 session 副本，异常退出/快照错误/操作队列超时均不得声称保存成功；关闭和启动取消竞态另有真实内核回归。详见 [桌面供电报告](../research/2026-11-12-gwemu-desktop-supply.md)。默认仍为 legacy，完整即时存档、RTC 用户流程和管理工具验收仍待后续推进。
+测试只挂载临时 session 副本，异常退出/快照错误/操作队列超时均不得声称保存成功；关闭和启动取消竞态另有真实内核回归。详见 [桌面供电报告](../research/2026-11-12-gwemu-desktop-supply.md)。默认仍为 legacy，完整即时存档、RTC 在即时存档中的恢复以及管理工具验收仍待后续推进。
+
+## RTC 验收
+
+桌面显式开启 RTC `use-rtc-clock`、`preserve-calendar`，关闭 `sync-host` 写入抑制。host 模式按宿主本地时间推进，CPU 暂停时 RTC/闹钟继续；固定 UTC 模式按虚拟时间推进，暂停冻结。普通复位保留当前日历，控制寄存器/闹钟仍复位。固件 INIT 校时冻结日历并在退出时一次提交 TR/DR，独立 wakeup 计数器继续。
+
+完整冷启动、最后供电来源丢失/恢复和 BDRST 清除日历并重新初始化。USB 供电下拔电池不会清除 RTC。固件执行后可自行校时：两组 patched OFW 在备份丢失后设置 2021-01-01 12:00，模型允许该写入。session.rtc 是启动配置，固定 session 重开回到配置初值，host 重开从当前宿主时间开始。未模拟物理 VBAT、振荡器停振或掉电后的 RTC 能量来源。
+
+```sh
+GWEMU_BINARY="$PWD/build/gwemu-rtc/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc.py
+GNW_FIRMWARE_RTC_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-rtc/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc_firmware.py
+```
+
+后者需要四组本地镜像，始终挂载副本并在 finally 检查源哈希。gwemu 验收 Retro-Go bank2，legacy 对照沿用既有 OFW 入口；启动后执行忠实 INIT 校时序列，不声称已自动操作固件的整个校时 UI。旧 supply 产物缺少新 RTC 属性时，QEMU 明确拒绝启动。默认内核仍为 legacy，即时存档继续禁用，具体证据与边界见 [RTC 报告](../research/2026-11-12-gwemu-rtc.md)。
