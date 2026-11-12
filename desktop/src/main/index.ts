@@ -54,8 +54,13 @@ const paths = applicationPaths({
   packaged: app.isPackaged,
   resources: process.resourcesPath,
   project: resolve(__dirname, "../../.."),
-  osUserData: app.getPath("userData"),
+  // Electron applies --user-data-dir before this module runs. Validate against
+  // the product's default location, rather than the already redirected path.
+  osUserData: override
+    ? join(app.getPath("appData"), app.getName())
+    : app.getPath("userData"),
   override,
+  kernel: process.env.GNW_KERNEL,
 });
 mkdirSync(join(paths.userData, "electron-host"), { recursive: true });
 app.setPath("userData", join(paths.userData, "electron-host"));
@@ -584,7 +589,10 @@ function updateMenu() {
       const item = menu.getMenuItemById(id);
       if (item) item.enabled = !blocked;
     }
-  const statesEnabled = !blocked && controller.state.status === "running";
+  const statesEnabled =
+    !blocked &&
+    controller.state.status === "running" &&
+    controller.state.canInstantState !== false;
   for (const id of ["state.save", "state.load"]) {
     const item = menu?.getMenuItemById(id);
     if (item) item.enabled = statesEnabled;
@@ -747,6 +755,7 @@ function stateMenuActions() {
     stateSlots: controller.state.stateSlots,
     canState:
       controller.state.status === "running" &&
+      controller.state.canInstantState !== false &&
       !controller.state.stateOperation &&
       !makerOpen &&
       !controlSettings.opened &&

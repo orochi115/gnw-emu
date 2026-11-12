@@ -1,6 +1,7 @@
 import type { Profile } from "./schemas";
 import type { Session } from "./session-store";
 import { qemuEscape } from "./qemu-command";
+import { join } from "node:path";
 
 // Capacity-matched Macronix entries from the pinned upstream gnw_h7b0_nor.h.
 const chips = new Map([
@@ -14,16 +15,18 @@ const chips = new Map([
   [256, "c2-25-3c"],
 ]);
 
-/** Migration probe only. This is not the desktop's product launch contract. */
-export function gwemuArguments(
+export interface GwemuSizes {
+  internalFlash: number;
+  externalFlash: number;
+  bank2Flash?: number;
+}
+export function validateGwemuConfiguration(
   profile: Profile,
-  session: Session,
-  endpoints: { qmpPort: number; gdbSocket: string },
-  sizes: { internalFlash: number; externalFlash: number; bank2Flash?: number },
+  sizes: GwemuSizes,
 ) {
-  if (profile.deviceUid)
+  if (profile.deviceUid && !/^[a-fA-F0-9]{24}$/.test(profile.deviceUid))
     throw new Error(
-      "gwemu probe: requested UID is not supported by the pinned upstream",
+      "gwemu UID must contain exactly 12 raw bytes in hexadecimal",
     );
   if (profile.sdCard && profile.sdWiring === "ospi")
     throw new Error("gwemu probe: OSPI SD wiring has not been adapted");
@@ -40,23 +43,49 @@ export function gwemuArguments(
     throw new Error(
       `Unsupported gwemu external Flash capacity: ${sizes.externalFlash}`,
     );
+  return chip;
+}
+
+/** Shared session mapping; desktop transport is enabled only with a frame endpoint. */
+export function gwemuArguments(
+  profile: Profile,
+  session: Session,
+  endpoints: { qmpPort: number; gdbSocket?: string; framePort?: number },
+  sizes: GwemuSizes,
+  settings?: { audio: boolean },
+) {
+  const chip = validateGwemuConfiguration(profile, sizes);
+  const machine =
+    endpoints.framePort === undefined
+      ? "gnw-h7b0"
+      : `gnw-h7b0,frame-endpoint=127.0.0.1:${endpoints.framePort},session-lock=${qemuEscape(join(session.directory, "qemu.lock"))}`;
   const args = [
     "-M",
-    "gnw-h7b0",
+    machine,
     "-S",
     "-display",
     "none",
     "-qmp",
     `tcp:127.0.0.1:${endpoints.qmpPort},server=off`,
-    "-gdb",
-    `unix:${qemuEscape(endpoints.gdbSocket)},server=on,wait=off`,
     "-rtc",
     session.rtc === "host" ? "base=localtime" : `base=${session.rtc},clock=vm`,
     "-audiodev",
-    "none,id=snd0",
+    settings
+      ? `${process.platform === "darwin" ? "coreaudio" : "sdl3"},id=snd0`
+      : "none,id=snd0",
     "-global",
     "gnw-h7b0-sai1.audiodev=snd0",
   ];
+  if (endpoints.gdbSocket)
+    args.push(
+      "-gdb",
+      `unix:${qemuEscape(endpoints.gdbSocket)},server=on,wait=off`,
+    );
+  if (settings)
+    args.push(
+      "-global",
+      `gnw-h7b0-sai1.audio-muted=${settings.audio ? "off" : "on"}`,
+    );
   // Upstream's custom RTC uses this property rather than QEMU's -rtc base.
   if (session.rtc !== "host") {
     const epoch = Date.parse(session.rtc + "Z") / 1000;
@@ -69,6 +98,7 @@ export function gwemuArguments(
     ["bank2-image", session.bank2Flash],
     ["extflash-image", session.externalFlash],
     ["extflash-chip", chip],
+    ["uid", profile.deviceUid],
   ])
     if (value)
       // The shorthand -global parser preserves everything after '=' literally.

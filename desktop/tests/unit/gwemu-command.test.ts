@@ -69,16 +69,33 @@ test("rejects unsupported capacity and oversized internal banks", () => {
   ).toThrow(/256 KiB/);
 });
 
-test("does not silently drop requested UID or change OSPI wiring", () => {
-  expect(() =>
+test("maps requested raw UID bytes and refuses OSPI wiring", () => {
+  expect(
     gwemuArguments(
       { ...profile, deviceUid: "123456781234567812345678" },
       session,
       endpoints,
       sizes,
     ),
-  ).toThrow(/UID/);
+  ).toContain("gnw-h7b0-soc.uid=123456781234567812345678");
   expect(() =>
     gwemuArguments({ ...profile, sdWiring: "ospi" }, session, endpoints, sizes),
   ).toThrow(/OSPI/);
+});
+
+test("desktop endpoints bind the native frame and lock and leave GDB disabled", () => {
+  const args = gwemuArguments(
+    profile,
+    session,
+    { qmpPort: 1234, framePort: 4321 },
+    sizes,
+    { audio: false },
+  );
+  expect(args).toContain(
+    "gnw-h7b0,frame-endpoint=127.0.0.1:4321,session-lock=/session/qemu.lock",
+  );
+  expect(args).not.toContain("-gdb");
+  expect(args).toContain("gnw-h7b0-sai1.audio-muted=on");
+  // A muted startup must keep the real audio backend initialized for live unmute.
+  expect(args).not.toContain("none,id=snd0");
 });

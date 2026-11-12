@@ -37,6 +37,7 @@ export interface ToastMessage {
   duration?: number;
 }
 export interface AppState {
+  canInstantState?: boolean;
   stateSlot?: number;
   stateSlots?: (string | null)[];
   stateOperation?: "save" | "load";

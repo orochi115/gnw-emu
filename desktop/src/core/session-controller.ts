@@ -8,13 +8,19 @@ import type { Logger } from "pino";
 import type { DisplayEndpoint } from "../display/receiver";
 import type { AppState, InputState } from "../shared/contracts";
 import { loadProfile } from "./profile-store";
-import { prepareSession, saveSession, type Session } from "./session-store";
+import { prepareSession, type Session } from "./session-store";
 import { acquireLease } from "./session-lease";
 import { loadSettings } from "./settings-store";
 import { QmpClient } from "./qmp-client";
 import { InputController } from "./input-controller";
-import { qemuArguments } from "./qemu-command";
-import { readJson } from "./atomic-file";
+import {
+  KernelBackend,
+  preflightKernel,
+  kernelArguments,
+  kernelEnvironment,
+  finishKernelSession,
+  type KernelKind,
+} from "./kernel-backend";
 import {
   saveSlot,
   loadSlot,
@@ -23,7 +29,6 @@ import {
   stateSlotTimes,
 } from "./savestate-store";
 import type { ToastMessage } from "../shared/contracts";
-import { exitStateSchema } from "./schemas";
 export async function deadline<T>(
   promise: Promise<T>,
   ms: number,
@@ -54,6 +59,7 @@ interface Runtime {
   child?: ChildProcess;
   exit?: Promise<number | null>;
   input: InputController;
+  backend: KernelBackend;
   stateFile: string;
   stopping: boolean;
 }
@@ -64,10 +70,16 @@ export class SessionController extends EventEmitter {
   private stateWork?: Promise<void>;
   private slot = 0;
   private stopPromise?: Promise<void>;
+  private startup?: {
+    cancelled: boolean;
+    cancel: () => void;
+    done: Promise<void>;
+  };
   constructor(
     private options: {
       userData: string;
       qemu: string;
+      kernel?: KernelKind;
       logger: Logger;
       logFor?: (module: string) => Logger;
       createDisplay: (id: string) => Promise<DisplayEndpoint>;
@@ -84,11 +96,35 @@ export class SessionController extends EventEmitter {
   async load(path: string) {
     if (this.busy) throw new UserError("error.busy");
     this.busy = true;
+    let finish!: () => void, cancel!: (error: Error) => void;
+    const cancelled = new Promise<never>((_resolve, reject) => {
+      cancel = reject;
+    });
+    cancelled.catch(() => {});
+    const attempt = {
+      cancelled: false,
+      done: new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+      cancel: () => {
+        if (attempt.cancelled) return;
+        attempt.cancelled = true;
+        cancel(new UserError("error.startCancelled"));
+      },
+    };
+    this.startup = attempt;
+    const check = () => {
+      if (attempt.cancelled) throw new UserError("error.startCancelled");
+    };
     try {
       // Validate all immutable inputs before stopping the old machine.
       const profile = await loadProfile(path);
       await access(this.options.qemu);
-      await this.stop();
+      const kernel = this.options.kernel ?? "legacy";
+      await preflightKernel(kernel, profile, this.options.qemu);
+      check();
+      await this.stopActiveRuntime();
+      check();
       const id = randomUUID();
       this.publish({
         status: "starting",
@@ -101,12 +137,14 @@ export class SessionController extends EventEmitter {
       let lease: Awaited<ReturnType<typeof acquireLease>> | undefined;
       let qmp: QmpClient | undefined;
       let display: DisplayEndpoint | undefined;
+      let transferred = false;
       try {
-        lease = await acquireLease(
-          join(this.options.userData, "leases", profile.id),
-          id,
-        );
-        const session = await prepareSession(profile, this.options.userData);
+        const data =
+          kernel === "gwemu"
+            ? join(this.options.userData, "kernels", "gwemu")
+            : this.options.userData;
+        lease = await acquireLease(join(data, "leases", profile.id), id);
+        const session = await prepareSession(profile, data);
         const runDir = join(session.directory, "runs", id);
         await mkdir(runDir, { recursive: true });
         const stateFile = join(runDir, "state.json");
@@ -116,14 +154,17 @@ export class SessionController extends EventEmitter {
         );
         const qmpPort = await qmp.listen();
         display = await this.options.createDisplay(id);
+        const backend = new KernelBackend(kernel, qmp);
+        const args = await kernelArguments(kernel, profile, session, settings, {
+          qmpPort,
+          framePort: display.port,
+          stateFile,
+        });
+        check();
         const input = new InputController(
           async (mask) => {
             try {
-              return await qmp!.command("qom-set", {
-                path: "/machine",
-                property: "buttons",
-                value: mask,
-              });
+              return await backend.buttons(mask);
             } catch (error) {
               this.options.logFor?.("input").error(
                 {
@@ -156,19 +197,17 @@ export class SessionController extends EventEmitter {
           qmp,
           display,
           input,
+          backend,
           stateFile,
           stopping: false,
         };
         this.runtime = runtime;
-        const child = spawn(
-          this.options.qemu,
-          qemuArguments(profile, session, settings, {
-            qmpPort,
-            framePort: display.port,
-            stateFile,
-          }),
-          { stdio: ["ignore", "pipe", "pipe"], windowsHide: true },
-        );
+        transferred = true;
+        const child = spawn(this.options.qemu, args, {
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          env: kernelEnvironment(kernel),
+        });
         runtime.child = child;
         runtime.exit = new Promise((r, j) => {
           child.once("error", j);
@@ -176,6 +215,7 @@ export class SessionController extends EventEmitter {
         });
         runtime.exit.catch(() => {});
         if (child.pid) await lease.attach(child.pid);
+        check();
         let stderr = "";
         child.stderr!.on("data", (chunk) => {
           stderr = (stderr + chunk.toString()).slice(-8192);
@@ -226,43 +266,57 @@ export class SessionController extends EventEmitter {
           Promise.race([
             Promise.all([qmp.ready, display.ready]),
             startupFailure,
+            cancelled,
           ]),
           this.options.timeout ?? 10000,
           "connect",
         );
-        await qmp.command("qom-set", {
-          path: "/machine",
-          property: "buttons",
-          value: 0,
-        });
+        if (kernel === "legacy") await backend.resetInput();
         const frame = display.waitForFrame();
         await qmp.command("cont");
+        // Standard QMP input rejects events while the VM is paused.
+        if (kernel === "gwemu") await backend.resetInput();
         this.publish({ ...this.state, stage: "start" });
         await deadline(
-          Promise.race([frame, startupFailure]),
+          Promise.race([frame, startupFailure, cancelled]),
           this.options.timeout ?? 10000,
           "frame",
         );
+        check();
+        const slots =
+          kernel === "legacy"
+            ? await stateSlotTimes(session.directory)
+            : Array(10).fill(null);
+        check();
         this.slot = 0;
         this.publish({
           ...this.state,
           status: "running",
           stage: undefined,
           stateSlot: this.slot,
-          stateSlots: await stateSlotTimes(session.directory),
+          canInstantState: kernel === "legacy",
+          stateSlots: slots,
         });
       } catch (error) {
-        if (this.runtime) await this.stop().catch(() => {});
+        if (transferred) await this.stopActiveRuntime().catch(() => {});
         else {
           await qmp?.close();
           await display?.close();
           await lease?.release();
+        }
+        if (attempt.cancelled) {
+          if (this.state.saveUncertain)
+            throw new UserError("error.saveUncertain");
+          this.publish({ status: "idle" });
+          throw new UserError("error.startCancelled");
         }
         this.publish({ status: "error", ...errorState(error) });
         throw error;
       }
     } finally {
       this.busy = false;
+      if (this.startup === attempt) this.startup = undefined;
+      finish();
     }
   }
   private async failed(error: Error) {
@@ -289,6 +343,8 @@ export class SessionController extends EventEmitter {
     runtime.input.key(code, down);
   }
   private async deviceShortcut(code: string) {
+    if (this.runtime!.backend.kind === "gwemu")
+      throw new UserError("device.unsupportedKernel");
     const qmp = this.runtime!.qmp;
     const property = code === "KeyC" ? "usb-power" : "battery";
     const value = await qmp.command("qom-get", { path: "/machine", property });
@@ -374,6 +430,7 @@ export class SessionController extends EventEmitter {
   }
   selectStateSlot(slot: number) {
     if (this.busy || !this.runtime || this.state.status !== "running") return;
+    if (this.runtime.backend.kind === "gwemu") return;
     if (!Number.isInteger(slot) || slot < 0 || slot > 9)
       throw new Error("Invalid state slot");
     this.slot = slot;
@@ -396,6 +453,14 @@ export class SessionController extends EventEmitter {
       this.state.status !== "running"
     )
       return Promise.resolve();
+    if (this.runtime.backend.kind === "gwemu") {
+      this.toast({
+        code: "state.unsupportedKernel",
+        kind: "info",
+        duration: 5000,
+      });
+      return Promise.resolve();
+    }
     this.busy = true;
     const runtime = this.runtime,
       slot = this.slot;
@@ -462,11 +527,7 @@ export class SessionController extends EventEmitter {
         ...this.state,
         stateSlots: await stateSlotTimes(runtime.session.directory),
       });
-      await runtime.qmp.command("qom-set", {
-        path: "/machine",
-        property: "buttons",
-        value: 0,
-      });
+      await runtime.backend.resetInput();
       if (resume) {
         await runtime.qmp.command("cont");
         resume = false;
@@ -501,6 +562,11 @@ export class SessionController extends EventEmitter {
     }
   }
   stop(): Promise<void> {
+    const startup = this.startup;
+    startup?.cancel();
+    return this.stopActiveRuntime().finally(() => startup?.done);
+  }
+  private stopActiveRuntime(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     if (!this.runtime) return Promise.resolve();
     this.stopPromise = (this.stateWork ?? Promise.resolve())
@@ -516,11 +582,7 @@ export class SessionController extends EventEmitter {
     if (!runtime) return;
     if (this.busy || this.state.status !== "running")
       throw new UserError("error.busy");
-    await runtime.qmp.command("qom-set", {
-      path: "/machine",
-      property: "audio-muted",
-      value: muted,
-    });
+    await runtime.backend.setMuted(muted);
     runtime.audioMuted = muted;
   }
   private async stopRuntime() {
@@ -550,8 +612,12 @@ export class SessionController extends EventEmitter {
         }
       }
       if (runtime.child) {
-        const state = exitStateSchema.parse(await readJson(runtime.stateFile));
-        await saveSession(runtime.session, state);
+        await finishKernelSession(
+          runtime.backend.kind,
+          runtime.session,
+          runtime.stateFile,
+          runtime.child.exitCode,
+        );
       }
     } catch (e) {
       error = e as Error;

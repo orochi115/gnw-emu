@@ -5,6 +5,13 @@ export type Locale = "zh-CN" | "en";
 export type LanguagePreference = Locale | "system";
 const en = {
   "state.emptyLabel": "Empty",
+  "error.startCancelled": "Device startup was cancelled.",
+  "state.unsupportedKernel":
+    "Instant states are not available for this device yet.",
+  "device.unsupportedKernel":
+    "Power controls are not available for this device yet.",
+  "error.kernelBuild":
+    "This emulator build does not support the desktop connection. Rebuild the development kernel.",
   "state.menu": "Instant State",
   "state.save": "Save State",
   "state.load": "Load State",
@@ -230,6 +237,10 @@ const en = {
 };
 const zh: Record<keyof typeof en, string> = {
   "state.emptyLabel": "空",
+  "error.startCancelled": "已取消设备启动。",
+  "state.unsupportedKernel": "此设备暂不支持即时存档。",
+  "device.unsupportedKernel": "此设备暂不支持电源控制。",
+  "error.kernelBuild": "此模拟器构建不支持桌面连接，请重新构建开发内核。",
   "state.menu": "即时存档",
   "state.save": "保存即时存档",
   "state.load": "读取即时存档",
