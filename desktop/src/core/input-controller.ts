@@ -20,6 +20,7 @@ export class InputController {
   private resetGeneration = 0;
   private chain = Promise.resolve();
   private failure?: unknown;
+  private epoch = 0;
   constructor(
     private send: (mask: number) => Promise<unknown>,
     private changed: (state: {
@@ -53,6 +54,18 @@ export class InputController {
     this.sources.clear();
     this.publishReset();
   }
+  /** Clear host ownership without changing restored guest GPIO. */
+  resetHost() {
+    this.epoch++;
+    this.sources.clear();
+    this.mask = 0;
+    this.appliedMask = 0;
+    this.resetGeneration++;
+    this.changed(this.snapshot);
+  }
+  synchronize() {
+    this.queue(this.mask);
+  }
   private publishReset() {
     this.resetGeneration++;
     const previous = this.mask;
@@ -65,15 +78,20 @@ export class InputController {
     if (next === this.mask) return;
     this.mask = next;
     this.changed(this.snapshot);
+    this.queue(next);
+  }
+  private queue(next: number) {
+    const epoch = this.epoch;
     this.chain = this.chain
-      .then(() => this.send(next))
+      .then(() => (epoch === this.epoch ? this.send(next) : undefined))
       .then(
         () => {
+          if (epoch !== this.epoch) return;
           this.appliedMask = next;
           this.changed(this.snapshot);
         },
         (e) => {
-          this.failure = e;
+          if (epoch === this.epoch) this.failure = e;
         },
       );
   }

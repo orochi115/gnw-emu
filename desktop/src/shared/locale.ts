@@ -31,6 +31,8 @@ const en = {
   "state.saved": "Saved slot {{slot}}",
   "state.loaded": "Loaded slot {{slot}} · session flash restored",
   "state.empty": "Slot {{slot}} is empty",
+  "state.incompatible":
+    "This slot was saved by a different emulator build. Save again to replace it.",
   "state.sd": "Instant states are unavailable while an SD image is mounted.",
   "state.flashSize": "Instant states support external flash up to 64 MiB.",
   "state.failed": "Instant state failed: {{detail}}",
@@ -268,6 +270,8 @@ const zh: Record<keyof typeof en, string> = {
   "state.saved": "已保存槽位 {{slot}}",
   "state.loaded": "已读取槽位 {{slot}}，session flash 已恢复",
   "state.empty": "槽位 {{slot}} 为空",
+  "state.incompatible":
+    "此槽位来自不同的模拟器构建，无法读取。重新保存可覆盖它。",
   "state.sd": "挂载 SD 镜像时不支持即时存档。",
   "state.flashSize": "即时存档仅支持不超过 64 MiB 的外部 flash。",
   "state.failed": "即时存档失败：{{detail}}",

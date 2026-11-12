@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(resolve("../build/gwemu-rtc/qemu-system-arm")),
+  !existsSync(resolve("../build/gwemu-savestate/qemu-system-arm")),
   "Build the fixed gwemu desktop kernel first",
 );
 test("gwemu renders in the real desktop, handles input and mute, changes ROM and closes", async () => {
@@ -87,7 +87,7 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
       timeoutMs: 15000,
     });
     const state = await rpc("app.getState");
-    expect(state.canInstantState).toBe(false);
+    expect(state.canInstantState).toBe(true);
     await expect
       .poll(async () => Number((await rpc("app.getDiagnostics")).frames))
       .toBeGreaterThan(5);
@@ -134,7 +134,7 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
       ({ Menu }) =>
         Menu.getApplicationMenu()!.getMenuItemById("state.save")!.enabled,
     );
-    expect(enabled).toBe(false);
+    expect(enabled).toBe(true);
     await action("ui.key", { key: "-", down: true });
     await action("ui.key", { key: "-", down: false });
     await action("ui.key", { key: "-", down: true });

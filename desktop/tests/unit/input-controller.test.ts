@@ -1,5 +1,23 @@
 import { test, expect } from "vitest";
 import { InputController } from "../../src/core/input-controller";
+test("host-only reset invalidates queued masks and stale applied completions", async () => {
+  let release!: () => void;
+  const pending = new Promise<void>((r) => (release = r)),
+    values: number[] = [];
+  const input = new InputController(async (mask) => {
+    values.push(mask);
+    await pending;
+  });
+  input.key("ArrowLeft", true);
+  await Promise.resolve();
+  input.key("KeyX", true);
+  input.resetHost();
+  expect(input.snapshot).toMatchObject({ desiredMask: 0, appliedMask: 0 });
+  release();
+  await input.flush();
+  expect(values).toEqual([1]);
+  expect(input.snapshot).toMatchObject({ desiredMask: 0, appliedMask: 0 });
+});
 test("short taps serialize both edges, repeats ignored, blur releases", async () => {
   const values: number[] = [];
   const input = new InputController(async (mask) => {
@@ -97,4 +115,24 @@ test("explicit source reset is published even when keyboard keeps the aggregate 
   expect(states.at(-1)).toMatchObject({ desiredMask: 16, resetGeneration: 1 });
   input.releaseAll();
   expect(states.at(-1)).toMatchObject({ desiredMask: 0, resetGeneration: 2 });
+});
+
+test("late rejected input from a retired host epoch cannot poison restored input", async () => {
+  let reject!: (error: Error) => void;
+  const old = new Promise<void>((_resolve, fail) => {
+    reject = fail;
+  });
+  const sends: number[] = [];
+  const input = new InputController(async (mask) => {
+    sends.push(mask);
+    if (sends.length === 1) await old;
+  });
+  input.button(0, true, "old");
+  await Promise.resolve();
+  input.resetHost();
+  input.button(1, true, "new");
+  reject(Error("retired event rejected"));
+  await expect(input.flush()).resolves.toBeUndefined();
+  expect(sends).toEqual([1, 2]);
+  expect(input.snapshot.appliedMask).toBe(2);
 });

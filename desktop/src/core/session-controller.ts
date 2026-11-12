@@ -20,6 +20,7 @@ import {
   kernelEnvironment,
   finishKernelSession,
   type KernelKind,
+  verifyKernelIdentity,
 } from "./kernel-backend";
 import {
   saveSlot,
@@ -27,6 +28,7 @@ import {
   restoreWithRollback,
   RollbackError,
   stateSlotTimes,
+  type StateIdentity,
 } from "./savestate-store";
 import type { ToastMessage } from "../shared/contracts";
 import type { GwemuPowerSnapshot } from "./schemas";
@@ -60,6 +62,9 @@ export async function deadline<T>(
 }
 interface Runtime {
   audioMuted: boolean;
+  identity: StateIdentity;
+  uncertain: boolean;
+  suppressRelease: boolean;
   id: string;
   session: Session;
   lease: Awaited<ReturnType<typeof acquireLease>>;
@@ -80,6 +85,7 @@ export class SessionController extends EventEmitter {
   private runtime?: Runtime;
   private busy = false;
   private stateWork?: Promise<void>;
+  private stateOwner?: object;
   private slot = 0;
   private stopPromise?: Promise<void>;
   private startup?: {
@@ -106,7 +112,7 @@ export class SessionController extends EventEmitter {
     this.emit("state", update);
   }
   async load(path: string) {
-    if (this.busy) throw new UserError("error.busy");
+    if (this.busy || this.stopPromise) throw new UserError("error.busy");
     this.busy = true;
     let finish!: () => void, cancel!: (error: Error) => void;
     const cancelled = new Promise<never>((_resolve, reject) => {
@@ -125,15 +131,24 @@ export class SessionController extends EventEmitter {
       },
     };
     this.startup = attempt;
+    const previousRuntime = this.runtime;
+    if (previousRuntime) this.publish({ ...this.state, deviceOperation: true });
     const check = () => {
       if (attempt.cancelled) throw new UserError("error.startCancelled");
     };
     try {
+      // Register the cancellable attempt before waiting accepted snapshot work.
+      await this.stateWork?.catch(() => {});
+      check();
       // Validate all immutable inputs before stopping the old machine.
       const profile = await loadProfile(path);
       await access(this.options.qemu);
       const kernel = this.options.kernel ?? "legacy";
-      await preflightKernel(kernel, profile, this.options.qemu);
+      const identity = await preflightKernel(
+        kernel,
+        profile,
+        this.options.qemu,
+      );
       check();
       await this.stopActiveRuntime();
       check();
@@ -203,6 +218,9 @@ export class SessionController extends EventEmitter {
         );
         const runtime: Runtime = {
           audioMuted: !settings.audio,
+          identity,
+          uncertain: false,
+          suppressRelease: false,
           id,
           session,
           lease,
@@ -222,6 +240,8 @@ export class SessionController extends EventEmitter {
             throw new UserError("error.startCancelled");
         };
         transferred = true;
+        await verifyKernelIdentity(this.options.qemu, identity);
+        checkRuntime();
         const child = spawn(this.options.qemu, args, {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
@@ -313,10 +333,11 @@ export class SessionController extends EventEmitter {
         }
         checkRuntime();
         runtime.execution = deviceState?.execution;
-        const slots =
-          kernel === "legacy"
-            ? await stateSlotTimes(session.directory)
-            : Array(10).fill(null);
+        const slots = await stateSlotTimes(session.directory, identity);
+        const support = await qmp.command("qom-get", {
+          path: "/machine",
+          property: "savestate-support",
+        });
         checkRuntime();
         this.slot = 0;
         this.publish({
@@ -324,7 +345,8 @@ export class SessionController extends EventEmitter {
           status: "running",
           stage: undefined,
           stateSlot: this.slot,
-          canInstantState: kernel === "legacy",
+          canInstantState: support === "",
+          deviceOperation: false,
           stateSlots: slots,
           ...deviceState,
         });
@@ -346,7 +368,18 @@ export class SessionController extends EventEmitter {
       }
     } finally {
       this.busy = false;
-      if (this.startup === attempt) this.startup = undefined;
+      if (this.startup === attempt) {
+        if (
+          this.runtime === previousRuntime &&
+          previousRuntime &&
+          !previousRuntime.stopping
+        )
+          this.publish({
+            ...this.state,
+            deviceOperation: previousRuntime.deviceJobs > 0,
+          });
+        this.startup = undefined;
+      }
       finish();
     }
   }
@@ -372,6 +405,7 @@ export class SessionController extends EventEmitter {
         "Device key",
       );
     runtime.input.key(code, down);
+    if (!down) this.releasePhysicalInput();
   }
   private async deviceShortcut(runtime: Runtime, code: string) {
     const qmp = runtime.qmp;
@@ -386,8 +420,31 @@ export class SessionController extends EventEmitter {
           : Math.min(100, Math.max(0, value + (code === "Minus" ? -10 : 10))),
     });
   }
+  private hostOnlyRelease(runtime: Runtime) {
+    return (
+      runtime.backend.kind === "gwemu" &&
+      (runtime.execution !== "running" ||
+        runtime.suppressRelease ||
+        !!this.stateOwner ||
+        !!this.startup ||
+        runtime.stopping ||
+        runtime.uncertain)
+    );
+  }
   releaseInput() {
-    this.runtime?.input.releaseAll();
+    const runtime = this.runtime;
+    if (!runtime) return;
+    if (this.hostOnlyRelease(runtime)) {
+      runtime.input.resetHost();
+      if (runtime.execution === "running") runtime.backend.deferHostRelease();
+      else runtime.backend.resetHostInput();
+    } else runtime.input.releaseAll();
+  }
+  /** An explicit physical key-up can settle held input after an early refusal. */
+  releasePhysicalInput() {
+    const runtime = this.runtime;
+    if (runtime && this.canInput(runtime) && runtime.backend.hasPendingRelease)
+      runtime.input.synchronize();
   }
   async flushInput() {
     await this.runtime?.input.flush();
@@ -398,6 +455,8 @@ export class SessionController extends EventEmitter {
       this.runtime.stopping ||
       this.state.status !== "running" ||
       this.stateWork ||
+      this.stateOwner ||
+      this.runtime.uncertain ||
       this.busy
     )
       return;
@@ -454,7 +513,8 @@ export class SessionController extends EventEmitter {
             }
             if (runtime.stopping) return;
             await runtime.qmp.command("cont");
-            await runtime.backend.resetInput();
+            runtime.input.resetHost();
+            runtime.backend.resetHostInput();
           } else {
             const property =
               action === "device.usb"
@@ -518,6 +578,9 @@ export class SessionController extends EventEmitter {
     return (
       this.state.status === "running" &&
       !this.stateWork &&
+      !this.stateOwner &&
+      !this.startup &&
+      !runtime.uncertain &&
       !runtime.stopping &&
       runtime.deviceJobs === 0 &&
       (runtime.backend.kind === "legacy" || runtime.execution === "running")
@@ -533,9 +596,14 @@ export class SessionController extends EventEmitter {
         "Chassis input",
       );
     this.runtime.input.button(bit, down, source);
+    if (!down) this.releasePhysicalInput();
   }
   releaseChassis(runtimeSessionId: string) {
     if (this.runtime?.id !== runtimeSessionId) return;
+    if (this.hostOnlyRelease(this.runtime)) {
+      this.releaseInput();
+      return;
+    }
     this.runtime.input.releaseSources("pointer:");
     this.runtime.input.releaseSources("chassis-key:");
   }
@@ -572,8 +640,17 @@ export class SessionController extends EventEmitter {
     };
   }
   selectStateSlot(slot: number) {
-    if (this.busy || !this.runtime || this.state.status !== "running") return;
-    if (this.runtime.backend.kind === "gwemu") return;
+    if (
+      this.busy ||
+      this.stateOwner ||
+      this.stopPromise ||
+      !this.runtime ||
+      this.runtime.stopping ||
+      this.runtime.deviceJobs ||
+      this.runtime.uncertain ||
+      this.state.status !== "running"
+    )
+      return;
     if (!Number.isInteger(slot) || slot < 0 || slot > 9)
       throw new Error("Invalid state slot");
     this.slot = slot;
@@ -589,66 +666,123 @@ export class SessionController extends EventEmitter {
     this.emit("toast", message);
   }
   instantState(action: "save" | "load"): Promise<void> {
+    const runtime = this.runtime;
     if (
       this.busy ||
       this.stopPromise ||
-      !this.runtime ||
+      this.stateOwner ||
+      !runtime ||
+      runtime.stopping ||
+      runtime.uncertain ||
+      runtime.deviceJobs ||
       this.state.status !== "running"
     )
       return Promise.resolve();
-    if (this.runtime.backend.kind === "gwemu") {
-      this.toast({
-        code: "state.unsupportedKernel",
-        kind: "info",
-        duration: 5000,
-      });
-      return Promise.resolve();
-    }
-    this.busy = true;
-    const runtime = this.runtime,
+    const owner = {},
       slot = this.slot;
+    this.stateOwner = owner;
+    runtime.suppressRelease = true;
+    if (runtime.backend.kind === "gwemu") {
+      runtime.input.resetHost();
+      runtime.backend.deferHostRelease();
+    }
+    // Main/router callbacks run synchronously from publish. The gate is already closed.
+    this.publish({ ...this.state, stateOperation: action });
     const work = this.performState(runtime, action, slot).finally(() => {
-      this.busy = false;
-      this.stateWork = undefined;
-      this.publish({ ...this.state, stateOperation: undefined });
+      if (this.stateOwner === owner) {
+        this.stateOwner = undefined;
+        this.stateWork = undefined;
+        if (this.runtime === runtime)
+          this.publish({ ...this.state, stateOperation: undefined });
+      }
+      runtime.suppressRelease = false;
     });
     this.stateWork = work;
     return work;
+  }
+  private uncertainState(runtime: Runtime) {
+    runtime.uncertain = true;
+    runtime.execution = "unknown";
+    runtime.input.resetHost();
+    runtime.backend.resetHostInput();
+    if (this.runtime === runtime && !runtime.stopping)
+      this.publish({
+        ...this.state,
+        status: "error",
+        execution: "unknown",
+        devicePower: undefined,
+        canInstantState: false,
+        saveUncertain: true,
+        ...errorState(new UserError("state.recoveryFailed")),
+      });
   }
   private async performState(
     runtime: Runtime,
     action: "save" | "load",
     slot: number,
   ) {
-    let resume = false;
+    let originallyRunning = false,
+      paused = false;
+    const gwemu = runtime.backend.kind === "gwemu";
+    const active = () =>
+      this.runtime === runtime && !runtime.stopping && !runtime.uncertain;
+    const refresh = async () => {
+      if (!gwemu) return true;
+      try {
+        const value = await runtime.backend.readDeviceState();
+        runtime.execution = value.execution;
+        if (this.runtime === runtime && !runtime.stopping)
+          this.publish({ ...this.state, ...value });
+        return value.devicePower.powered;
+      } catch (error) {
+        // A failed read after cont must close the native execution gate too.
+        await runtime.qmp.command("stop").catch(() => {});
+        this.uncertainState(runtime);
+        throw error;
+      }
+    };
     try {
       const support = await runtime.qmp.command("qom-get", {
         path: "/machine",
         property: "savestate-support",
       });
-      if (support) {
-        this.toast({
-          code: support === "sd" ? "state.sd" : "state.flashSize",
-          kind: "info",
-          duration: 5000,
-        });
-        return;
+      if (support !== "") {
+        if (support === "sd" || support === "flash-size") {
+          this.toast({
+            code: support === "sd" ? "state.sd" : "state.flashSize",
+            kind: "info",
+            duration: 5000,
+          });
+          return;
+        }
+        throw new UserError("error.kernelBuild");
       }
       const path =
         action === "load"
-          ? await loadSlot(runtime.session.directory, slot)
+          ? await loadSlot(runtime.session.directory, slot, runtime.identity)
           : undefined;
-      this.publish({ ...this.state, stateOperation: action });
       this.toast({
         code: action === "save" ? "state.saving" : "state.loading",
         params: { slot },
         kind: "progress",
       });
-      runtime.input.releaseAll();
       await runtime.input.flush();
       const status = await runtime.qmp.command("query-status");
+      originallyRunning = status.running === true;
+      if (originallyRunning) {
+        if (gwemu) await runtime.backend.buttons(0);
+        else {
+          runtime.input.releaseAll();
+          await runtime.input.flush();
+        }
+      }
       await runtime.qmp.command("stop");
-      resume = status.running;
+      paused = true;
+      if (gwemu) {
+        runtime.execution = "paused";
+        runtime.input.resetHost();
+        runtime.backend.resetHostInput();
+      }
       const call = (property: string, value: string) =>
         runtime.qmp.command(
           "qom-set",
@@ -656,8 +790,11 @@ export class SessionController extends EventEmitter {
           120000,
         );
       if (action === "save")
-        await saveSlot(runtime.session.directory, slot, (p) =>
-          call("save-state", p),
+        await saveSlot(
+          runtime.session.directory,
+          slot,
+          (p) => call("save-state", p),
+          runtime.identity,
         );
       else
         await restoreWithRollback(
@@ -665,43 +802,59 @@ export class SessionController extends EventEmitter {
           path!,
           (p) => call("save-state", p),
           (p) => call("load-state", p),
+          runtime.identity,
         );
-      this.publish({
-        ...this.state,
-        stateSlots: await stateSlotTimes(runtime.session.directory),
-      });
-      await runtime.backend.resetInput();
-      if (resume) {
+      if (gwemu) {
+        runtime.input.resetHost();
+        runtime.backend.resetHostInput();
+      } else await runtime.backend.resetInput();
+      const powered = await refresh();
+      const slots = await stateSlotTimes(
+        runtime.session.directory,
+        runtime.identity,
+      );
+      if (this.runtime === runtime && !runtime.stopping)
+        this.publish({ ...this.state, stateSlots: slots });
+      if (originallyRunning && powered && active()) {
         await runtime.qmp.command("cont");
-        resume = false;
+        originallyRunning = false;
+        if (gwemu) await refresh();
       }
-      this.toast({
-        code: action === "save" ? "state.saved" : "state.loaded",
-        params: { slot },
-        kind: "success",
-        duration: 3000,
-      });
-    } catch (error) {
-      if (error instanceof RollbackError) {
-        resume = false;
-        this.publish({
-          ...this.state,
-          status: "error",
-          ...errorState(new UserError("state.recoveryFailed")),
+      if (this.runtime === runtime)
+        this.toast({
+          code: action === "save" ? "state.saved" : "state.loaded",
+          params: { slot },
+          kind: "success",
+          duration: 3000,
         });
-      }
+    } catch (error) {
+      if (error instanceof RollbackError) this.uncertainState(runtime);
       this.options.logger.error(
         { err: error, event: "savestate.failure", action, slot },
         "Instant state failed",
       );
       this.toast({
-        code: error instanceof UserError ? error.code : "state.failed",
+        code:
+          error instanceof RollbackError
+            ? "state.recoveryFailed"
+            : error instanceof UserError
+              ? error.code
+              : "state.failed",
         params:
           error instanceof UserError ? error.params : { detail: String(error) },
         kind: "error",
       });
     } finally {
-      if (resume) await runtime.qmp.command("cont").catch(() => {});
+      if (paused && originallyRunning && active()) {
+        try {
+          if ((await refresh()) && active()) {
+            await runtime.qmp.command("cont");
+            if (gwemu) await refresh();
+          }
+        } catch {
+          this.uncertainState(runtime);
+        }
+      }
     }
   }
   stop(): Promise<void> {
@@ -725,7 +878,13 @@ export class SessionController extends EventEmitter {
   async setMuted(muted: boolean) {
     const runtime = this.runtime;
     if (!runtime) return;
-    if (this.busy || this.state.status !== "running")
+    if (
+      this.busy ||
+      this.stateOwner ||
+      runtime.stopping ||
+      runtime.uncertain ||
+      this.state.status !== "running"
+    )
       throw new UserError("error.busy");
     await runtime.backend.setMuted(muted);
     runtime.audioMuted = muted;
@@ -773,7 +932,8 @@ export class SessionController extends EventEmitter {
           throw new UserError("error.saveUncertain");
         }
       }
-      if (powerError) throw powerError;
+      if (powerError || runtime.uncertain)
+        throw new UserError("error.saveUncertain");
       if (runtime.child) {
         await finishKernelSession(
           runtime.backend.kind,

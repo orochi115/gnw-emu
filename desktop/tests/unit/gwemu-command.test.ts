@@ -4,6 +4,7 @@ import type { Profile } from "../../src/core/schemas";
 import type { Session } from "../../src/core/session-store";
 
 const profile = {
+  id: "11111111-1111-4111-8111-111111111111",
   model: "mario",
   internalFlash: "/source/bank1.bin",
   externalFlash: "/source/flash.bin",
@@ -93,12 +94,26 @@ test("desktop endpoints bind the native frame and lock and leave GDB disabled", 
     { audio: false },
   );
   expect(args).toContain(
-    "gnw-h7b0,sd-wiring=spi1,frame-endpoint=127.0.0.1:4321,session-lock=/session/qemu.lock,power-model=on,battery=35,battery-present=on,usb-power=on,battery-life-min=480,charge-time-min=180",
+    "gnw-h7b0,sd-wiring=spi1,frame-endpoint=127.0.0.1:4321,session-lock=/session/qemu.lock,power-model=on,battery=35,battery-present=on,usb-power=on,battery-life-min=480,charge-time-min=180,instant-states=on,state-id=11111111-1111-4111-8111-111111111111",
   );
   expect(args).not.toContain("-gdb");
   expect(args).toContain("gnw-h7b0-sai1.audio-muted=on");
   // A muted startup must keep the real audio backend initialized for live unmute.
   expect(args).not.toContain("none,id=snd0");
+});
+
+test("only desktop transport opts into snapshot identity and escapes machine values", () => {
+  expect(gwemuArguments(profile, session, endpoints, sizes)[1]).not.toContain(
+    "instant-states",
+  );
+  expect(
+    gwemuArguments(
+      { ...profile, id: "a,b" },
+      session,
+      { qmpPort: 1, framePort: 2 },
+      sizes,
+    )[1],
+  ).toContain("instant-states=on,state-id=a,,b");
 });
 
 test.each(["spi1", "ospi", undefined] as const)(

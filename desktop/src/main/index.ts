@@ -114,6 +114,7 @@ function syncControlBlock() {
       ["starting", "stopping"].includes(controller.state.status) ||
       !!controller.state.deviceOperation ||
       !!controller.state.stateOperation,
+    controller.state.execution,
   );
   if (epoch !== controlRouter.epoch) publishInputEpoch();
 }
@@ -389,6 +390,7 @@ async function main() {
       if (id) controller.button(bit, down, source, id);
     },
     release: () => controller.releaseInput(),
+    physicalRelease: () => controller.releasePhysicalInput(),
     flush: () => controller.flushInput(),
     action: (id) => {
       void runControlAction(id).catch(showError);
@@ -574,7 +576,8 @@ function updateMenu() {
     windowMode?.state.clockMode ||
     windowMode?.transitioning ||
     ["starting", "stopping"].includes(controller.state.status) ||
-    !!controller.state.stateOperation;
+    !!controller.state.stateOperation ||
+    !!controller.state.deviceOperation;
   const menu = Menu.getApplicationMenu();
   for (const value of deviceMenuItems(deviceMenuActions())) {
     if (!value.id) continue;
@@ -767,6 +770,8 @@ function stateMenuActions() {
       controller.state.status === "running" &&
       controller.state.canInstantState !== false &&
       !controller.state.stateOperation &&
+      !controller.state.deviceOperation &&
+      !shuttingDown &&
       !makerOpen &&
       !controlSettings.opened &&
       !nativeDialog,

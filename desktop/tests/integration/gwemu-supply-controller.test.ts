@@ -14,7 +14,8 @@ import { createDisplayReceiver } from "../../src/display/receiver";
 import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
-  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-rtc/qemu-system-arm",
+  process.env.GWEMU_DESKTOP_BINARY ??
+    "../build/gwemu-savestate/qemu-system-arm",
 );
 async function fixture() {
   const root = await mkdtemp(join(tmpdir(), "gnw-supply-controller-"));

@@ -14,7 +14,7 @@ import { createDisplayReceiver } from "../../src/display/receiver";
 import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
-  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-rtc/qemu-system-arm",
+  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-savestate/qemu-system-arm",
 );
 test.skipIf(!existsSync(binary))(
   "gwemu controller isolates data, preserves active ROM on unsupported input and stops cleanly",
@@ -92,7 +92,7 @@ test.skipIf(!existsSync(binary))(
     try {
       await controller.load(profile.path);
       expect(controller.state.status).toBe("running");
-      expect(controller.state.canInstantState).toBe(false);
+      expect(controller.state.canInstantState).toBe(true);
       const id = controller.state.runtimeSessionId;
       expect(existsSync(join(root, "data", "sessions", profile.id))).toBe(
         false,
@@ -124,7 +124,10 @@ test.skipIf(!existsSync(binary))(
       await controller.setMuted(false);
       expect(controller.diagnostics().audioMuted).toBe(false);
       await controller.instantState("save");
-      expect(toasts.at(-1).code).toBe("state.unsupportedKernel");
+      expect(toasts.at(-1).code).toBe("state.saved");
+      expect(existsSync(join(directory, "states-gwemu", "slot-0.json"))).toBe(
+        true,
+      );
       expect(existsSync(join(directory, "states"))).toBe(false);
       await Promise.all([
         controller.deviceAction("device.batteryDown"),

@@ -3,45 +3,82 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeJson } from "./atomic-file";
 import { UserError } from "../shared/user-error";
-function slotPath(directory: string, slot: number) {
+export type StateIdentity =
+  | { readonly kernel: "legacy" }
+  | { readonly kernel: "gwemu"; readonly buildSha256: string };
+const legacy: StateIdentity = { kernel: "legacy" };
+function namespace(identity: StateIdentity) {
+  if (identity.kernel === "legacy") return "states";
+  if (
+    identity.kernel !== "gwemu" ||
+    !/^[a-f0-9]{64}$/.test(identity.buildSha256)
+  )
+    throw new Error("Invalid state identity");
+  return "states-gwemu";
+}
+function slotPath(directory: string, slot: number, identity: StateIdentity) {
   if (!Number.isInteger(slot) || slot < 0 || slot > 9)
     throw new Error("Invalid state slot");
-  return join(directory, "states", `slot-${slot}.json`);
+  return join(directory, namespace(identity), `slot-${slot}.json`);
 }
-export async function loadSlot(
+async function lookupSlot(
   directory: string,
   slot: number,
-): Promise<string> {
+  identity: StateIdentity,
+) {
   try {
     const manifest = JSON.parse(
-      await readFile(slotPath(directory, slot), "utf8"),
+      await readFile(slotPath(directory, slot, identity), "utf8"),
     );
     if (
-      manifest.version !== 1 ||
+      manifest.version !== (identity.kernel === "legacy" ? 1 : 2) ||
       typeof manifest.id !== "string" ||
       !/^[0-9a-f-]{36}$/.test(manifest.id)
     )
       throw new Error("Invalid state manifest");
-    const path = join(directory, "states", manifest.id, "state.bin");
+    if (identity.kernel === "gwemu") {
+      if (manifest.kernel !== "gwemu")
+        throw new UserError("state.incompatible", { slot });
+      if (
+        typeof manifest.buildSha256 !== "string" ||
+        !/^[a-f0-9]{64}$/.test(manifest.buildSha256)
+      )
+        throw new Error("Invalid state manifest");
+    }
+    const path = join(directory, namespace(identity), manifest.id, "state.bin");
     if (!(await stat(path)).isFile()) throw new Error("Invalid state file");
-    return path;
+    return { path, manifest };
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT")
       throw new UserError("state.empty", { slot });
     throw error;
   }
 }
+export async function loadSlot(
+  directory: string,
+  slot: number,
+  identity: StateIdentity = legacy,
+): Promise<string> {
+  const { path, manifest } = await lookupSlot(directory, slot, identity);
+  if (
+    identity.kernel === "gwemu" &&
+    manifest.buildSha256 !== identity.buildSha256
+  )
+    throw new UserError("state.incompatible", { slot });
+  return path;
+}
 export async function saveSlot(
   directory: string,
   slot: number,
   save: (path: string) => Promise<unknown>,
+  identity: StateIdentity = legacy,
 ) {
-  const manifest = slotPath(directory, slot);
+  const manifest = slotPath(directory, slot, identity);
   const id = randomUUID();
-  const versionDir = join(directory, "states", id);
+  const versionDir = join(directory, namespace(identity), id);
   let previous: string | undefined;
   try {
-    previous = await loadSlot(directory, slot);
+    previous = (await lookupSlot(directory, slot, identity)).path;
   } catch (e) {
     if (!(e instanceof UserError && e.code === "state.empty")) throw e;
   }
@@ -57,7 +94,8 @@ export async function saveSlot(
       await file.close();
     }
     await writeJson(manifest, {
-      version: 1,
+      version: identity.kernel === "legacy" ? 1 : 2,
+      ...(identity.kernel === "gwemu" ? identity : {}),
       id,
       savedAt: new Date().toISOString(),
     });
@@ -74,6 +112,7 @@ export class RollbackError extends Error {
   constructor(
     public original: unknown,
     public rollback: unknown,
+    public recoveryPath?: string,
   ) {
     super("Failed to recover after state load");
   }
@@ -83,9 +122,14 @@ export async function restoreWithRollback(
   path: string,
   save: (path: string) => Promise<unknown>,
   load: (path: string) => Promise<unknown>,
+  identity: StateIdentity = legacy,
 ) {
-  const rollback = join(directory, "states", `rollback-${randomUUID()}.bin`);
-  await mkdir(join(directory, "states"), { recursive: true });
+  const rollback = join(
+    directory,
+    namespace(identity),
+    `rollback-${randomUUID()}.bin`,
+  );
+  await mkdir(join(directory, namespace(identity)), { recursive: true });
   let keepRecovery = false;
   try {
     await save(rollback);
@@ -96,7 +140,7 @@ export async function restoreWithRollback(
         await load(rollback);
       } catch (recovery) {
         keepRecovery = true;
-        throw new RollbackError(original, recovery);
+        throw new RollbackError(original, recovery, rollback);
       }
       throw original;
     }
@@ -107,14 +151,12 @@ export async function restoreWithRollback(
 
 export async function stateSlotTimes(
   directory: string,
+  identity: StateIdentity = legacy,
 ): Promise<(string | null)[]> {
   return Promise.all(
     Array.from({ length: 10 }, async (_, slot) => {
       try {
-        const manifest = JSON.parse(
-          await readFile(slotPath(directory, slot), "utf8"),
-        );
-        await loadSlot(directory, slot);
+        const { manifest } = await lookupSlot(directory, slot, identity);
         return typeof manifest.savedAt === "string" &&
           Number.isFinite(Date.parse(manifest.savedAt))
           ? manifest.savedAt

@@ -1,5 +1,8 @@
 import type { QmpClient } from "./qmp-client";
 import { stat, open, readdir } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { createHash } from "node:crypto";
+import type { StateIdentity } from "./savestate-store";
 import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
@@ -10,7 +13,10 @@ import {
   gwemuPowerSnapshotSchema,
   type GwemuPowerSnapshot,
 } from "./schemas";
-import { requireSupplyCapabilities } from "./gwemu-capabilities";
+import {
+  requireSupplyCapabilities,
+  requireSavestateCapabilities,
+} from "./gwemu-capabilities";
 import type { AppState } from "../shared/contracts";
 import { saveSession, type Session } from "./session-store";
 import { readJson } from "./atomic-file";
@@ -62,13 +68,34 @@ async function imageSizes(images: {
   };
 }
 const execute = promisify(execFile);
+export async function captureKernelIdentity(
+  kind: KernelKind,
+  binary: string,
+): Promise<StateIdentity> {
+  if (kind === "legacy") return { kernel: "legacy" };
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(binary)) hash.update(chunk);
+  return { kernel: "gwemu", buildSha256: hash.digest("hex") };
+}
+export async function verifyKernelIdentity(
+  binary: string,
+  identity: StateIdentity,
+) {
+  if (identity.kernel === "legacy") return;
+  const actual = await captureKernelIdentity("gwemu", binary).catch(() => {
+    throw new UserError("error.kernelBuild");
+  });
+  if (actual.kernel !== "gwemu" || actual.buildSha256 !== identity.buildSha256)
+    throw new UserError("error.kernelBuild");
+}
 export async function preflightKernel(
   kind: KernelKind,
   profile: Profile,
   binary: string,
 ) {
-  if (kind === "legacy") return;
+  if (kind === "legacy") return { kernel: "legacy" } as const;
   validateGwemuConfiguration(profile, await imageSizes(profile));
+  const identity = await captureKernelIdentity(kind, binary);
   const checks = await Promise.all(
     [
       ["-M", "gnw-h7b0,help"],
@@ -100,6 +127,9 @@ export async function preflightKernel(
   )
     throw new UserError("error.kernelBuild");
   await requireSupplyCapabilities(binary, kernelEnvironment(kind));
+  await requireSavestateCapabilities(binary, kernelEnvironment(kind));
+  await verifyKernelIdentity(binary, identity);
+  return identity;
 }
 
 export async function kernelArguments(
@@ -152,6 +182,8 @@ export async function finishKernelSession(
 /** Kernel-specific control stays behind the UI's single QMP connection. */
 export class KernelBackend {
   private mask = 0;
+  private inputEpoch = 0;
+  private releasePending = false;
   constructor(
     readonly kind: KernelKind,
     private qmp: QmpClient,
@@ -163,7 +195,14 @@ export class KernelBackend {
         property: "buttons",
         value: mask,
       });
+    const epoch = this.inputEpoch;
     const events = [];
+    if (this.releasePending) {
+      for (let bit = 0; bit < keys.length; bit++)
+        if (this.mask & (1 << bit)) events.push(keyEvent(bit, false));
+      this.mask = 0;
+      this.releasePending = false;
+    }
     for (const down of [false, true])
       for (let bit = 0; bit < keys.length; bit++)
         if (
@@ -172,7 +211,18 @@ export class KernelBackend {
         )
           events.push(keyEvent(bit, down));
     if (events.length) await this.qmp.command("input-send-event", { events });
-    this.mask = mask;
+    if (epoch === this.inputEpoch) this.mask = mask;
+  }
+  deferHostRelease() {
+    this.releasePending = true;
+  }
+  get hasPendingRelease() {
+    return this.releasePending;
+  }
+  resetHostInput() {
+    this.inputEpoch++;
+    this.mask = 0;
+    this.releasePending = false;
   }
   async resetInput() {
     if (this.kind === "legacy") return this.buttons(0);
@@ -180,6 +230,7 @@ export class KernelBackend {
       events: keys.map((_key, bit) => keyEvent(bit, false)),
     });
     this.mask = 0;
+    this.releasePending = false;
   }
   setMuted(muted: boolean) {
     return this.qmp.command("qom-set", {

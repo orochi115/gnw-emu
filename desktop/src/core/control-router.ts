@@ -1,3 +1,4 @@
+import type { AppState } from "../shared/contracts";
 import {
   controlInputSchema,
   controlsSchema,
@@ -16,6 +17,7 @@ export interface ControlRouterCallbacks {
   button(bit: number, down: boolean, source: string): void;
   action(id: HotkeyAction): void;
   release(): void;
+  physicalRelease?(): void;
   flush?(): Promise<void>;
   failed?(error: unknown): void;
 }
@@ -35,6 +37,7 @@ export class ControlRouter {
   private quarantined = new Set<string>();
   private active = new Map<string, ActiveBinding>();
   private blocked = false;
+  private guestBlocked = false;
   private disposed = false;
   private timer?: ReturnType<typeof setTimeout>;
   private schedulerBusy = false;
@@ -67,7 +70,10 @@ export class ControlRouter {
       this.raw.delete(rawKey);
       this.quarantined.delete(rawKey);
     }
-    if (this.blocked || stalePress) return;
+    if (this.blocked || stalePress) {
+      if (!event.down) this.callbacks.physicalRelease?.();
+      return;
+    }
     if (event.down && (repeated || this.quarantined.has(rawKey))) return;
     const permitted =
       this.config.devices[
@@ -92,6 +98,7 @@ export class ControlRouter {
           this.callbacks.action(binding.target);
         continue;
       }
+      if (this.guestBlocked && !isHotkeyTarget(binding.target)) continue;
       const held = binding.inputs.every((token) =>
         [...this.raw.entries()].some(
           ([key, input]) =>
@@ -142,10 +149,17 @@ export class ControlRouter {
       }
     }
     this.schedule();
+    if (!event.down) this.callbacks.physicalRelease?.();
   }
-  setBlocked(blocked: boolean) {
-    if (this.disposed || this.blocked === blocked) return;
+  setBlocked(blocked: boolean, execution?: AppState["execution"]) {
+    const guestBlocked = execution !== undefined && execution !== "running";
+    if (
+      this.disposed ||
+      (this.blocked === blocked && this.guestBlocked === guestBlocked)
+    )
+      return;
     this.blocked = blocked;
+    this.guestBlocked = guestBlocked;
     this.reset();
   }
   setConfig(config: ControlsSettings) {

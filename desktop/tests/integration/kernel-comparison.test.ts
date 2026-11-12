@@ -7,7 +7,7 @@ import { createProfile } from "../../src/core/profile-store";
 import { compareKernels } from "../../tools/kernel-comparison";
 import * as sessionStore from "../../src/core/session-store";
 const nativeGwemu = resolve(
-  process.env.GWEMU_BINARY ?? "../build/gwemu/qemu-system-arm",
+  process.env.GWEMU_BINARY ?? "../build/gwemu-savestate/qemu-system-arm",
 );
 
 test("failed launches preserve source images and leave two independent diagnostic sessions", async () => {

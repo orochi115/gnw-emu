@@ -312,3 +312,56 @@ test("disabled raw gamepad inputs cannot be reactivated by an unrelated event", 
   s.event(key("KeyB"), true, [], "mixed-source");
   expect(s.input.buttons).toBe(32);
 });
+
+test.each(["paused", "unpowered", "unknown"] as const)(
+  "execution %s keeps host hotkeys usable while guest buttons/turbo remain quarantined",
+  async (execution) => {
+    vi.useFakeTimers();
+    const s = setup(
+      [
+        ...defaultControls().bindings,
+        bind("execution-turbo", "a", key("KeyJ"), 10),
+      ],
+      () => s.input.flush(),
+    );
+    try {
+      s.event(key("ArrowLeft"), true);
+      s.event(key("KeyJ"), true);
+      await s.input.flush();
+      s.router.setBlocked(false, execution);
+      await s.input.flush();
+      const sent = s.values.length;
+      for (const code of ["KeyC", "F5", "F8"]) {
+        s.event(key(code), true);
+        s.event(key(code), false);
+      }
+      expect(s.actions).toEqual(["device.usb", "state.save", "state.load"]);
+      s.event(key("ArrowLeft"), true);
+      s.event(key("KeyJ"), true);
+      s.event(key("ArrowRight"), true);
+      await vi.advanceTimersByTimeAsync(500);
+      await s.input.flush();
+      expect(s.values).toHaveLength(sent);
+      expect(s.input.buttons).toBe(0);
+      s.router.setBlocked(false, "running");
+      await s.input.flush();
+      s.event(key("ArrowLeft"), true);
+      s.event(key("KeyJ"), true);
+      s.event(key("ArrowRight"), true);
+      await vi.advanceTimersByTimeAsync(500);
+      expect(s.input.buttons).toBe(0);
+      s.event(key("ArrowLeft"), false);
+      s.event(key("ArrowLeft"), true);
+      expect(s.input.buttons).toBe(1);
+      s.event(key("KeyJ"), false);
+      s.event(key("KeyJ"), true);
+      expect(s.input.buttons).toBe(17);
+      s.router.setBlocked(true, execution);
+      s.event(key("KeyC"), true);
+      s.event(key("F5"), true);
+      expect(s.actions).toHaveLength(3);
+    } finally {
+      s.router.dispose();
+    }
+  },
+);
