@@ -66,11 +66,11 @@ Files：`externals/gwemu/hw/misc/gnw_h7b0_gpio.c`、`include/hw/misc/gnw_h7b0_gp
 
 ## Task 3：RPC服务与managed GDB proxy
 
-- [ ] 写 `desktop/tests/integration/manager-session-server.test.ts` realUnix sockets：空list/multi identities/handshake、fragmentedJSON/oversize/maxconnections、跨连接盗lease拒绝、同lease一GDBclient/断后重连、release旧endpoint失效。
-- [ ] 实现serverstart/close、descriptor，短path managedproxy使用双向pipe、backpressure/errorcleanup；只在controller admission成功且复核身份后公布proxy。
-- [ ] 用注入时钟验证idle30秒与fixedabsolute截止；长press不会阻塞heartbeat，真实socket结合缩放duration验证>默认RPC截止的合法press仍成功，超绝对截止取消并归零；acquire过程中childexit/stop/failedproxy安全回收，oldcleanup不清新owner。
-- [ ] 真实nativeGDB读取PC/Flash，期间UI换ROM被拒绝；stop关socket，后续旧lease必失败；新load获新UUID/nativeendpoint。
-- [ ] main生命周期接入，`npm run typecheck` 与上述tests通过，再独立两级review/本地提交。
+- [x] 写 `desktop/tests/integration/manager-session-server.test.ts` realUnix sockets：空list/multi identities/handshake、fragmentedJSON/oversize/maxconnections、跨连接盗lease拒绝、同lease一GDBclient/断后重连、release旧endpoint失效。
+- [x] 实现serverstart/close、descriptor，短path managedproxy使用双向pipe、backpressure/errorcleanup；只在controller admission成功且复核身份后公布proxy。
+- [x] 用注入时钟验证idle30秒与fixedabsolute截止；长press不会阻塞heartbeat，真实socket结合缩放duration验证>默认RPC截止的合法press仍成功，超绝对截止取消并归零；acquire过程中childexit/stop/failedproxy安全回收，oldcleanup不清新owner。
+- [x] 真实nativeGDB读取PC/Flash，期间UI换ROM被拒绝；stop关socket，后续旧lease必失败；新load获新UUID/nativeendpoint。
+- [x] main生命周期接入，`npm run typecheck` 与上述tests通过，再独立两级review/本地提交。
 
 ## Task 4：Python会话client与Unix GDB（backup实现结束后）
 

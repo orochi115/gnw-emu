@@ -38,6 +38,7 @@ import pino from "pino";
 import { EventEmitter } from "node:events";
 import { applicationPaths } from "../core/paths";
 import { SessionController } from "../core/session-controller";
+import { startManagerSessionServer } from "../core/manager-session-server";
 import { createProfile } from "../core/profile-store";
 import { profileSchema } from "../core/schemas";
 import { startDisplay } from "./display-adapter";
@@ -71,6 +72,8 @@ let makerOpen = false;
 let nativeDialog = false;
 let automation: Awaited<ReturnType<typeof startAutomationServer>> | undefined;
 let controller: SessionController;
+let managerService:
+  Awaited<ReturnType<typeof startManagerSessionServer>> | undefined;
 let dialogs: DialogAdapter;
 let logger: ReturnType<typeof createLogManager>;
 let active: Promise<unknown> | undefined;
@@ -384,6 +387,30 @@ async function main() {
     logFor: (module) => logger.child(module),
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
   });
+  if (paths.kernel === "gwemu") {
+    if (process.platform === "win32") {
+      logger
+        .child("session")
+        .warn(
+          { event: "manager.unsupported" },
+          "Current-session management requires Unix sockets",
+        );
+      void dialog.showMessageBox(window, {
+        type: "info",
+        message: t("manager.unsupportedTitle"),
+        detail: t("manager.unsupportedPlatform"),
+      });
+    } else {
+      managerService = await startManagerSessionServer({ controller });
+      logger.child("session").info(
+        {
+          event: "manager.started",
+          serverId: managerService.descriptor.serverId,
+        },
+        "Current-session management service started",
+      );
+    }
+  }
   controlRouter = new ControlRouter(settings.controls, {
     button: (bit, down, source) => {
       const id = controller.state.runtimeSessionId;
@@ -1478,6 +1505,7 @@ async function shutdown() {
   controlHost?.destroy();
   controlRouter?.dispose();
   try {
+    await managerService?.close();
     await active?.catch(() => {});
     await preferenceChange.catch(() => {});
     windowMode.flushPreferences();
@@ -1491,6 +1519,8 @@ async function shutdown() {
       buttons: [t("menu.quit")],
     });
   } finally {
+    await managerService?.close().catch(() => {});
+    await controller.stop().catch(() => {});
     await viewSettings.flush();
     for (const cancel of waiters.values()) cancel();
     await automation?.close();
@@ -1504,7 +1534,9 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(main)
-    .catch((error) => {
+    .catch(async (error) => {
+      await managerService?.close().catch(() => {});
+      await controller?.stop().catch(() => {});
       process.stderr.write(String(error) + "\n");
       app.exit(1);
     });

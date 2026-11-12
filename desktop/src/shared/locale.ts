@@ -4,6 +4,9 @@ import { UserError } from "./user-error";
 export type Locale = "zh-CN" | "en";
 export type LanguagePreference = Locale | "system";
 const en = {
+  "manager.unsupportedTitle": "Current-session management unavailable",
+  "manager.unsupportedPlatform":
+    "Managing the running session is unavailable on Windows. You can keep using the emulator and the standalone manager backend.",
   "device.menu": "Device",
   "device.execution.paused": "Paused · choose Device → Resume to run",
   "device.execution.unpowered":
@@ -247,6 +250,9 @@ const en = {
   "action.closeDisplay": "closing the display connection",
 };
 const zh: Record<keyof typeof en, string> = {
+  "manager.unsupportedTitle": "当前会话管理不可用",
+  "manager.unsupportedPlatform":
+    "Windows 暂不支持管理运行中的会话。模拟器与独立 manager 后端仍可使用。",
   "device.menu": "设备",
   "device.execution.paused": "已暂停 · 从「设备」菜单选择继续运行",
   "device.execution.unpowered": "无电源 · 从「设备」菜单连接电池或 USB",

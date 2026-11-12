@@ -27,6 +27,8 @@ export interface OwnedManagerEndpoint {
   readonly path: string;
   /** Call immediately after binding/creating this socket to claim its inode and set mode0600. */
   secure(): Promise<void>;
+  /** Atomically publish a freshly bound private socket without replacing an existing name. */
+  publishSocket(source: string, identity: Identity): Promise<void>;
   /** Remove only this handle's claimed inode. A replacement or an unclaimed path is retained. */
   close(): Promise<void>;
 }
@@ -66,7 +68,11 @@ export class ManagerEndpointDirectory {
   ): OwnedManagerEndpoint {
     if (this.resources.has(path))
       unsupported("Manager endpoint is already allocated");
-    const resource = { kind, identity };
+    const resource: {
+      kind: "socket" | "file";
+      identity?: Identity;
+      publication?: Promise<void>;
+    } = { kind, identity };
     this.resources.set(path, resource);
     let closed = false;
     return {
@@ -89,11 +95,52 @@ export class ManagerEndpointDirectory {
           unsupported("Manager endpoint changed while securing it");
         await this.check();
       },
+      publishSocket: (source, identity) => {
+        if (
+          closed ||
+          kind !== "socket" ||
+          resource.identity ||
+          resource.publication ||
+          this.resources.get(path) !== resource
+        )
+          return Promise.reject(
+            new ManagerProtocolError(
+              "UNSUPPORTED",
+              "Manager socket is no longer available for publication",
+            ),
+          );
+        const publication = (async () => {
+          await this.check();
+          const current = await lstat(source);
+          if (
+            !current.isSocket() ||
+            !same(current, identity) ||
+            !valid(current, this.uid, 0o600)
+          )
+            unsupported("Manager socket source is not the bound private inode");
+          if (closed) unsupported("Manager socket closed before publication");
+          // link() is exclusive: an existing foreign name is never replaced.
+          await link(source, path);
+          resource.identity = current;
+          const published = await lstat(path);
+          if (
+            !published.isSocket() ||
+            !same(published, current) ||
+            !valid(published, this.uid, 0o600)
+          )
+            unsupported("Manager socket changed during publication");
+          await this.check();
+          if (closed) unsupported("Manager socket closed during publication");
+        })();
+        resource.publication = publication;
+        return publication;
+      },
       close: async () => {
         if (closed) return;
         closed = true;
         if (this.resources.get(path) !== resource) return;
         try {
+          await resource.publication?.catch(() => {});
           await this.check();
           const current = await lstat(path);
           if (

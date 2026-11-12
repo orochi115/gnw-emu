@@ -16,10 +16,10 @@
 ```sh
 git submodule sync -- externals/gwemu
 git submodule update --init externals/gwemu
-GWEMU_BUILD_DIR=build/gwemu-manager-ram sh scripts/build_gwemu.sh
+GWEMU_BUILD_DIR=build/gwemu-session-manager-release sh scripts/build_gwemu.sh
 ```
 
-默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-manager-ram`，此前产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
+默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-session-manager-release`，历史 `build/gwemu-manager-ram` 产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
 
 `gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、补丁审查副本哈希、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
 
@@ -50,7 +50,7 @@ npm run build:cli
 node dist-cli/compare-kernels.js \
   --profile ../profiles/mario.gnw.json \
   --legacy ../build/qemu-system-arm \
-  --gwemu ../build/gwemu-manager-ram/qemu-system-arm \
+  --gwemu ../build/gwemu-session-manager-release/qemu-system-arm \
   --output ../out/gwemu-my-mario-run \
   --seconds 3
 ```
@@ -70,9 +70,9 @@ node dist-cli/compare-kernels.js \
 ## 回归检查
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py tests/test_gwemu_supply.py tests/test_gwemu_rtc.py
+GWEMU_BINARY="$PWD/build/gwemu-session-manager-release/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py tests/test_gwemu_supply.py tests/test_gwemu_rtc.py
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-session-manager-release/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-session-manager-release/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-supply.spec.ts
@@ -130,7 +130,7 @@ gwemu 隔离 session 保存 `batteryPresent`，旧元数据缺省 true，legacy 
 
 ```sh
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-manager-ram/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-session-manager-release/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-session-manager-release/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts tests/e2e/automation-ui.spec.ts tests/e2e/main-window.spec.ts
@@ -145,8 +145,8 @@ npm run test:e2e -- tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.
 完整冷启动、最后供电来源丢失/恢复和 BDRST 清除日历并重新初始化。USB 供电下拔电池不会清除 RTC。固件执行后可自行校时：两组 patched OFW 在备份丢失后设置 2021-01-01 12:00，模型允许该写入。session.rtc 是启动配置，固定 session 重开回到配置初值，host 重开从当前宿主时间开始。未模拟物理 VBAT、振荡器停振或掉电后的 RTC 能量来源。
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc.py
-GNW_FIRMWARE_RTC_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc_firmware.py
+GWEMU_BINARY="$PWD/build/gwemu-session-manager-release/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc.py
+GNW_FIRMWARE_RTC_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-session-manager-release/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_rtc_firmware.py
 ```
 
 后者需要四组本地镜像，始终挂载副本并在 finally 检查源哈希。gwemu 验收 Retro-Go bank2，legacy 对照沿用既有 OFW 入口；启动后执行忠实 INIT 校时序列，不声称已自动操作固件的整个校时 UI。旧 supply 产物缺少新 RTC 属性时，QEMU 明确拒绝启动。默认内核仍为 legacy；后续存档批次已补齐 RTC 恢复，具体 RTC 基础证据与边界见 [RTC 报告](../research/2026-11-12-gwemu-rtc.md)。
@@ -158,8 +158,8 @@ GNW_FIRMWARE_RTC_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-a
 暂停/无电源读取不会发宿主按键事件，也不会自动继续。恢复失败后的临时恢复点保留；无法回滚或设备状态未知时禁止继续，关闭清理进程并报告保存不确定。规范及质量审查已经通过，桌面全套 217 项通过，typecheck/build 通过；七组真实 Electron 回归通过，包含暂停/断电 F5/F8 和 USB 热键；最终实现复审已通过。
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate.py tests/test_gwemu_savestate_runtime.py tests/test_gwemu_savestate_peripherals.py
-GNW_FIRMWARE_STATE_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-manager-ram/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate_firmware.py
+GWEMU_BINARY="$PWD/build/gwemu-session-manager-release/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate.py tests/test_gwemu_savestate_runtime.py tests/test_gwemu_savestate_peripherals.py
+GNW_FIRMWARE_STATE_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-session-manager-release/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_savestate_firmware.py
 cd desktop
 npm run test:e2e -- tests/e2e/gwemu-savestates.spec.ts tests/e2e/gwemu-supply.spec.ts tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts tests/e2e/automation-ui.spec.ts tests/e2e/main-window.spec.ts tests/e2e/savestates.spec.ts
 ```

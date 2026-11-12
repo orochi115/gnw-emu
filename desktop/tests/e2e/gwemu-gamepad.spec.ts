@@ -14,7 +14,9 @@ import { join, resolve } from "node:path";
 import { createProfile } from "../../src/core/profile-store";
 import { loadSettings, updateSettings } from "../../src/core/settings-store";
 
-const binary = resolve("../build/gwemu-manager-ram/qemu-system-arm");
+const binary = resolve(
+  "../build/gwemu-session-manager-release/qemu-system-arm",
+);
 test.skip(!existsSync(binary), "Build the fixed gwemu desktop kernel first");
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const hash = async (p: string) =>
@@ -69,7 +71,9 @@ async function acceptance(
   try {
     const manifest = JSON.parse(
       await readFile(
-        resolve("../build/gwemu-manager-ram/gnw-build-manifest.json"),
+        resolve(
+          "../build/gwemu-session-manager-release/gnw-build-manifest.json",
+        ),
         "utf8",
       ),
     );
