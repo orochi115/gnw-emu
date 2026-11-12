@@ -32,6 +32,56 @@ import {
 } from "./savestate-store";
 import type { ToastMessage } from "../shared/contracts";
 import type { GwemuPowerSnapshot } from "./schemas";
+import {
+  openManagerDirectory,
+  type OwnedManagerEndpoint,
+} from "./manager-endpoints";
+import {
+  ManagerProtocolError,
+  parseControl,
+  parseCompletion,
+  type ManagerCompletion,
+  type ManagerControl,
+  type ManagerMutations,
+  type ManagerOperation,
+  type ManagerSessionDescriptor,
+} from "./manager-protocol";
+
+export interface ManagerOwner {
+  readonly operation: ManagerOperation;
+  readonly deadlineMs: number;
+  readonly signal: AbortSignal;
+}
+export interface ManagerAcquisition {
+  sessionId: string;
+  /** Internal native endpoint. The server exposes only its lease-owned proxy. */
+  gdbEndpoint: string;
+  initial: {
+    execution: NonNullable<AppState["execution"]>;
+    devicePower: NonNullable<AppState["devicePower"]>;
+  };
+}
+interface ManagerContext {
+  owner: ManagerOwner;
+  operation: ManagerOperation;
+  runtime: Runtime;
+  deadline: number;
+  abort: AbortController;
+  onAbort: () => void;
+  timer: NodeJS.Timeout;
+  closing: boolean;
+  admitted: boolean;
+  failed: boolean;
+  mutationGeneration: number;
+  applicationControls: number;
+  applicationReady: boolean;
+  mutations: ManagerMutations;
+  intent?: "paused" | "running";
+  initial?: ManagerAcquisition["initial"];
+  ready: Promise<void>;
+  work: Promise<unknown>;
+  finish?: Promise<{ session: ManagerSessionDescriptor }>;
+}
 export type DeviceAction =
   | "device.batteryDown"
   | "device.batteryUp"
@@ -61,6 +111,8 @@ export async function deadline<T>(
   }
 }
 interface Runtime {
+  gdbEndpoint?: OwnedManagerEndpoint;
+  gdbReady?: Promise<void>;
   audioMuted: boolean;
   identity: StateIdentity;
   uncertain: boolean;
@@ -86,6 +138,7 @@ export class SessionController extends EventEmitter {
   private busy = false;
   private stateWork?: Promise<void>;
   private stateOwner?: object;
+  private manager?: ManagerContext;
   private slot = 0;
   private stopPromise?: Promise<void>;
   private startup?: {
@@ -102,6 +155,9 @@ export class SessionController extends EventEmitter {
       logFor?: (module: string) => Logger;
       createDisplay: (id: string) => Promise<DisplayEndpoint>;
       timeout?: number;
+      managerDirectory?: string;
+      /** Disable native GDB for accelerators without guest debugging (e.g. qtest). */
+      enableManager?: boolean;
     },
   ) {
     super();
@@ -112,7 +168,8 @@ export class SessionController extends EventEmitter {
     this.emit("state", update);
   }
   async load(path: string) {
-    if (this.busy || this.stopPromise) throw new UserError("error.busy");
+    if (this.busy || this.stopPromise || this.manager)
+      throw new UserError("error.busy");
     this.busy = true;
     let finish!: () => void, cancel!: (error: Error) => void;
     const cancelled = new Promise<never>((_resolve, reject) => {
@@ -165,6 +222,7 @@ export class SessionController extends EventEmitter {
       let qmp: QmpClient | undefined;
       let display: DisplayEndpoint | undefined;
       let transferred = false;
+      let gdbEndpoint: OwnedManagerEndpoint | undefined;
       try {
         const data =
           kernel === "gwemu"
@@ -182,10 +240,22 @@ export class SessionController extends EventEmitter {
         const qmpPort = await qmp.listen();
         display = await this.options.createDisplay(id);
         const backend = new KernelBackend(kernel, qmp);
+        if (
+          kernel === "gwemu" &&
+          process.platform !== "win32" &&
+          this.options.enableManager !== false
+        ) {
+          const directory = await openManagerDirectory({
+            directory: this.options.managerDirectory,
+          });
+          gdbEndpoint = await directory.socket("native");
+          check();
+        }
         const args = await kernelArguments(kernel, profile, session, settings, {
           qmpPort,
           framePort: display.port,
           stateFile,
+          gdbSocket: gdbEndpoint?.path,
         });
         check();
         const input = new InputController(
@@ -217,6 +287,7 @@ export class SessionController extends EventEmitter {
           },
         );
         const runtime: Runtime = {
+          gdbEndpoint,
           audioMuted: !settings.audio,
           identity,
           uncertain: false,
@@ -253,6 +324,12 @@ export class SessionController extends EventEmitter {
           child.once("exit", (code) => r(code));
         });
         runtime.exit.catch(() => {});
+        if (gdbEndpoint) {
+          // Claim the native socket independently of display/QMP readiness, even
+          // when the child exits immediately after bind. Cleanup awaits this task.
+          runtime.gdbReady = this.claimNativeEndpoint(runtime, gdbEndpoint);
+          runtime.gdbReady.catch(() => {});
+        }
         if (child.pid) await lease.attach(child.pid);
         check();
         let stderr = "";
@@ -303,7 +380,7 @@ export class SessionController extends EventEmitter {
         this.publish({ ...this.state, stage: "connect" });
         await deadline(
           Promise.race([
-            Promise.all([qmp.ready, display.ready]),
+            Promise.all([qmp.ready, display.ready, runtime.gdbReady]),
             startupFailure,
             cancelled,
           ]),
@@ -356,6 +433,7 @@ export class SessionController extends EventEmitter {
           await qmp?.close();
           await display?.close();
           await lease?.release();
+          await gdbEndpoint?.close();
         }
         if (attempt.cancelled) {
           if (this.state.saveUncertain)
@@ -395,6 +473,597 @@ export class SessionController extends EventEmitter {
       saveUncertain: true,
     });
   }
+  private async claimNativeEndpoint(
+    runtime: Runtime,
+    endpoint: OwnedManagerEndpoint,
+  ) {
+    const until = performance.now() + (this.options.timeout ?? 10000);
+    for (;;) {
+      try {
+        await endpoint.secure();
+        return;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        if (
+          runtime.child?.exitCode !== null ||
+          runtime.child?.signalCode !== null
+        )
+          throw new UserError("error.startup", {
+            code: "signal",
+            detail: "Native GDB endpoint was not bound",
+          });
+        if (performance.now() >= until)
+          throw new UserError("error.timeout", { action: "native-gdb" });
+        await new Promise<void>((resolve) => setTimeout(resolve, 1));
+      }
+    }
+  }
+  managerSession(): ManagerSessionDescriptor | undefined {
+    const runtime = this.runtime;
+    if (
+      !runtime ||
+      runtime.backend.kind !== "gwemu" ||
+      runtime.stopping ||
+      !runtime.child ||
+      runtime.child.exitCode !== null ||
+      runtime.child.signalCode !== null ||
+      this.state.status === "starting"
+    )
+      return;
+    return {
+      sessionId: runtime.id,
+      profileName: this.state.profileName ?? "Game & Watch",
+      model: this.state.model ?? "mario",
+      kernel: "gwemu",
+      execution: runtime.uncertain
+        ? "unknown"
+        : (runtime.execution ?? "unknown"),
+      powered: this.state.devicePower?.powered ?? false,
+      capabilities: runtime.gdbEndpoint
+        ? ["manage", "gdb", "backup", "device-control"]
+        : [],
+    };
+  }
+  private managerCheck(context: ManagerContext, closing = false) {
+    if (
+      this.manager !== context ||
+      this.runtime !== context.runtime ||
+      context.runtime.stopping
+    )
+      throw new ManagerProtocolError(
+        "STALE_SESSION",
+        "Managed session is no longer active",
+      );
+    if (
+      !closing &&
+      (context.closing ||
+        context.abort.signal.aborted ||
+        performance.now() >= context.deadline)
+    )
+      throw new ManagerProtocolError("LEASE_EXPIRED", "Management lease ended");
+  }
+  private managerContext(owner: ManagerOwner) {
+    const context = this.manager;
+    if (!context || context.owner !== owner)
+      throw new ManagerProtocolError(
+        "NOT_OWNER",
+        "Management owner does not match",
+      );
+    this.managerCheck(context);
+    if (!context.admitted)
+      throw new ManagerProtocolError("BUSY", "Management admission is pending");
+    return context;
+  }
+  private managerBudget(context: ManagerContext) {
+    this.managerCheck(context);
+    return Math.max(
+      1,
+      Math.min(5000, Math.ceil(context.deadline - performance.now())),
+    );
+  }
+  private async managerAwait<T>(
+    context: ManagerContext,
+    work: Promise<T>,
+  ): Promise<T> {
+    this.managerCheck(context);
+    let cancel!: () => void;
+    const aborted = new Promise<never>((_resolve, reject) => {
+      cancel = () =>
+        reject(
+          new ManagerProtocolError("LEASE_EXPIRED", "Management lease ended"),
+        );
+      context.abort.signal.addEventListener("abort", cancel, { once: true });
+    });
+    try {
+      const result = await Promise.race([work, aborted]);
+      this.managerCheck(context);
+      return result;
+    } finally {
+      context.abort.signal.removeEventListener("abort", cancel);
+    }
+  }
+  private managerCommand(
+    context: ManagerContext,
+    name: string,
+    args?: Record<string, unknown>,
+  ) {
+    return this.managerAwait(
+      context,
+      context.runtime.qmp.command(name, args, this.managerBudget(context)),
+    );
+  }
+  private async managerRead(context: ManagerContext) {
+    const value = await this.managerAwait(
+      context,
+      context.runtime.backend.readDeviceState(this.managerBudget(context)),
+    );
+    context.runtime.execution = value.execution;
+    this.publish({ ...this.state, ...value, deviceOperation: true });
+    return value;
+  }
+  beginManager(
+    sessionId: string,
+    owner: ManagerOwner,
+  ): Promise<ManagerAcquisition> {
+    const runtime = this.runtime;
+    if (
+      !runtime ||
+      runtime.id !== sessionId ||
+      runtime.stopping ||
+      !this.managerSession()
+    )
+      return Promise.reject(
+        new ManagerProtocolError(
+          "STALE_SESSION",
+          "Session is no longer active",
+        ),
+      );
+    if (runtime.uncertain)
+      return Promise.reject(
+        new ManagerProtocolError(
+          "UNCERTAIN",
+          "Close and reopen the uncertain session",
+        ),
+      );
+    if (this.manager || this.busy || this.startup || this.stopPromise)
+      return Promise.reject(
+        new ManagerProtocolError("BUSY", "Session is busy"),
+      );
+    if (!runtime.gdbEndpoint)
+      return Promise.reject(
+        new ManagerProtocolError(
+          "UNSUPPORTED",
+          "Current-session management requires a private Unix endpoint",
+        ),
+      );
+    if (
+      !owner ||
+      !["read", "manage", "debug"].includes(owner.operation) ||
+      !Number.isFinite(owner.deadlineMs) ||
+      owner.deadlineMs - Date.now() > 3600000 ||
+      !(owner.signal instanceof AbortSignal)
+    )
+      return Promise.reject(
+        new ManagerProtocolError("INVALID_REQUEST", "Invalid management owner"),
+      );
+    const duration = owner.deadlineMs - Date.now();
+    if (duration <= 0 || owner.signal.aborted)
+      return Promise.reject(
+        new ManagerProtocolError("LEASE_EXPIRED", "Management lease ended"),
+      );
+    const accepted = Promise.all([
+      runtime.powerWork,
+      this.stateWork ?? Promise.resolve(),
+    ]);
+    const context: ManagerContext = {
+      owner,
+      operation: owner.operation,
+      runtime,
+      deadline: performance.now() + duration,
+      abort: new AbortController(),
+      closing: false,
+      admitted: false,
+      failed: false,
+      mutationGeneration: 0,
+      applicationControls: 0,
+      applicationReady: owner.operation !== "debug",
+      mutations: {
+        managerUploaded: false,
+        memoryWritten: false,
+        executionChanged: false,
+      },
+      ready: Promise.resolve(),
+      work: Promise.resolve(),
+      timer: undefined as unknown as NodeJS.Timeout,
+      onAbort: () => {
+        context.abort.abort();
+        void this.endManager(owner, {
+          ...context.mutations,
+          success: false,
+        }).catch(() => {});
+      },
+    };
+    // Owner and input gate are synchronous, before admission's first await.
+    this.manager = context;
+    owner.signal.addEventListener("abort", context.onAbort, { once: true });
+    context.timer = setTimeout(context.onAbort, duration);
+    runtime.input.resetHost();
+    this.publish({ ...this.state, deviceOperation: true });
+    context.ready = (async () => {
+      await this.managerAwait(context, accepted);
+      context.initial = await this.managerRead(context);
+      await this.managerAwait(context, runtime.input.flush());
+      await this.managerAwait(
+        context,
+        runtime.backend.releaseHostInput(this.managerBudget(context)),
+      );
+      await this.managerCommand(context, "stop");
+      await this.managerRead(context);
+      context.admitted = true;
+    })();
+    return context.ready
+      .then(() => {
+        this.managerCheck(context);
+        return {
+          sessionId: runtime.id,
+          gdbEndpoint: runtime.gdbEndpoint!.path,
+          initial: context.initial!,
+        };
+      })
+      .catch(async (error) => {
+        await this.endManager(owner, {
+          ...context.mutations,
+          success: false,
+        }).catch(() => {});
+        throw error;
+      });
+  }
+  markManager(owner: ManagerOwner, flags: ManagerMutations) {
+    const context = this.managerContext(owner);
+    const validated = parseCompletion({ ...flags, success: true });
+    const changesTarget =
+      validated.managerUploaded ||
+      validated.memoryWritten ||
+      validated.executionChanged;
+    // The caller must receive a successful mark before issuing GDB mutations.
+    // Accepted application execution excludes a concurrent pre-mutation mark.
+    if (changesTarget && context.applicationControls > 0)
+      throw new ManagerProtocolError(
+        "BUSY",
+        "Wait for application execution control before mutating the target",
+      );
+    if (changesTarget) context.mutationGeneration++;
+    for (const key of [
+      "managerUploaded",
+      "memoryWritten",
+      "executionChanged",
+    ] as const) {
+      context.mutations[key] ||= validated[key];
+      if (validated[key]) context.applicationReady = false;
+    }
+    return { session: this.managerSession()! };
+  }
+  managerControl(owner: ManagerOwner, action: ManagerControl) {
+    let context: ManagerContext;
+    let control: ManagerControl;
+    try {
+      context = this.managerContext(owner);
+      control = parseControl(action);
+      if (context.operation === "read")
+        throw new ManagerProtocolError(
+          "NOT_OWNER",
+          "Read lease cannot control the device",
+        );
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    const executesApplication =
+      control.action === "press" || control.action === "resume";
+    if (executesApplication) context.applicationControls++;
+    const work = context.work
+      .catch(() => {})
+      .then(() => this.performManagerControl(context, control))
+      .catch((error) => {
+        if (
+          !(error instanceof ManagerProtocolError) ||
+          !["NO_POWER", "TARGET_UNSAFE"].includes(error.code)
+        ) {
+          context.failed = true;
+          void this.endManager(owner, {
+            ...context.mutations,
+            success: false,
+          }).catch(() => {});
+        }
+        throw error;
+      })
+      .finally(() => {
+        if (executesApplication) context.applicationControls--;
+      });
+    context.work = work;
+    return work;
+  }
+  private async performManagerControl(
+    context: ManagerContext,
+    control: ManagerControl,
+  ) {
+    this.managerCheck(context);
+    const runtime = context.runtime;
+    const current = await this.managerRead(context);
+    if (
+      ["resume", "cold-start", "press"].includes(control.action) &&
+      !current.devicePower.powered
+    )
+      throw new ManagerProtocolError("NO_POWER", "No power supply");
+    if (
+      (control.action === "resume" || control.action === "press") &&
+      !context.applicationReady
+    )
+      throw new ManagerProtocolError(
+        "TARGET_UNSAFE",
+        "Reset to the application before executing it",
+      );
+    if (control.action === "pause") {
+      await this.managerCommand(context, "stop");
+      context.intent = "paused";
+    } else if (control.action === "resume") {
+      await this.managerCommand(context, "cont");
+      context.intent = "running";
+    } else if (
+      control.action === "warm-reset" ||
+      control.action === "cold-start"
+    ) {
+      await this.managerCommand(context, "stop");
+      const resetGeneration = context.mutationGeneration;
+      if (control.action === "cold-start") {
+        await this.managerAwait(
+          context,
+          runtime.backend.coldReset(this.managerBudget(context)),
+        );
+      } else await this.managerCommand(context, "system_reset");
+      await this.managerCommand(context, "stop");
+      await this.managerCommand(context, "query-status");
+      context.applicationReady = context.mutationGeneration === resetGeneration;
+      context.intent = "paused";
+      if (control.action === "cold-start") {
+        if (!context.applicationReady)
+          throw new ManagerProtocolError(
+            "TARGET_UNSAFE",
+            "Target changed after the reset",
+          );
+        context.applicationControls++;
+        try {
+          await this.managerCommand(context, "cont");
+          context.intent = "running";
+          const value = await this.managerRead(context);
+          return {
+            session: this.managerSession()!,
+            devicePower: value.devicePower,
+          };
+        } finally {
+          context.applicationControls--;
+        }
+      }
+    } else if (control.action === "press") {
+      try {
+        await this.managerCommand(context, "cont");
+        const status = (await this.managerCommand(context, "query-status")) as {
+          running?: boolean;
+        };
+        if (status.running !== true)
+          throw new ManagerProtocolError(
+            "TARGET_UNSAFE",
+            "Guest did not enter running state",
+          );
+        await this.managerAwait(
+          context,
+          runtime.backend.buttons(
+            control.value.mask,
+            this.managerBudget(context),
+          ),
+        );
+        await this.managerDelay(context, control.value.durationMs);
+        // Release while guest runs, then give it a bounded observation window.
+        await this.managerAwait(
+          context,
+          runtime.backend.buttons(0, this.managerBudget(context)),
+        );
+        await this.managerDelay(context, 20);
+        const releasedStatus = (await this.managerCommand(
+          context,
+          "query-status",
+        )) as { running?: boolean };
+        if (releasedStatus.running !== true)
+          throw new ManagerProtocolError(
+            "TARGET_UNSAFE",
+            "Guest stopped before observing release",
+          );
+        await this.managerCommand(context, "stop");
+      } finally {
+        // Cleanup cannot continue a paused/unpowered/unknown guest for key-up.
+        await this.cleanupManagerInput(context);
+      }
+    } else {
+      await this.managerCommand(context, "qom-set", {
+        path: "/machine",
+        property: control.action,
+        value: control.value,
+      });
+    }
+    const value = await this.managerRead(context);
+    return { session: this.managerSession()!, devicePower: value.devicePower };
+  }
+  private async managerDelay(context: ManagerContext, ms: number) {
+    this.managerCheck(context);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await this.managerAwait(
+        context,
+        new Promise<void>((r) => {
+          timer = setTimeout(r, ms);
+        }),
+      );
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  private async cleanupManagerInput(context: ManagerContext) {
+    if (
+      this.runtime !== context.runtime ||
+      this.manager !== context ||
+      context.runtime.stopping
+    )
+      return;
+    await context.runtime.qmp.command("stop", undefined, 1000);
+    if (
+      this.runtime !== context.runtime ||
+      this.manager !== context ||
+      context.runtime.stopping
+    )
+      return;
+    await context.runtime.backend.releaseHostInput(1000);
+  }
+  private async managerFinishAwait<T>(
+    context: ManagerContext,
+    work: Promise<T>,
+    allowExpired = false,
+  ): Promise<T> {
+    this.managerCheck(context, true);
+    const value = await deadline(work, 1000, "manager-release");
+    this.managerCheck(context, true);
+    if (
+      !allowExpired &&
+      (context.owner.signal.aborted || performance.now() >= context.deadline)
+    )
+      throw new ManagerProtocolError(
+        "LEASE_EXPIRED",
+        "Management lease ended during release",
+      );
+    return value;
+  }
+  endManager(
+    owner: ManagerOwner,
+    result: ManagerCompletion,
+  ): Promise<{ session: ManagerSessionDescriptor }> {
+    const context = this.manager;
+    if (!context || context.owner !== owner)
+      return Promise.reject(
+        new ManagerProtocolError(
+          "NOT_OWNER",
+          "Management owner does not match",
+        ),
+      );
+    if (context.finish) return context.finish;
+    let completion: ManagerCompletion;
+    try {
+      completion = parseCompletion(result);
+    } catch (error) {
+      return Promise.reject(error);
+    }
+    context.closing = true;
+    const aborted =
+      context.abort.signal.aborted ||
+      performance.now() >= context.deadline ||
+      owner.signal.aborted;
+    context.abort.abort();
+    clearTimeout(context.timer);
+    owner.signal.removeEventListener("abort", context.onAbort);
+    context.finish = (async () => {
+      try {
+        await context.ready.catch(() => {});
+        this.managerCheck(context, true);
+        await context.work.catch(() => {});
+        this.managerCheck(context, true);
+        if (this.runtime !== context.runtime || context.runtime.stopping)
+          throw new ManagerProtocolError(
+            "STALE_SESSION",
+            "Managed session ended",
+          );
+        await this.managerFinishAwait(
+          context,
+          this.cleanupManagerInput(context),
+          true,
+        );
+        if (
+          !completion.success ||
+          aborted ||
+          owner.signal.aborted ||
+          performance.now() >= context.deadline ||
+          context.failed ||
+          !context.admitted
+        ) {
+          this.uncertainState(context.runtime);
+        } else {
+          const changed =
+            !context.applicationReady ||
+            ["managerUploaded", "memoryWritten", "executionChanged"].some(
+              (key) =>
+                completion[key as keyof ManagerMutations] ||
+                context.mutations[key as keyof ManagerMutations],
+            );
+          if (changed) {
+            await this.managerFinishAwait(
+              context,
+              context.runtime.qmp.command("system_reset", undefined, 1000),
+            );
+            await this.managerFinishAwait(
+              context,
+              context.runtime.qmp.command("stop", undefined, 1000),
+            );
+            await this.managerFinishAwait(
+              context,
+              context.runtime.qmp.command("query-status", undefined, 1000),
+            );
+          }
+          const value = await this.managerFinishAwait(
+            context,
+            context.runtime.backend.readDeviceState(1000),
+          );
+          const intent = context.intent ?? context.initial?.execution;
+          if (value.devicePower.powered && intent === "running")
+            await this.managerFinishAwait(
+              context,
+              context.runtime.qmp.command("cont", undefined, 1000),
+            );
+          const final = await this.managerFinishAwait(
+            context,
+            context.runtime.backend.readDeviceState(1000),
+          );
+          context.runtime.execution = final.execution;
+          this.publish({ ...this.state, ...final });
+        }
+        return { session: this.managerSession()! };
+      } catch (error) {
+        // A post-cont read can fail too; close native execution before uncertainty.
+        await this.cleanupManagerInput(context).catch(() => {});
+        if (this.runtime === context.runtime && !context.runtime.stopping)
+          this.uncertainState(context.runtime);
+        throw error;
+      } finally {
+        if (this.manager === context) {
+          this.manager = undefined;
+          if (this.runtime === context.runtime && !context.runtime.stopping)
+            this.publish({
+              ...this.state,
+              deviceOperation: context.runtime.deviceJobs > 0,
+            });
+        }
+      }
+    })();
+    return context.finish;
+  }
+  private revokeManager(runtime: Runtime) {
+    const context = this.manager;
+    if (!context || context.runtime !== runtime) return;
+    context.closing = true;
+    context.abort.abort();
+    clearTimeout(context.timer);
+    context.owner.signal.removeEventListener("abort", context.onAbort);
+    runtime.uncertain = true;
+    this.emit("manager-revoke", {
+      sessionId: runtime.id,
+      owner: context.owner,
+    });
+  }
   key(code: string, down: boolean) {
     const runtime = this.runtime;
     if (!runtime || !this.canInput(runtime)) return;
@@ -432,6 +1101,7 @@ export class SessionController extends EventEmitter {
     );
   }
   releaseInput() {
+    if (this.manager) return;
     const runtime = this.runtime;
     if (!runtime) return;
     if (this.hostOnlyRelease(runtime)) {
@@ -457,7 +1127,8 @@ export class SessionController extends EventEmitter {
       this.stateWork ||
       this.stateOwner ||
       this.runtime.uncertain ||
-      this.busy
+      this.busy ||
+      this.manager
     )
       return;
     const runtime = this.runtime;
@@ -476,7 +1147,10 @@ export class SessionController extends EventEmitter {
       this.publish({ ...this.state, deviceOperation: true });
     const work = runtime.powerWork
       .then(async () => {
-        if (this.runtime !== runtime || (runtime.stopping && executionAction))
+        if (
+          this.runtime !== runtime ||
+          ((runtime.stopping || runtime.uncertain) && executionAction)
+        )
           return;
         if (runtime.backend.kind === "legacy") {
           await this.deviceShortcut(
@@ -491,13 +1165,15 @@ export class SessionController extends EventEmitter {
         }
         try {
           const current = await runtime.backend.readDeviceState();
-          runtime.execution = current.execution;
-          if (runtime.stopping && executionAction) return;
+          if (!runtime.uncertain) runtime.execution = current.execution;
+          if ((runtime.stopping || runtime.uncertain) && executionAction)
+            return;
           if (current.execution === "running") {
             runtime.input.releaseAll();
             await runtime.input.flush();
           }
-          if (runtime.stopping && executionAction) return;
+          if ((runtime.stopping || runtime.uncertain) && executionAction)
+            return;
           if (action === "device.pause") {
             await runtime.qmp.command("stop");
           } else if (
@@ -511,7 +1187,7 @@ export class SessionController extends EventEmitter {
               runtime.execution = "paused";
               await runtime.backend.coldReset();
             }
-            if (runtime.stopping) return;
+            if (runtime.stopping || runtime.uncertain) return;
             await runtime.qmp.command("cont");
             runtime.input.resetHost();
             runtime.backend.resetHostInput();
@@ -544,8 +1220,12 @@ export class SessionController extends EventEmitter {
         } finally {
           try {
             const value = await runtime.backend.readDeviceState();
-            runtime.execution = value.execution;
-            if (this.runtime === runtime && !runtime.stopping)
+            if (!runtime.uncertain) runtime.execution = value.execution;
+            if (
+              this.runtime === runtime &&
+              !runtime.stopping &&
+              !runtime.uncertain
+            )
               this.publish({ ...this.state, ...value });
           } catch (error) {
             runtime.execution = "unknown";
@@ -568,7 +1248,8 @@ export class SessionController extends EventEmitter {
         )
           this.publish({
             ...this.state,
-            deviceOperation: runtime.deviceJobs > 0,
+            deviceOperation:
+              runtime.deviceJobs > 0 || this.manager?.runtime === runtime,
           });
       });
     runtime.powerWork = work.catch(() => {});
@@ -580,6 +1261,7 @@ export class SessionController extends EventEmitter {
       !this.stateWork &&
       !this.stateOwner &&
       !this.startup &&
+      !this.manager &&
       !runtime.uncertain &&
       !runtime.stopping &&
       runtime.deviceJobs === 0 &&
@@ -599,6 +1281,7 @@ export class SessionController extends EventEmitter {
     if (!down) this.releasePhysicalInput();
   }
   releaseChassis(runtimeSessionId: string) {
+    if (this.manager) return;
     if (this.runtime?.id !== runtimeSessionId) return;
     if (this.hostOnlyRelease(this.runtime)) {
       this.releaseInput();
@@ -643,6 +1326,7 @@ export class SessionController extends EventEmitter {
     if (
       this.busy ||
       this.stateOwner ||
+      this.manager ||
       this.stopPromise ||
       !this.runtime ||
       this.runtime.stopping ||
@@ -671,6 +1355,7 @@ export class SessionController extends EventEmitter {
       this.busy ||
       this.stopPromise ||
       this.stateOwner ||
+      this.manager ||
       !runtime ||
       runtime.stopping ||
       runtime.uncertain ||
@@ -730,9 +1415,8 @@ export class SessionController extends EventEmitter {
       if (!gwemu) return true;
       try {
         const value = await runtime.backend.readDeviceState();
-        runtime.execution = value.execution;
-        if (this.runtime === runtime && !runtime.stopping)
-          this.publish({ ...this.state, ...value });
+        if (!runtime.uncertain) runtime.execution = value.execution;
+        if (active()) this.publish({ ...this.state, ...value });
         return value.devicePower.powered;
       } catch (error) {
         // A failed read after cont must close the native execution gate too.
@@ -820,7 +1504,7 @@ export class SessionController extends EventEmitter {
         originallyRunning = false;
         if (gwemu) await refresh();
       }
-      if (this.runtime === runtime)
+      if (active())
         this.toast({
           code: action === "save" ? "state.saved" : "state.loaded",
           params: { slot },
@@ -867,7 +1551,14 @@ export class SessionController extends EventEmitter {
     if (!this.runtime) return Promise.resolve();
     // Close the execution gate before any queued action can reach cont.
     this.runtime.stopping = true;
-    this.stopPromise = (this.stateWork ?? Promise.resolve())
+    this.revokeManager(this.runtime);
+    const manager = this.manager;
+    this.stopPromise = Promise.all([
+      this.stateWork ?? Promise.resolve(),
+      manager?.ready.catch(() => {}),
+      manager?.work.catch(() => {}),
+      manager?.finish?.catch(() => {}),
+    ])
       .catch(() => {})
       .then(() => this.stopRuntime())
       .finally(() => {
@@ -881,6 +1572,7 @@ export class SessionController extends EventEmitter {
     if (
       this.busy ||
       this.stateOwner ||
+      this.manager ||
       runtime.stopping ||
       runtime.uncertain ||
       this.state.status !== "running"
@@ -917,8 +1609,11 @@ export class SessionController extends EventEmitter {
               () => {},
             );
           }
-          if (runtime.backend.kind === "gwemu")
+          if (runtime.backend.kind === "gwemu") {
+            if (this.manager?.runtime === runtime)
+              await runtime.backend.releaseHostInput(1000);
             power = await runtime.backend.snapshotPower();
+          }
         } catch {
           // Snapshot failure must not bypass child shutdown or claim a save.
           powerError = new UserError("error.saveUncertain");
@@ -948,12 +1643,17 @@ export class SessionController extends EventEmitter {
     } finally {
       await runtime.qmp.close();
       await runtime.display.close();
+      await runtime.gdbReady?.catch(() => {});
+      await runtime.gdbEndpoint?.close().catch((closeError) => {
+        error ??= closeError as Error;
+      });
       const childAlive =
         runtime.child &&
         runtime.child.exitCode === null &&
         runtime.child.signalCode === null;
       if (!childAlive) await runtime.lease.release();
       if (this.runtime?.id === runtime.id) this.runtime = undefined;
+      if (this.manager?.runtime === runtime) this.manager = undefined;
     }
     if (error) {
       this.publish({

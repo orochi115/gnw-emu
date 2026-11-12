@@ -33,3 +33,7 @@ GDBBackend增加Unix socket参数和可控open，寄存器/XML/分包/error已�
 ### Task1b 自动与宿主按键重叠修正（2026-11-13）
 
 真实TCG复现：冷启动自动POWER保持期间再收到宿主POWER，host-only释放1却提前拉高引脚。host标记与自动源须独立保存；清宿主标记后由仍活动的非host源决定有效引脚，仅有效电平变化时走已有释放边沿，不能提前触发unlock handoff的非host释放。正常宿主keyup与自动timer释放也必须保持另一来源仍按住的电平；自动源的虚拟执行状态须随机器snapshot保存/恢复并在冷reset正确清理。新增真实重叠RED/GREEN、自动timer后续释放以及相关state/RDP回归，维持CPU/RAM不cont/reset与原releasecount含义。此为已授权host-only保证的证据驱动修正，不改外部协议。
+
+### Task2 执行与标记互斥修正（2026-11-13）
+
+独立真实原生审查复现：reset 完成覆盖较新 mark；press 等待确认/长按期间收到 mark 后继续对未知 SRAM PC 发送输入。reset 以修改序号确认没有更晚 mark 才恢复应用安全标记。已接受 press/resume 从首 await 前到最终状态确认及清理结束，与非空 mark 同步互斥；cold-start 在 reset 阶段仍允许 mark，确定安全 cont 后至执行确认结束采用同样互斥。重叠 mark 返回既有 `BUSY`，不得改变累计标记/修改序号/安全状态，调用方必须等待 mark 成功才能发送对应 GDB 动作。客户端仅可在同一 unsafe 阶段缓存确认；成功 warm/cold reset 后清确认缓存并重新标记新的未知变更，累计 completion flags 保留。v3 独立规范与质量复审均已批准，真实原生回归通过。

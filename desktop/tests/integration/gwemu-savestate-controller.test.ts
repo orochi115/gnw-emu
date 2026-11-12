@@ -76,6 +76,7 @@ async function fixture(qtest = false) {
   let displayClosed = false;
   const controller = new SessionController({
     kernel: "gwemu",
+    enableManager: !qtest,
     qemu: binary,
     userData: join(root, "data"),
     logger: createLogManager({

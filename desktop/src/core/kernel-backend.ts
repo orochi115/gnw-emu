@@ -137,7 +137,12 @@ export async function kernelArguments(
   profile: Profile,
   session: Session,
   settings: { audio: boolean; realtime: boolean },
-  endpoints: { qmpPort: number; framePort: number; stateFile: string },
+  endpoints: {
+    qmpPort: number;
+    framePort: number;
+    stateFile: string;
+    gdbSocket?: string;
+  },
 ) {
   return kind === "legacy"
     ? qemuArguments(profile, session, settings, endpoints)
@@ -188,7 +193,7 @@ export class KernelBackend {
     readonly kind: KernelKind,
     private qmp: QmpClient,
   ) {}
-  async buttons(mask: number) {
+  async buttons(mask: number, timeout?: number) {
     if (this.kind === "legacy")
       return this.qmp.command("qom-set", {
         path: "/machine",
@@ -210,7 +215,11 @@ export class KernelBackend {
           Boolean(this.mask & (1 << bit)) !== down
         )
           events.push(keyEvent(bit, down));
-    if (events.length) await this.qmp.command("input-send-event", { events });
+    if (events.length) {
+      if (timeout === undefined)
+        await this.qmp.command("input-send-event", { events });
+      else await this.qmp.command("input-send-event", { events }, timeout);
+    }
     if (epoch === this.inputEpoch) this.mask = mask;
   }
   deferHostRelease() {
@@ -224,12 +233,14 @@ export class KernelBackend {
     this.mask = 0;
     this.releasePending = false;
   }
-  async releaseHostInput() {
+  async releaseHostInput(timeout?: number) {
     if (this.kind !== "gwemu")
       throw new Error("Host input release requires gwemu");
-    const reply = await this.qmp.command("human-monitor-command", {
-      "command-line": "gnw-release-host-input",
-    });
+    const args = { "command-line": "gnw-release-host-input" };
+    const reply =
+      timeout === undefined
+        ? await this.qmp.command("human-monitor-command", args)
+        : await this.qmp.command("human-monitor-command", args, timeout);
     if (
       typeof reply !== "string" ||
       reply.length > 64 ||
@@ -259,26 +270,42 @@ export class KernelBackend {
     const { battery, batteryPresent, usbPower } = devicePower;
     return { battery, batteryPresent, usbPower };
   }
-  async readDeviceState(): Promise<{
+  async readDeviceState(timeout = 5000): Promise<{
     execution: NonNullable<AppState["execution"]>;
     devicePower: NonNullable<AppState["devicePower"]>;
   }> {
-    const battery = await this.qmp.command("qom-get", {
-      path: "/machine",
-      property: "battery",
-    });
-    const usbPower = await this.qmp.command("qom-get", {
-      path: "/machine",
-      property: "usb-power",
-    });
-    const batteryPresent = await this.qmp.command("qom-get", {
-      path: "/machine",
-      property: "battery-present",
-    });
-    const powered = await this.qmp.command("qom-get", {
-      path: "/machine",
-      property: "powered",
-    });
+    const battery = await this.qmp.command(
+      "qom-get",
+      {
+        path: "/machine",
+        property: "battery",
+      },
+      timeout,
+    );
+    const usbPower = await this.qmp.command(
+      "qom-get",
+      {
+        path: "/machine",
+        property: "usb-power",
+      },
+      timeout,
+    );
+    const batteryPresent = await this.qmp.command(
+      "qom-get",
+      {
+        path: "/machine",
+        property: "battery-present",
+      },
+      timeout,
+    );
+    const powered = await this.qmp.command(
+      "qom-get",
+      {
+        path: "/machine",
+        property: "powered",
+      },
+      timeout,
+    );
     const devicePower = gwemuPowerSchema.parse({
       battery,
       usbPower,
@@ -287,7 +314,7 @@ export class KernelBackend {
     });
     if (powered !== (batteryPresent || usbPower))
       throw new Error("Inconsistent power sources");
-    const status = await this.qmp.command("query-status");
+    const status = await this.qmp.command("query-status", undefined, timeout);
     if (typeof status?.running !== "boolean" || (!powered && status.running))
       throw new Error("Invalid execution state");
     return {
