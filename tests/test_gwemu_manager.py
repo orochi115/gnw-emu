@@ -196,6 +196,9 @@ def test_actual_ram_firmware_baseline(tmp_path):
         assert result["eraseBytes"] == 4096
         assert result["ramBytes"] == 65792
         assert result["registerRoundtrip"] == "restored"
+        assert result["xpsrRoundtrip"] == "restored"
+        assert result["registers"]["xpsr"] & (1 << 24)
+        assert "xpsrError" not in result["registers"]
         assert result["packetSize"] >= 2 * 4096 + 32
         assert result["firmwareBytes"] == 49432
         assert result["loadedPc"] >= 0x240E6800
@@ -205,6 +208,37 @@ def test_actual_ram_firmware_baseline(tmp_path):
     assert session.native.process.poll() == 0
     assert not session.native.qmp_path.exists()
     assert_reaped(session.last_worker_pid)
+
+
+@REAL
+def test_actual_msp_identity_when_guest_selects_psp(tmp_path):
+    from harness.gnwmanager import ManagerSession
+
+    with ManagerSession(tmp_path) as session:
+        result = session.run("stack-selection")
+        assert result["selected"]["sp"] == result["selected"]["psp"] == 0x20008000
+        assert result["selected"]["msp"] == 0x20010000
+        assert result["inactiveMspWrite"] == "rejected"
+        assert result["resetRestoredMsp"]
+        (ROOT / "out/gnwmanager-ram/stack-selection-acceptance.json").write_text(
+            json.dumps(result, indent=2) + "\n")
+
+
+@REAL
+def test_gdb_connect_resume_reset_cannot_bypass_supply_gate(tmp_path):
+    from harness.gnwmanager import ManagerSession
+    from test_gwemu_desktop import Native
+
+    native = Native(tmp_path, ",power-model=on,battery-present=off,usb-power=off,"
+                    "battery-life-min=0,charge-time-min=0")
+    with ManagerSession(tmp_path, native=native) as session:
+        assert not native.command("query-status")["running"]
+        result = session.run("unpowered")
+        assert result["counter"] == 0x1234
+        assert not native.command("query-status")["running"]
+        assert native.command("qom-get", {"path": "/machine", "property": "powered"}) is False
+        (ROOT / "out/gnwmanager-ram/supply-gate-acceptance.json").write_text(
+            json.dumps(result, indent=2) + "\n")
 
 
 @REAL

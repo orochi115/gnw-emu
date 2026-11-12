@@ -16,10 +16,10 @@ Files: scripts/build_gnwmanager_acceptance.sh (if needed for repeatable source b
 
 ### Task 2: Required transport compatibility
 Files if demonstrated: externals/gnwmanager/gnwmanager/ocdbackend/gdb_backend.py, externals/gnwmanager/tests/test_gdb_backend.py, tests/test_gwemu_manager.py.
-- [ ] 实际确认 xpsr16/25、MSP/active SP 与目标 XML；如有缺陷，写 RED fake-stub 测试与实际目标测试后修复寄存器识别，不凭静态假设变更。
-- [ ] 实测 advertised PacketSize 与多包 RAM 长度/错误；按失败证据补 checksum、断连/短回包/超时处理，避免无限重试。仅修本批必需功能，不实现 gdbserver 交接。
-- [ ] 错误路径不偷偷 continue/reset；确认真实 board 无电源门禁仍生效。记录与原始 backend 的兼容差异。
-- [ ] manager 单元与原生 probe GREEN、规范/质量审查；只本地提交必要 manager 修复，后续 fork 发布目标单独确定。
+- [x] 实际确认 xpsr16/25、MSP/active SP 与目标 XML；如有缺陷，写 RED fake-stub 测试与实际目标测试后修复寄存器识别，不凭静态假设变更。
+- [x] 实测 advertised PacketSize 与多包 RAM 长度/错误；按失败证据补 checksum、断连/短回包/超时处理，避免无限重试。仅修本批必需功能，不实现 gdbserver 交接。
+- [x] 错误路径不偷偷 continue/reset；确认真实 board 无电源门禁仍生效。记录与原始 backend 的兼容差异。
+- [x] manager 单元与原生 probe GREEN、规范/质量审查；只本地提交必要 manager 修复，后续 fork 发布目标单独确定。
 
 ### Task 3: RAM firmware and Flash acceptance
 Files: tests/test_gwemu_manager.py, tests/test_gwemu_manager_firmware.py; externals/gnwmanager/gnwmanager/{gnw,validation}.py及manager tests、native model files only for demonstrated defects.
