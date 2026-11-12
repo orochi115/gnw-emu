@@ -51,10 +51,10 @@ Methods:
 源证据：`externals/gwemu/ui/input.c::qmp_input_send_event`拒绝非running/suspended状态，controller原load也明确注释该限制。正常press必须cont之后设置mask；lease失效或断电时不能为了key-up继续任意PC。新增小型仅释放host-held keys接口，不扩大一般输入/执行权限。
 
 Files：`externals/gwemu/hw/misc/gnw_h7b0_gpio.c`、`include/hw/misc/gnw_h7b0_gpio.h`、`hw/arm/gnw_h7b0_soc.c`、`hmp-commands.hx`；父`tests/test_gwemu_manager_input.py`，桌面`kernel-backend.ts`专用helper与unit。
-- [ ] RED实际TCG/QMP：cont→按组合含POWERbit9→stop，标准keyup确认拒绝；新`gnw-release-host-input`在pause/unpowered成功，GPIOhostflags与按键输入恢复idle，PC/SRAM/Flash不变、仍不running。下一次真实cont→同key按下不被旧hostrepeat状态吞掉。cold/unlock自动POWER不是hostpress，不被host-onlyrelease取消。
-- [ ] GPIO新增`gnw_h7b0_gpio_release_host_input`：只遍历host_buttons=true项并清hostflags；与独立保留的非host按键源合并，仅有效电平改变时调用已有set_button边沿，避免重叠POWER提前释放。不改guestGPIO配置/CPU/RAM或取消计时器/自动脚本事件；返回清除的host源数量。自动源虚拟状态随snapshot保存/恢复并在冷reset清理；正常宿主keyup与自动release也保持另一活动来源。增加真实冷启动POWER重叠RED/GREEN及timer/state/handoff相关回归。SoC沿已有cold-cycle注册风格提供HMP`gnw-release-host-input`，无args，reply固定`GNW host input released: N`，非本机失败；UI唯一QMP调用固定命令，不透传客户端HMP。
-- [ ] 独立规范/质量review后nativecleancommit/新buildmanifest/授权publish；不覆盖原legacybinary。构建在新`build/gwemu-session-manager`，保持backup本批旧binary证据；相关power/input/GDB/RTC/回滚native回归。控制器actual测试指向新artifact。默认legacy产品不在此切换；explicitgwemu preview路径按必要集成更新或明确binary选择，但不伪称旧binary支持新cleanup。
-- [ ] KernelBackend.releaseHostInput验证有界reply并清自己的mask/releasePending，作为admission/abort/pressfinally的安全cleanup。供电gate仍约束cont/press；release只改变物理host输入，CPU完全暂停。回归paused/unpowered/inputoverlap、abortPC未知不cont。按键释放边沿需guest观察的正常路径仍先keyup再有限运行窗口再stop；异常路径只要求host输入idle，绝不承诺guest已经消费事件。
+- [x] RED实际TCG/QMP：cont→按组合含POWERbit9→stop，标准keyup确认拒绝；新`gnw-release-host-input`在pause/unpowered成功，GPIOhostflags与按键输入恢复idle，PC/SRAM/Flash不变、仍不running。下一次真实cont→同key按下不被旧hostrepeat状态吞掉。cold/unlock自动POWER不是hostpress，不被host-onlyrelease取消。
+- [x] GPIO新增`gnw_h7b0_gpio_release_host_input`：只遍历host_buttons=true项并清hostflags；与独立保留的非host按键源合并，仅有效电平改变时调用已有set_button边沿，避免重叠POWER提前释放。不改guestGPIO配置/CPU/RAM或取消计时器/自动脚本事件；返回清除的host源数量。自动源虚拟状态随snapshot保存/恢复并在冷reset清理；正常宿主keyup与自动release也保持另一活动来源。增加真实冷启动POWER重叠RED/GREEN及timer/state/handoff相关回归。SoC沿已有cold-cycle注册风格提供HMP`gnw-release-host-input`，无args，reply固定`GNW host input released: N`，非本机失败；UI唯一QMP调用固定命令，不透传客户端HMP。
+- [x] 独立规范/质量review后nativecleancommit/新buildmanifest/授权publish；不覆盖原legacybinary。构建在新`build/gwemu-session-manager`，保持backup本批旧binary证据；相关power/input/GDB/RTC/回滚native回归。控制器actual测试指向新artifact。默认legacy产品不在此切换；explicitgwemu preview路径按必要集成更新或明确binary选择，但不伪称旧binary支持新cleanup。
+- [x] KernelBackend.releaseHostInput验证有界reply并清自己的mask/releasePending，作为admission/abort/pressfinally的安全cleanup。供电gate仍约束cont/press；release只改变物理host输入，CPU完全暂停。回归paused/unpowered/inputoverlap、abortPC未知不cont。按键释放边沿需guest观察的正常路径仍先keyup再有限运行窗口再stop；异常路径只要求host输入idle，绝不承诺guest已经消费事件。
 
 ## Task 2：controller独占与状态恢复
 

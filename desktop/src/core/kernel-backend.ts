@@ -224,6 +224,20 @@ export class KernelBackend {
     this.mask = 0;
     this.releasePending = false;
   }
+  async releaseHostInput() {
+    if (this.kind !== "gwemu")
+      throw new Error("Host input release requires gwemu");
+    const reply = await this.qmp.command("human-monitor-command", {
+      "command-line": "gnw-release-host-input",
+    });
+    if (
+      typeof reply !== "string" ||
+      reply.length > 64 ||
+      !/^GNW host input released: (?:[0-9]|1[0-2])\r?\n$/.test(reply)
+    )
+      throw new Error("Invalid host input release confirmation");
+    this.resetHostInput();
+  }
   async resetInput() {
     if (this.kind === "legacy") return this.buttons(0);
     await this.qmp.command("input-send-event", {

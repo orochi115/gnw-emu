@@ -81,6 +81,113 @@ test("failed input submission does not advance the backend mask", async () => {
   expect(calls[1]).toEqual(calls[0]);
 });
 
+test("host release uses only the fixed native command and clears held input after confirmation", async () => {
+  const calls: any[] = [];
+  const backend = new KernelBackend("gwemu", {
+    command: async (...args: any[]) => {
+      calls.push(args);
+      if (args[0] === "human-monitor-command")
+        return "GNW host input released: 2\r\n";
+    },
+  } as any);
+  await backend.buttons((1 << 0) | (1 << 9));
+  backend.deferHostRelease();
+  await backend.releaseHostInput();
+  expect(backend.hasPendingRelease).toBe(false);
+  await backend.buttons(1 << 0);
+  expect(calls[1]).toEqual([
+    "human-monitor-command",
+    { "command-line": "gnw-release-host-input" },
+  ]);
+  expect(calls[2]).toEqual([
+    "input-send-event",
+    {
+      events: [
+        {
+          type: "key",
+          data: { down: true, key: { type: "qcode", data: "left" } },
+        },
+      ],
+    },
+  ]);
+  expect(calls.some(([name]) => ["cont", "system_reset"].includes(name))).toBe(
+    false,
+  );
+});
+
+test.each([
+  undefined,
+  "GNW host input released: 13\r\n",
+  "GNW host input released: -1\r\n",
+  "GNW host input released: 0\r\nextra",
+  "GNW host input released: 0\r\n\n",
+  "unknown command",
+  "x".repeat(1024),
+])(
+  "malformed host-release reply preserves pending cleanup (%s)",
+  async (reply) => {
+    const backend = new KernelBackend("gwemu", {
+      command: async (name: string) =>
+        name === "human-monitor-command" ? reply : undefined,
+    } as any);
+    await backend.buttons(1);
+    backend.deferHostRelease();
+    await expect(backend.releaseHostInput()).rejects.toThrow();
+    expect(backend.hasPendingRelease).toBe(true);
+  },
+);
+
+test("failed native host release keeps cleanup pending without continuing guest execution", async () => {
+  const calls: any[] = [];
+  const backend = new KernelBackend("gwemu", {
+    command: async (...args: any[]) => {
+      calls.push(args);
+      if (args[0] === "human-monitor-command") throw new Error("disconnected");
+    },
+  } as any);
+  await backend.buttons(1);
+  backend.deferHostRelease();
+  await expect(backend.releaseHostInput()).rejects.toThrow("disconnected");
+  expect(backend.hasPendingRelease).toBe(true);
+  expect(calls.map(([name]) => name)).toEqual([
+    "input-send-event",
+    "human-monitor-command",
+  ]);
+});
+
+test("host release invalidates an older in-flight input completion", async () => {
+  const calls: any[] = [];
+  let submitted!: () => void;
+  const backend = new KernelBackend("gwemu", {
+    command: async (...args: any[]) => {
+      calls.push(args);
+      if (calls.length === 1)
+        await new Promise<void>((resolve) => {
+          submitted = resolve;
+        });
+      if (args[0] === "human-monitor-command")
+        return "GNW host input released: 1\r\n";
+    },
+  } as any);
+  const pending = backend.buttons(1);
+  await backend.releaseHostInput();
+  submitted();
+  await pending;
+  await backend.buttons(1);
+  expect(calls[2]).toEqual(calls[0]);
+});
+
+test("legacy does not send the unsupported native host-release command", async () => {
+  const calls: any[] = [];
+  const backend = new KernelBackend("legacy", {
+    command: async (...args: any[]) => {
+      calls.push(args);
+    },
+  } as any);
+  await expect(backend.releaseHostInput()).rejects.toThrow("requires gwemu");
+  expect(calls).toEqual([]);
+});
+
 test("power snapshot freezes guest time and rejects malformed readings", async () => {
   const calls: any[] = [];
   let battery: any = 42;
