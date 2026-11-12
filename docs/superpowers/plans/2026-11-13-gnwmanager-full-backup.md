@@ -10,18 +10,18 @@
 
 ## Task 1: manager完整backup实现与单元证明
 Files: externals/gnwmanager/gnwmanager/full_backup.py, cli/_backup.py, cli/main.py, cli/__init__.py, ocdbackend/gdb_backend.py, tests/test_full_backup.py, tests/test_gdb_backend.py。
-- [ ] 先测试RED：旧/new归档正确/损坏/空/未知/路径/符号链接/长度/容量；partial coverage与regions严格验证；fixtures使用准确bank256KiB/extras256/65536/128。
-- [ ] 原始capture次序spy：直接backend双读，内部/extras读取前不resume/reset/upload/write；GDBBackend resume_on_connect=False wire test不发送c，原默认True不变；short读/双读不一致无完成manifest且诊断保留。
-- [ ] 实现独立纯archive verifier/hash（流式）与capture，先银行/extras双读，再startmanager外Flash全容量双读，atomic完成manifest、新输出不覆盖。
-- [ ] restore先完整verify/选择/confirm，再factoryopen与真实capacity/RDP前检；仅Flash选定bank1/bank2/ext写入，extras不写。payload就是已校验bytes/固定副本；每writtenregion完整SHA读回。错误容量/校验/读回与partial状态报错，不损archive；无自动lock/unlock。fullcapture后execution状态明确默认暂停/--resume显式。
-- [ ] fetchHTTP(S)真实协议实现与SCP HOST:REMOTE_DIR argv兼容；manifest优先固定六文件，无本地shell/远端通配符；目的地新staging→verify→rename，失败不暴露完成dest。有限长度/网络超时/manifest大小，远端path安全；HTTP实际loopback成功/损坏、SCP参数与失败路径测试。
-- [ ] CLI四命令thin、offlineverify/fetch不创建backend，restore损坏在factory调用前拒绝；manager既有tests全套通过。实现者只编辑这些manager文件，不提交/push。
+- [x] 先测试RED：旧/new归档正确/损坏/空/未知/路径/符号链接/长度/容量；partial coverage与regions严格验证；fixtures使用准确bank256KiB/extras256/65536/128。
+- [x] 原始capture次序spy：直接backend双读，内部/extras读取前不resume/reset/upload/write；GDBBackend resume_on_connect=False wire test不发送c，原默认True不变；short读/双读不一致无完成manifest且诊断保留。
+- [x] 实现独立纯archive verifier/hash（流式）与capture，先银行/extras双读，再startmanager外Flash全容量双读，atomic完成manifest、新输出不覆盖。
+- [x] restore先完整verify/选择/confirm，再factoryopen与真实capacity/RDP前检；仅Flash选定bank1/bank2/ext写入，extras不写。payload就是已校验bytes/固定副本；每writtenregion完整SHA读回。错误容量/校验/读回与partial状态报错，不损archive；无自动lock/unlock。fullcapture后execution状态明确默认暂停/--resume显式。
+- [x] fetchHTTP(S)真实协议实现与SCP HOST:REMOTE_DIR argv兼容；manifest优先固定六文件，无本地shell/远端通配符；目的地新staging→verify→rename，失败不暴露完成dest。有限长度/网络超时/manifest大小，远端path安全；HTTP实际loopback成功/损坏、SCP参数与失败路径测试。
+- [x] CLI四命令thin、offlineverify/fetch不创建backend，restore损坏在factory调用前拒绝；manager既有tests全套通过。实现者只编辑这些manager文件，不提交/push。
 
 ## Task 2: actual模拟器集成与review
 Files: tests/test_gwemu_backup.py, harness/gnwmanager_worker.py(必要时另独立worker), docs/research/2026-11-13-gnwmanager-full-backup.md。
-- [ ] fresh synthetic/copied镜像，完整两bank与外Flash真实TCG/GDB、固定manager firmware build；rawcapture保留ITCM/RAM/RTC，无resetPC变化/上传前串行证据。每个worker有限deadline，仅ownedprocesses。
-- [ ] 完整backup→改变副本→selectrestore→独立整份镜像/读回比较；partial/旧manifest兼容、损坏zero-write、capacity/readback mismatch失败；真实loopbackHTTP fetch successful与损坏拒绝。
-- [ ] manager规范review、质量review和安全audit原十hash/来源/旁manager/16603；通过后manager本地commit，按既有授权公开发布orochi115/gnwmanager:gnw-emu并remoteSHA核对；父gitlink/tests/docs本地commit。
+- [x] fresh synthetic/copied镜像，完整两bank与外Flash真实TCG/GDB、固定manager firmware build；rawcapture保留ITCM/RAM/RTC，无resetPC变化/上传前串行证据。每个worker有限deadline，仅ownedprocesses。
+- [x] 完整backup→改变副本→selectrestore→独立整份镜像/读回比较；partial/旧manifest兼容、损坏zero-write、capacity/readback mismatch失败；真实loopbackHTTP fetch successful与损坏拒绝。
+- [x] manager规范review、质量review和安全audit原十hash/来源/旁manager/16603；通过后manager本地commit，按既有授权公开发布orochi115/gnwmanager:gnw-emu并remoteSHA核对；父gitlink/tests/docs本地commit。
 
 ## Task 3: 全路线后续收尾
 - [ ] 在当前会话接口和完整管理命令/唯一gwemu产品回归通过之后，才移除backup旧依赖并留下旧fork最终tag/可复现说明、归档授权远程。不要在Task1/2提前删除旧backup。
