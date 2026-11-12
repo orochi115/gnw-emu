@@ -261,3 +261,19 @@ def test_actual_native_is_reaped_when_api_worker_fails(tmp_path, failure):
     assert_reaped(session.last_worker_pid)
     assert not session.native.qmp_path.exists()
     assert hashlib.sha256(source.read_bytes()).hexdigest() == before
+
+
+@REAL
+def test_application_observation_remains_inside_parent_total_deadline(tmp_path):
+    from harness.gnwmanager import ManagerSession, WorkerDeadline
+
+    # The synthetic guest loops forever and never enables LTDC. Its display
+    # wait must be killed by the same supervisor as Flash/API work.
+    session = ManagerSession(tmp_path)
+    with pytest.raises(WorkerDeadline) as failure:
+        with session:
+            session.run("application-observation", {
+                "screen": str(tmp_path / "never-rendered.ppm"), "retrogo": False}, budget=1)
+    assert "application observation" in failure.value.stderr
+    assert_reaped(session.last_worker_pid)
+    assert_reaped(session.native.process.pid)

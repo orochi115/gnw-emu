@@ -23,16 +23,16 @@ Files if demonstrated: externals/gnwmanager/gnwmanager/ocdbackend/gdb_backend.py
 
 ### Task 3: RAM firmware and Flash acceptance
 Files: tests/test_gwemu_manager.py, tests/test_gwemu_manager_firmware.py; externals/gnwmanager/gnwmanager/{gnw,validation}.py及manager tests、native model files only for demonstrated defects.
-- [ ] 合成 1/4/64 MiB 和真实复制 Mario/Zelda/Flash-only 进入 IDLE，读取真实 capacity/erase-size、HASH/RTC/显示证据。
-- [ ] 外部 HASH 用read_hashes；SRAM及内部bank HASH用actualprogram/flash固件compressed/decompressed及sha256bank验证，与Pythonreadbackdigest对照。
-- [ ] actualGnW API内部双bank/外部擦除、压缩/未压缩编程；外部highlevel flash >256KiB跨context，用高可压缩和确定性不可压缩数据。单次program >256KiB应拒绝。
-- [ ] 三个bank负对齐offset、start=capacity/start>capacity、end越界、erase/program取整后越界、合法末块；外部HASH非法size/end；拒绝前不得提交erase/program ready，完整Flash副本hash不变。实际隔离probe先证实缺陷，再在GnW/validation RED/GREEN补必要检查，保留whole-chip语义。
-- [ ] 若失败，收集 PC/mailbox/MMIO/IRQ/日志，单点 RED/GREEN 修正确切外设；mutable 状态纳入现有 VMState，补失败路径与已有 savestate 回归。
-- [ ] 管理固件之后实际应用重启前，选未用范围或通过actualAPI恢复所有改动副本并核对预期bytes，再等待TCG/新帧；三类ROM finally源hash核对。
-- [ ] 相关 manager/native/真实固件 tests GREEN，独立规范/质量检查；原生本地 commit+clean rebuild（新输出目录，不污染旧产物）。
+- [x] 合成 1/4/64 MiB 和真实复制 Mario/Zelda/Flash-only 进入 IDLE，读取真实 capacity/erase-size、HASH/RTC/显示证据。
+- [x] 外部 HASH 用read_hashes；SRAM及内部bank HASH用actualprogram/flash固件compressed/decompressed及sha256bank验证，与Pythonreadbackdigest对照。
+- [x] actualGnW API内部双bank/外部擦除、压缩/未压缩编程；外部highlevel flash >256KiB跨context，用高可压缩和确定性不可压缩数据。单次program >256KiB应拒绝。
+- [x] 三个bank负对齐offset、start=capacity/start>capacity、end越界、erase/program取整后越界、合法末块；外部HASH非法size/end；拒绝前不得提交erase/program ready，完整Flash副本hash不变。实际隔离probe先证实缺陷，再在GnW/validation RED/GREEN补必要检查，保留whole-chip语义。
+- [x] 若失败，收集 PC/mailbox/MMIO/IRQ/日志，单点 RED/GREEN 修正确切外设；mutable 状态纳入现有 VMState，补失败路径与已有 savestate 回归。
+- [x] 管理固件之后实际应用重启前，选未用范围或通过actualAPI恢复所有改动副本并核对预期bytes，再等待TCG/新帧；三类ROM finally源hash核对。
+- [x] 相关 manager/native/真实固件 tests GREEN，独立规范/质量检查；原生本地 commit+clean rebuild（新输出目录，不污染旧产物）。
 
 ### Task 4: SD wiring and final closeout
-Files: tests/test_gwemu_manager_firmware.py, docs/research/2026-11-12-gwemu-manager-ram.md, docs/desktop/gwemu-migration.md, plan/spec; necessary demonstrated manager SD driver/host error fixes in externals/gnwmanager/Core/Src/FatFs/user_diskio_softspi.c and gnwmanager/gnw.py, plus native SPI files for demonstrated packed MMIO transfer defects.
+Files: tests/test_gwemu_manager_firmware.py, docs/research/2026-11-12-gwemu-manager-ram.md, docs/desktop/gwemu-migration.md, plan/spec; necessary demonstrated manager SD driver/host error fixes in externals/gnwmanager/Core/Src/FatFs/user_diskio_softspi.c and gnwmanager/gnw.py, plus native SPI files for demonstrated receive availability/consumption defects.
 - [ ] 两种 SD 接线：actual manager ls/read/write/hash/delete 临时文件、chunk 和退出重开，卡及所有原始镜像只挂副本。用独立FAT工具核对卡上文件，区分guest读回与持久化写入；manager驱动逐块CRC/token处理与宿主saved error状态须按真实失败在正确层修复，不能用native虚假Nac延迟掩盖驱动错误。
 - [ ] 明确功能性 NOR/RDP/VBAT 限制，不把 manager boot/flash 当完整工具链。必要 native 变更回归 cold/supply/RTC/softSPI/savestate；桌面切换产物时运行能力预检与相应 GUI。
 - [ ] root 独立复测、最终审查、manifest/SHA/source/原 PID16603/无孤儿进程核对；报告实际 commands 和未验收项。

@@ -1,7 +1,11 @@
 """Actual GnW API worker; lifetime is bounded by harness.gnwmanager's parent."""
 import contextlib
+import hashlib
 import importlib.resources
 import json
+from pathlib import Path
+import random
+import socket
 import sys
 import time
 
@@ -92,7 +96,166 @@ def unpowered(backend, _gnw, _parameters):
     return {"counter": value, "resumeWithoutSupply": "no execution"}
 
 
-OPERATIONS = {"baseline": baseline, "stack-selection": stack_selection, "unpowered": unpowered}
+def observe_application(gnw, parameters):
+    """Observe startup inside the supervised process's hard Flash deadline."""
+    from test_gwemu_desktop import Native
+    from test_gwemu_cold_firmware import wait_for_firmware
+
+    # A separate QMP connection permits key events and screenshots while the
+    # parent owns the original QMP/QTest handles and the native lifecycle.
+    observer = Native.__new__(Native)
+    observer.serial = 0
+    observer.read32 = gnw.read_uint32
+    with socket.socket(socket.AF_UNIX) as connection:
+        connection.settimeout(3)
+        connection.connect(parameters["qmpPath"])
+        observer.qmp = connection
+        with connection.makefile("rb") as stream:
+            observer.stream = stream
+            assert "QMP" in json.loads(stream.readline())
+            observer.command("qmp_capabilities")
+            print("application observation", file=sys.stderr, flush=True)
+            return wait_for_firmware(observer, Path(parameters["screen"]), parameters["retrogo"])
+
+
+def application_observation(backend, gnw, parameters):
+    backend.reset_and_halt()
+    backend.resume()
+    return observe_application(gnw, parameters)
+
+
+def flash_acceptance(backend, gnw, parameters):
+    """Exercise real mailbox HASH/Flash; never fabricate firmware responses."""
+    gnw.start_gnwmanager()
+    gnw.wait_for_idle(timeout=5)
+    capacity = gnw.external_flash_size
+    assert capacity == parameters["capacity"]
+    assert gnw.external_flash_block_size == 4096
+    paths = {int(bank): Path(path) for bank, path in parameters["paths"].items()}
+    originals = {bank: path.read_bytes() for bank, path in paths.items()}
+    original_hashes = {bank: hashlib.sha256(data).hexdigest() for bank, data in originals.items()}
+    addresses = {0: 0x90000000, 1: 0x08000000, 2: 0x08100000}
+    def read(bank, offset, size):
+        return gnw.read_memory(addresses[bank] + offset, size)
+    def reject(call):
+        counter = gnw.context_counter
+        ready = [gnw.read_uint32(context["ready"]) for context in gnw.contexts]
+        try:
+            call()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("invalid Flash range accepted")
+        assert gnw.context_counter == counter
+        assert [gnw.read_uint32(context["ready"]) for context in gnw.contexts] == ready
+    rejected = 0
+    for bank in (0, 1, 2):
+        cap, block = (capacity, 4096) if bank == 0 else (256 << 10, 8192)
+        for offset, size in [(-block, block), (cap, block), (cap + block, block),
+                             (cap - block, block * 2)]:
+            for operation in ("program", "flash", "erase"):
+                reject(lambda op=operation, b=bank, o=offset, s=size:
+                       gnw.erase(b, o, s, blocking=False) if op == "erase" else
+                       getattr(gnw, op)(b, o, b"x" * s))
+                rejected += 1
+        for operation in ("flash", "erase"):
+            reject(lambda op=operation, b=bank, c=cap, k=block:
+                   gnw.erase(b, c - k, k + 1) if op == "erase" else
+                   gnw.flash(b, c - k, b"x" * (k + 1)))
+            rejected += 1
+        gnw.program(bank, 0, b"")
+    for offset, size in [(-4096, 4096), (0, -1), (0, 0), (capacity, 1),
+                         (capacity - 4096, 4097)]:
+        reject(lambda o=offset, s=size: gnw.read_hashes(o, s))
+        rejected += 1
+    reject(lambda: gnw.program(0, 0, b"x" * ((256 << 10) + 1)))
+    rejected += 1
+    for bank in (1, 2):
+        reject(lambda b=bank: gnw.program(b, 0, b"x" * 8191))
+        rejected += 1
+    assert {bank: hashlib.sha256(path.read_bytes()).hexdigest()
+            for bank, path in paths.items()} == original_hashes
+    whole_chip = []
+    if not parameters.get("restore"):
+        for bank in (0, 1, 2):
+            block = 4096 if bank == 0 else 8192
+            gnw.program(bank, 0, b"\x12" * block)
+            gnw.erase(bank, 0, 0, whole_chip=True)
+            assert read(bank, 0, block) == b"\xff" * block
+            if bank == 0:
+                expected = hashlib.sha256(b"\xff" * (256 << 10)).digest()
+                assert gnw.read_hashes(0, capacity) == [expected] * (capacity // (256 << 10))
+            else:
+                assert read(bank, 0, 256 << 10) == b"\xff" * (256 << 10)
+            whole_chip.append(bank)
+    observations = []
+    changed = []
+    for bank in (0, 1, 2):
+        cap, block = (capacity, 4096) if bank == 0 else (256 << 10, 8192)
+        offset = cap - block
+        changed.append((bank, offset, originals[bank][offset:offset + block]))
+        for compressed in (False, True):
+            data = bytes([0x31 + bank + compressed]) * block
+            gnw.erase(bank, offset, block - 1)  # Documented rounded erase contract.
+            assert read(bank, offset, block) == b"\xff" * block
+            gnw.program(bank, offset, data, erase=False, compress=compressed)
+            assert read(bank, offset, block) == data
+            if bank == 0:
+                assert gnw.read_hashes(offset, block) == [hashlib.sha256(data).digest()]
+            observations.append({"bank": bank, "offset": offset, "size": block,
+                                 "compressed": compressed, "sha256": hashlib.sha256(data).hexdigest()})
+    for index, data in enumerate((b"gwemu-RAM-context" * (270336 // 17 + 1),
+                                  random.Random(20261112).randbytes(270336))):
+        data = data[:270336]
+        offset = 0x10000 if index == 0 else 0x80000
+        changed.append((0, offset, originals[0][offset:offset + len(data)]))
+        before = gnw.context_counter
+        gnw.flash(0, offset, data)
+        assert gnw.context_counter - before >= 3  # HASH plus multiple program contexts
+        assert read(0, offset, len(data)) == data
+        hashes = [hashlib.sha256(data[i:i + (256 << 10)]).digest()
+                  for i in range(0, len(data), 256 << 10)]
+        assert gnw.read_hashes(offset, len(data)) == hashes
+        observations.append({"bank": 0, "offset": offset, "size": len(data),
+                             "compressible": index == 0, "sha256": hashlib.sha256(data).hexdigest()})
+    if parameters.get("restore"):
+        for bank, offset, data in changed:
+            gnw.flash(bank, offset, data)
+            assert read(bank, offset, len(data)) == data
+        assert {bank: hashlib.sha256(path.read_bytes()).hexdigest()
+                for bank, path in paths.items()} == original_hashes
+    # These are actual firmware/HAL values, not success injected by the host.
+    result = {"status": gnw._get_status(), "capacity": capacity, "eraseBytes": 4096,
+              "rejectedBeforeSubmission": rejected, "observations": observations,
+              "timestampMailbox": gnw.read_uint32("utc_timestamp"), "wholeChipBanks": whole_chip,
+              "rtcTr": gnw.read_uint32(0x58004000), "rtcDr": gnw.read_uint32(0x58004004),
+              "ltdcEnabled": bool(gnw.read_uint32(0x50001018) & 1),
+              "framebufferSha256": hashlib.sha256(gnw.read_memory("framebuffer")).hexdigest(),
+              "copyHashes": {str(bank): hashlib.sha256(path.read_bytes()).hexdigest()
+                             for bank, path in paths.items()}, "restored": bool(parameters.get("restore"))}
+    if parameters.get("restore"):
+        from gnwmanager.cli._start import start
+        start(0x08000000, halt=True, gnw=gnw)
+        result["resetLtdcDisabled"] = not bool(gnw.read_uint32(0x50001018) & 1)
+        result["appPc"] = backend.read_register("pc")
+        backend.resume()
+        result["application"] = observe_application(gnw, parameters)
+    return result
+
+
+def verify_persistence(_backend, gnw, parameters):
+    gnw.start_gnwmanager()
+    gnw.wait_for_idle(timeout=5)
+    addresses = {0: 0x90000000, 1: 0x08000000, 2: 0x08100000}
+    for item in parameters["observations"]:
+        data = gnw.read_memory(addresses[item["bank"]] + item["offset"], item["size"])
+        assert hashlib.sha256(data).hexdigest() == item["sha256"]
+    return {"status": gnw._get_status(), "persistedRegions": len(parameters["observations"])}
+
+
+OPERATIONS = {"baseline": baseline, "stack-selection": stack_selection, "unpowered": unpowered,
+              "flash": flash_acceptance, "verify-persistence": verify_persistence,
+              "application-observation": application_observation}
 
 
 def main():

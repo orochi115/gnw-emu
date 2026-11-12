@@ -128,6 +128,11 @@ class ManagerSession:
         if "-icount" not in self.native.args:
             self.native.args += ["-icount", "shift=0,sleep=off"]
         self.native.args += ["-gdb", f"tcp:127.0.0.1:{self.port}"]
+        # QEMU's monitor chardev permits one client per endpoint. Give the API
+        # worker its own QMP monitor so the parent retains its lifecycle handle.
+        self.worker_qmp_path = Path(getattr(self.native, "qmp_path", Path(directory) / "qmp")).with_name(
+            "manager-qmp")
+        self.native.args += ["-qmp", f"unix:{self.worker_qmp_path},server=on,wait=off"]
         self.last_worker_pid = None
 
     def __enter__(self):
@@ -159,7 +164,8 @@ class ManagerSession:
     def run(self, operation, parameters=None, *, budget=None, command=None):
         budget = BUDGETS.get(operation, 30) if budget is None else budget
         config = {"host": "127.0.0.1", "port": self.port, "operation": operation,
-                  "parameters": parameters or {}, "manifest": str(self.manifest.absolute())}
+                  "parameters": {"qmpPath": str(self.worker_qmp_path), **(parameters or {})},
+                  "manifest": str(self.manifest.absolute())}
         env = dict(os.environ)
         env["PYTHONPATH"] = os.pathsep.join((str(ROOT), str(ROOT / "tests")))
         command = command if command is not None else [
