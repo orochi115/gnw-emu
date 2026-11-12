@@ -191,3 +191,5 @@ npm run test:e2e -- tests/e2e/gwemu-savestates.spec.ts tests/e2e/gwemu-supply.sp
 后续 [CoreAudio 回调验收](../research/2026-11-12-gwemu-coreaudio.md) 已覆盖 macOS 实际输出缓冲中的合成音调、静音、暂停/继续、读档音频恢复，以及五组实际游戏副本。使用桌面默认后端参数，扬声器设备配置前后不变；不采集麦克风或系统混音。通过范围为提交给设备回调的 PCM，不证明扬声器声学音质/端到端延迟、任意并发应用组合、设备切换或全部迁移退出。默认仍为 legacy。
 
 后续 [独立 CoreAudio 流共存验收](../research/2026-11-13-gwemu-coreaudio-sharing.md) 已验证自有另一输出进程持续运行时的启动、暂停/继续、静音、voice重建、读档和关闭，peer在gwemu关闭后仍继续供音。纠正了测试对DeviceIsRunning属性范围的错误前提；既有原生产物通过，无产品/native修复或重新发布。该证据限于当前设备上的自有独立流。
+
+后续 [RDP模型基础验收](../research/2026-11-13-gwemu-rdp.md) 已验证既有原生产物的内部Flash GDB读写门禁、1→0双bank擦除、2级降级拒绝、guest CPU访问与持久化/存档恢复。仅使用临时合成镜像，不改变产品行为；gnwmanager unlock/reprotect全流程与阶段三会话协调仍待独立验收。
