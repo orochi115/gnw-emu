@@ -1,11 +1,11 @@
 # gwemu 迁移实验
 
-当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID 和正常退出持久化；电源、完整即时存档和管理工具仍待验收。
+当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID 和正常退出持久化；电量/USB 控制与持久化已接通；电池物理断开、完整冷启动、即时存档和管理工具仍待验收。
 
 ## 来源与构建
 
 - 上游：`slash-proc/gwemu`，`gnw-h7b0` 基线 `3bfce5fd26a402660a8526b3a7ffc92048c3966a`，gwemu v0.0.29 / QEMU 11.0.2。
-- 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，桌面预览固定 `f74441159ccbe2fd265affbb03cd26f655addfe3`；首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
+- 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，电源预览固定 `fed744e0dcd7a694443cabc1d478ff3deddfa34a`，此前桌面预览为 `f74441159ccbe2fd265affbb03cd26f655addfe3`；首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
 - 集成修复：初始化解锁 baseline 时只读取实际 NOR 容量，缺失尾部填 `0xff`；保留原 sidecar 长度。原来的 Zelda baseline 长度超过 Mario 1 MiB 映射，会阻塞初始化。
 - `patches/gwemu/0001-limit-unlock-baseline-to-flash-capacity.patch` 是修复的审查副本，代码已在固定提交中；构建不向源码注入补丁。
 
@@ -16,10 +16,10 @@
 ```sh
 git submodule sync -- externals/gwemu
 git submodule update --init externals/gwemu
-GWEMU_BUILD_DIR=build/gwemu-desktop sh scripts/build_gwemu.sh
+GWEMU_BUILD_DIR=build/gwemu-power sh scripts/build_gwemu.sh
 ```
 
-默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-desktop`，首批基线目录 `build/gwemu-fork` 保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
+默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-power`，首批基线目录 `build/gwemu-fork` 保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
 
 `gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、补丁审查副本哈希、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
 
@@ -38,7 +38,9 @@ GNW_KERNEL=gwemu npx electron . --user-data-dir=/tmp/gnw-gwemu-preview ../profil
 
 支持标准 QMP 差量按键、焦点丢失释放、运行时静音、换 ROM 与关闭。加载新 ROM 前检查容量、接线、UID 和二进制能力；不兼容配置会保留当前运行。原生锁在镜像初始化前取得，进程退出后释放。正常 exit0 后同步 session 镜像/sidecar 并写入元数据；崩溃或强制终止显示保存不确定。
 
-即时存档菜单被禁用，热键和电源操作明确提示暂不支持；旧 slots 不读不写。音频后端已接通且静音有实际 PCM 证据，但音质、延迟、宿主实时限速设置、完整 RTC 和冷启动仍待回归。该入口只供开发验收，详细证据见 [桌面预览报告](../research/2026-11-12-gwemu-desktop-preview.md)。普通桌面 CLI 启动/探针仍使用旧内核，不能通过该环境变量切换。
+电量/USB 复用现有热键（默认 - / = 调整电量，C 切换 USB）和隔离 session 的电量/充放电周期配置。周期以虚拟时间计算，暂停时不消耗；0 周期固定相应状态。正常关闭先等待电源操作、暂停并读回电量/USB，退出0且同步文件后再保存；读回失败仍终止子进程并标记保存不确定。
+
+该板级模型使用 Retro-Go 标尺 11000..13000、PA2 PGOOD 与 PE7 CHG；0% 不代表物理断开或电源域失电，真实曲线与充电器 CE 限流未建模。上游原生默认不开启此模型，桌面显式传入 power-model=on。即时存档菜单仍禁用，热键明确提示暂不支持，旧 slots 不读不写。详见 [电量与 USB 实测报告](../research/2026-11-12-gwemu-power-controls.md)。音频后端已接通且静音有实际 PCM 证据，但音质、延迟、宿主实时限速设置、完整 RTC 和冷启动仍待回归。该入口只供开发验收，详细证据见 [桌面预览报告](../research/2026-11-12-gwemu-desktop-preview.md)。普通桌面 CLI 启动/探针仍使用旧内核，不能通过该环境变量切换。
 
 ## 同镜像实验
 
@@ -48,7 +50,7 @@ npm run build:cli
 node dist-cli/compare-kernels.js \
   --profile ../profiles/mario.gnw.json \
   --legacy ../build/qemu-system-arm \
-  --gwemu ../build/gwemu-desktop/qemu-system-arm \
+  --gwemu ../build/gwemu-power/qemu-system-arm \
   --output ../out/gwemu-my-mario-run \
   --seconds 3
 ```
@@ -68,9 +70,9 @@ node dist-cli/compare-kernels.js \
 ## 回归检查
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-desktop/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py
+GWEMU_BINARY="$PWD/build/gwemu-power/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-desktop/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-desktop/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-power/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-power/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts
@@ -79,3 +81,11 @@ npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts
 原生测试用合成 Flash 复现 1/4 MiB 初始化、sidecar 填充和原镜像保护。桌面测试另用合成循环固件实际核对逗号目录、向量加载、固定 RTC 和自动化环境隔离。缺少 gwemu 产物时后者会明确跳过；纯参数测试不替代这些原生证据。
 
 本批次没有移除旧内核/backup，没有读取或覆盖产品 session/即时存档，没有实现阶段二备份迁移或阶段三当前会话发现。
+
+本地固件电源验收可从仓库根运行：
+
+```sh
+GNW_FIRMWARE_POWER_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-power/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_power_firmware.py
+```
+
+该检查需要本地 Mario/Zelda ROM、out/profiles 中的 Flash-only/SD profile 及原始镜像；缺少时显式跳过。所有挂载镜像均复制到临时目录（SD需要约1 GiB空间），核对源哈希，截图和 MMIO 证据写入 out/gwemu-power-controls/firmware。它验证板级输入，不代替真实供电、游戏回归或管理工具验收。

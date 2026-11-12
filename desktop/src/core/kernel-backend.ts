@@ -79,6 +79,13 @@ export async function preflightKernel(
   if (
     !available[0].includes("frame-endpoint") ||
     !available[0].includes("session-lock") ||
+    ![
+      "power-model",
+      "battery",
+      "usb-power",
+      "battery-life-min",
+      "charge-time-min",
+    ].every((name) => available[0].includes(name)) ||
     !/\buid\b/.test(available[1]) ||
     !available[2].includes("audio-muted")
   )
@@ -108,13 +115,14 @@ export async function finishKernelSession(
   session: Session,
   stateFile: string,
   exitCode: number | null,
+  power?: { battery: number; usbPower: boolean },
 ) {
   if (kind === "legacy") {
     const state = exitStateSchema.parse(await readJson(stateFile));
     await saveSession(session, state);
     return;
   }
-  if (exitCode !== 0) throw new UserError("error.saveUncertain");
+  if (exitCode !== 0 || !power) throw new UserError("error.saveUncertain");
   // The gwemu images are shared file mappings. Flush after the child has exited,
   // including its RDP/unlock sidecars, before committing session metadata.
   for (const entry of await readdir(session.directory, {
@@ -128,11 +136,7 @@ export async function finishKernelSession(
       await file.close();
     }
   }
-  // Power controls are unavailable in this batch; preserve their configuration.
-  await saveSession(session, {
-    battery: session.battery,
-    usbPower: session.usbPower,
-  });
+  await saveSession(session, power);
 }
 
 /** Kernel-specific control stays behind the UI's single QMP connection. */
@@ -173,5 +177,22 @@ export class KernelBackend {
       property: "audio-muted",
       value: muted,
     });
+  }
+  async snapshotPower() {
+    await this.qmp.command("stop");
+    const battery = await this.qmp.command("qom-get", {
+      path: "/machine",
+      property: "battery",
+    });
+    const usbPower = await this.qmp.command("qom-get", {
+      path: "/machine",
+      property: "usb-power",
+    });
+    const state = exitStateSchema.parse({
+      formatVersion: 1,
+      battery,
+      usbPower,
+    });
+    return { battery: state.battery, usbPower: state.usbPower };
   }
 }

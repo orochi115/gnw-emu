@@ -80,6 +80,27 @@ test("failed input submission does not advance the backend mask", async () => {
   expect(calls[1]).toEqual(calls[0]);
 });
 
+test("power snapshot freezes guest time and rejects malformed readings", async () => {
+  const calls: any[] = [];
+  let battery: any = 42;
+  const backend = new KernelBackend("gwemu", {
+    command: async (...args: any[]) => {
+      calls.push(args);
+      if (args[0] === "qom-get")
+        return args[1].property === "battery" ? battery : true;
+    },
+  } as any);
+  expect(await backend.snapshotPower()).toEqual({
+    battery: 42,
+    usbPower: true,
+  });
+  expect(calls[0]).toEqual(["stop"]);
+  battery = 101;
+  await expect(backend.snapshotPower()).rejects.toThrow();
+  battery = "42";
+  await expect(backend.snapshotPower()).rejects.toThrow();
+});
+
 test("legacy input and mute keep their existing QOM contract", async () => {
   const calls: any[] = [];
   const backend = new KernelBackend("legacy", {

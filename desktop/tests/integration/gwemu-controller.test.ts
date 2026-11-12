@@ -9,11 +9,12 @@ import { createInterface } from "node:readline";
 import * as kernel from "../../src/core/kernel-backend";
 import { createProfile } from "../../src/core/profile-store";
 import { SessionController } from "../../src/core/session-controller";
+import { QmpClient } from "../../src/core/qmp-client";
 import { createDisplayReceiver } from "../../src/display/receiver";
 import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
-  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-desktop/qemu-system-arm",
+  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-power/qemu-system-arm",
 );
 test.skipIf(!existsSync(binary))(
   "gwemu controller isolates data, preserves active ROM on unsupported input and stops cleanly",
@@ -125,9 +126,25 @@ test.skipIf(!existsSync(binary))(
       await controller.instantState("save");
       expect(toasts.at(-1).code).toBe("state.unsupportedKernel");
       expect(existsSync(join(directory, "states"))).toBe(false);
-      await expect(controller.deviceAction("device.usb")).rejects.toThrow(
-        "device.unsupportedKernel",
-      );
+      await Promise.all([
+        controller.deviceAction("device.batteryDown"),
+        controller.deviceAction("device.batteryDown"),
+        controller.deviceAction("device.usb"),
+        controller.deviceAction("device.usb"),
+      ]);
+      await controller.deviceAction("device.usb");
+      const readings = await hardware([
+        "writel 0x40022030 0x100", // ADC1 channel4
+        "writel 0x40022008 0x1",
+        "writel 0x40022008 0x5",
+        "readl 0x40022040",
+        "readl 0x58020010", // PA2 PGOOD
+        "readl 0x58021010", // PE7 CHG
+      ]);
+      // The real virtual clock can drain a fractional level before USB toggles.
+      expect(Math.abs(Number(readings[3]) - 12600)).toBeLessThanOrEqual(1);
+      expect(Number(readings[4]) & 4).toBe(0);
+      expect(Number(readings[5]) & 128).toBe(0);
       await writeFile(
         join(root, "unsupported.bin"),
         Buffer.alloc(2 * 1024 * 1024),
@@ -155,12 +172,38 @@ test.skipIf(!existsSync(binary))(
       expect(
         JSON.parse(await readFile(join(directory, "session.json"), "utf8"))
           .battery,
-      ).toBe(100);
+      ).toBe(80);
       await controller.load(profile.path);
       expect(controller.state.runtimeSessionId).not.toBe(id);
       expect(Number((await hardware(["readl 0x08000100"]))[0])).toBe(
         0x12345678,
       );
+      expect(Number((await hardware(["readl 0x58020010"]))[0]) & 4).toBe(0);
+      // A failed power readback must still stop the child and preserve metadata.
+      const saved = await readFile(join(directory, "session.json"));
+      const pid = controller.diagnostics().qemuPid!;
+      const realCommand = QmpClient.prototype.command;
+      const fault = vi
+        .spyOn(QmpClient.prototype, "command")
+        .mockImplementation(async function (
+          this: QmpClient,
+          name,
+          parameters,
+          timeout,
+        ) {
+          if (name === "qom-get" && parameters?.property === "battery")
+            throw new Error("power readback disconnected");
+          return realCommand.call(this, name, parameters, timeout);
+        });
+      try {
+        await expect(controller.stop()).rejects.toThrow("error.saveUncertain");
+        expect(controller.state.saveUncertain).toBe(true);
+        expect(() => process.kill(pid, 0)).toThrow();
+        expect(await readFile(join(directory, "session.json"))).toEqual(saved);
+      } finally {
+        fault.mockRestore();
+      }
+      await controller.load(profile.path);
       // Crash must never claim that session state was saved successfully.
       process.kill(controller.diagnostics().qemuPid!, "SIGKILL");
       await expect.poll(() => controller.state.status).toBe("error");

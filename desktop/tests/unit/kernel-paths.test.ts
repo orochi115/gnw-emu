@@ -50,7 +50,7 @@ test("gwemu requires an explicit isolated development directory and its own bina
     });
     expect(paths.kernel).toBe("gwemu");
     expect(paths.qemu).toBe(
-      join(root, "build", "gwemu-desktop", "qemu-system-arm"),
+      join(root, "build", "gwemu-power", "qemu-system-arm"),
     );
     expect(existsSync(paths.userData)).toBe(false);
   } finally {

@@ -62,6 +62,7 @@ interface Runtime {
   backend: KernelBackend;
   stateFile: string;
   stopping: boolean;
+  powerWork: Promise<void>;
 }
 export class SessionController extends EventEmitter {
   state: AppState = { status: "idle" };
@@ -200,6 +201,7 @@ export class SessionController extends EventEmitter {
           backend,
           stateFile,
           stopping: false,
+          powerWork: Promise.resolve(),
         };
         this.runtime = runtime;
         transferred = true;
@@ -342,10 +344,8 @@ export class SessionController extends EventEmitter {
       );
     runtime.input.key(code, down);
   }
-  private async deviceShortcut(code: string) {
-    if (this.runtime!.backend.kind === "gwemu")
-      throw new UserError("device.unsupportedKernel");
-    const qmp = this.runtime!.qmp;
+  private async deviceShortcut(runtime: Runtime, code: string) {
+    const qmp = runtime.qmp;
     const property = code === "KeyC" ? "usb-power" : "battery";
     const value = await qmp.command("qom-get", { path: "/machine", property });
     await qmp.command("qom-set", {
@@ -368,13 +368,19 @@ export class SessionController extends EventEmitter {
   ) {
     if (!this.runtime || this.state.status !== "running" || this.stateWork)
       return;
-    await this.deviceShortcut(
-      action === "device.usb"
-        ? "KeyC"
-        : action === "device.batteryDown"
-          ? "Minus"
-          : "Equal",
+    const runtime = this.runtime;
+    const work = runtime.powerWork.then(() =>
+      this.deviceShortcut(
+        runtime,
+        action === "device.usb"
+          ? "KeyC"
+          : action === "device.batteryDown"
+            ? "Minus"
+            : "Equal",
+      ),
     );
+    runtime.powerWork = work.catch(() => {});
+    await work;
   }
   button(bit: number, down: boolean, source: string, runtimeSessionId: string) {
     if (
@@ -594,6 +600,8 @@ export class SessionController extends EventEmitter {
       stage: "stop",
     });
     let error: Error | undefined;
+    let power: { battery: number; usbPower: boolean } | undefined;
+    let powerError: Error | undefined;
     try {
       runtime.input.releaseAll();
       await deadline(runtime.input.flush(), 1000, "release").catch(() => {});
@@ -602,6 +610,14 @@ export class SessionController extends EventEmitter {
         runtime.child.exitCode === null &&
         runtime.child.signalCode === null
       ) {
+        try {
+          await deadline(runtime.powerWork, 5000, "power");
+          if (runtime.backend.kind === "gwemu")
+            power = await runtime.backend.snapshotPower();
+        } catch {
+          // Snapshot failure must not bypass child shutdown or claim a save.
+          powerError = new UserError("error.saveUncertain");
+        }
         await runtime.qmp.command("quit", undefined, 1000).catch(() => {});
         try {
           await deadline(runtime.exit!, 5000, "quit");
@@ -611,12 +627,14 @@ export class SessionController extends EventEmitter {
           throw new UserError("error.saveUncertain");
         }
       }
+      if (powerError) throw powerError;
       if (runtime.child) {
         await finishKernelSession(
           runtime.backend.kind,
           runtime.session,
           runtime.stateFile,
           runtime.child.exitCode,
+          power,
         );
       }
     } catch (e) {

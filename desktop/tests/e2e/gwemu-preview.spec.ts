@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(resolve("../build/gwemu-desktop/qemu-system-arm")),
+  !existsSync(resolve("../build/gwemu-power/qemu-system-arm")),
   "Build the fixed gwemu desktop kernel first",
 );
 test("gwemu renders in the real desktop, handles input and mute, changes ROM and closes", async () => {
@@ -92,24 +92,26 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
       .poll(async () => Number((await rpc("app.getDiagnostics")).frames))
       .toBeGreaterThan(5);
     expect((await rpc("app.getDiagnostics")).width).toBe(640);
-    await expect
-      .poll(
-        () =>
-          page.locator("canvas").evaluate((canvas: any) => {
-            const pixels = canvas
-              .getContext("2d")
-              .getImageData(0, 0, canvas.width, canvas.height).data;
-            let lit = 0;
-            for (let i = 0; i < pixels.length; i += 4)
-              if (pixels[i] + pixels[i + 1] + pixels[i + 2] > 30) lit++;
-            return lit;
-          }),
-        { timeout: 15000 },
-      )
-      // The initial QEMU "Guest has not initialized" text also has lit pixels.
-      // Require a substantial rendered panel before capturing the preview.
-      .toBeGreaterThan(20000);
-    const output = resolve("../out/gwemu-desktop-preview");
+    const waitForPanel = () =>
+      expect
+        .poll(
+          () =>
+            page.locator("canvas").evaluate((canvas: any) => {
+              const pixels = canvas
+                .getContext("2d")
+                .getImageData(0, 0, canvas.width, canvas.height).data;
+              let lit = 0;
+              for (let i = 0; i < pixels.length; i += 4)
+                if (pixels[i] + pixels[i + 1] + pixels[i + 2] > 30) lit++;
+              return lit;
+            }),
+          { timeout: 15000 },
+        )
+        // The initial QEMU "Guest has not initialized" text also has lit pixels.
+        // Require a substantial rendered panel before capturing the preview.
+        .toBeGreaterThan(20000);
+    await waitForPanel();
+    const output = resolve("../out/gwemu-power-controls");
     await mkdir(output, { recursive: true });
     await rpc("ui.screenshot", { path: join(output, "zelda-desktop.png") });
     await action("ui.key", { key: "Left", down: true });
@@ -133,6 +135,12 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
         Menu.getApplicationMenu()!.getMenuItemById("state.save")!.enabled,
     );
     expect(enabled).toBe(false);
+    await action("ui.key", { key: "-", down: true });
+    await action("ui.key", { key: "-", down: false });
+    await action("ui.key", { key: "-", down: true });
+    await action("ui.key", { key: "-", down: false });
+    await action("ui.key", { key: "C", down: true });
+    await action("ui.key", { key: "C", down: false });
     const mario = await createProfile(join(root, "mario.gnw.json"), {
       model: "mario",
       internalFlash: resolve("../../firmware/internal_flash_backup_mario.bin"),
@@ -151,6 +159,37 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
     expect((await rpc("app.getState")).runtimeSessionId).not.toBe(
       state.runtimeSessionId,
     );
+    await expect
+      .poll(async () => Number((await rpc("app.getDiagnostics")).frames))
+      .toBeGreaterThan(50);
+    await waitForPanel();
+    await rpc("ui.screenshot", { path: join(output, "mario-desktop.png") });
+    const statePath = join(
+      root,
+      "kernels",
+      "gwemu",
+      "sessions",
+      profile.id,
+      "session.json",
+    );
+    const savedPower = JSON.parse(await readFile(statePath, "utf8"));
+    expect(savedPower.battery).toBe(80);
+    expect(savedPower.usbPower).toBe(true);
+    // Reopen the same isolated Zelda session, then adjust its restored state.
+    await rpc("automation.queueDialogResponse", {
+      kind: "open",
+      path: profile.path,
+    });
+    await action("ui.menu", { id: "file.open" });
+    await rpc("ui.waitFor", {
+      condition: "app.status",
+      value: "running",
+      timeoutMs: 15000,
+    });
+    await action("ui.key", { key: "=", down: true });
+    await action("ui.key", { key: "=", down: false });
+    await action("ui.key", { key: "C", down: true });
+    await action("ui.key", { key: "C", down: false });
     const pid = (await rpc("app.getDiagnostics")).qemuPid;
     await app.close();
     closed = true;
@@ -164,6 +203,9 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
         }
       })
       .toBe(false);
+    const finalPower = JSON.parse(await readFile(statePath, "utf8"));
+    expect(finalPower.battery).toBe(90);
+    expect(finalPower.usbPower).toBe(false);
     expect([await hash(internal), await hash(external)]).toEqual(initial);
     expect(existsSync(join(root, "sessions"))).toBe(false);
   } finally {
