@@ -38,6 +38,8 @@ OTFDEC 的密钥取自固件运行时写进 `RxKEYR` 的值。仓库里不保存
 
 ## 构建
 
+gwemu 迁移已建立独立构建与同镜像实验入口，默认桌面仍使用下述旧内核。新内核来源、构建命令、实验边界与进度见 [gwemu 迁移实验](docs/desktop/gwemu-migration.md)。
+
 ```sh
 git submodule update --init externals/qemu
 brew install ninja meson pkg-config glib pixman jpeg-turbo

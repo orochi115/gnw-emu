@@ -60,5 +60,5 @@
 	url = https://github.com/sylverb/game-and-watch-bootloader.git
 [submodule "externals/gwemu"]
 	path = externals/gwemu
-	url = https://github.com/slash-proc/gwemu.git
-	branch = gnw-h7b0
+	url = https://github.com/orochi115/gwemu.git
+	branch = gnw-emu
