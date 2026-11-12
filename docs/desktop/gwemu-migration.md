@@ -180,6 +180,8 @@ npm run test:e2e -- tests/e2e/gwemu-savestates.spec.ts tests/e2e/gwemu-supply.sp
 
 本批没有产品或原生改动，不影响真机读写。WAV 后端供音不证明 CoreAudio 扬声器延迟、主观音质或所有核心；当前 gwemu 未映射 realtime=false 偏好，本批未修改限速策略。具体截图、量测、误差与剩余边界见 [音频验收报告](../research/2026-11-12-gwemu-audio.md)。默认仍为 legacy，阶段一退出与完整工具链尚未通过。
 
+后续 [默认时钟验收](../research/2026-11-12-gwemu-clock.md) 已核实 realtime 的内核差异：legacy true 使用 icount/专用限速器，false 关闭它们；gwemu 两种值均使用普通 TCG。合成真实客体的运行、暂停和读档回退时钟通过，现有设置保留，未修改时钟实现。该结果不证明所有客体中断、游戏帧率、重负载表现或 CoreAudio 延迟，默认仍为 legacy。
+
 ## 手柄软件输入验收
 
 现有 Chromium Gamepad API 到当前 gwemu 的标准八键、摇杆死区、键盘/双手柄聚合、断连/重连，以及失焦、设置窗口、暂停/断电/换 ROM 后的释放门禁已通过真实 Electron 回归。恢复时已持有输入不会自动重激活；无电状态下既有手柄 USB 热键可恢复供电并保持暂停。独立原生 QMP/GPIO 边界 9 项、相关 unit 33 项、gwemu Electron 3 项及既有 legacy 手柄 1 项通过，typecheck/build 通过。
