@@ -29,3 +29,7 @@ GDBBackend增加Unix socket参数和可控open，寄存器/XML/分包/error已�
 新增desktop/src/core/manager-session-server.ts与tests unit真实socket、session-controller专用lease测试，main启动/关闭服务和state变化；gwemu arguments开启private Unix GDB，默认不向网络监听。manager session_client.py/CLI/GDBBackend协议单元验证错误/多session/stale/partialJSON/断连；父tests/e2e管理真实Electron隔离UserData+manager subprocess验证当前ROM自动发现、真实RAM manager、backup/restore/flash/filesystem/SD两接线、unlock/lock、debug交接、power和截图。用actual GDB lease证明失效旧连接和UI换ROM/关闭/snapshot/输入门禁；保存原图/源hash/identity及owned清理。
 
 先完成backup模块及其规范/质量review，再接CLI共享文件；session RPC的独立实现可在desktop单独开发。默认kernel切換和旧fork退出另行最终收尾；本设计不是全部scope完成声明。物理设备、真实卡电气和实体手柄仅标记用户豁免，不宣称通过。
+
+### Task1b 自动与宿主按键重叠修正（2026-11-13）
+
+真实TCG复现：冷启动自动POWER保持期间再收到宿主POWER，host-only释放1却提前拉高引脚。host标记与自动源须独立保存；清宿主标记后由仍活动的非host源决定有效引脚，仅有效电平变化时走已有释放边沿，不能提前触发unlock handoff的非host释放。正常宿主keyup与自动timer释放也必须保持另一来源仍按住的电平；自动源的虚拟执行状态须随机器snapshot保存/恢复并在冷reset正确清理。新增真实重叠RED/GREEN、自动timer后续释放以及相关state/RDP回归，维持CPU/RAM不cont/reset与原releasecount含义。此为已授权host-only保证的证据驱动修正，不改外部协议。
