@@ -8,11 +8,11 @@
 
 ### Task 1: Artifact and baseline probe
 Files: scripts/build_gnwmanager_acceptance.sh (if needed for repeatable source build), tests/harness/gnwmanager.py, tests/test_gwemu_manager.py, ignored out/gnwmanager-ram/ evidence.
-- [ ] 记录固定 manager/嵌套子模块 revision、源 dirty、编译器/ELF/bin SHA 与 Python 环境；现有命令 `make -j4 BUILD_DIR=$ROOT/build/gnwmanager-ram gnwmanager/firmware.bin`，独立 `build/gnwmanager-python` 安装同源码包。
-- [ ] 用现有 Native harness 去掉 qtest accel，保留观察 qtest socket；为每个实验创建只绑定 loopback 的独立 GDB endpoint。保证 finally quit/kill/wait、socket cleanup 和 source hash。
-- [ ] 最小实际 GnW/GDBBackend probe：寄存器 roundtrip、RAM write/read、reset/halt、固件 start+bounded IDLE，记录失败，不 monkeypatch 响应。
-- [ ] API worker与gwemu由父harness监督。`worker.communicate(timeout=budget)`规定完整总期限，捕获TimeoutExpired后terminate/kill并wait worker，再finally退出/kill/wait native及源hash；禁止timeout thread遗留或把无进展timeout当总期限。初始启动30秒/Flash180秒/SD240秒。加入模拟worker持续报告进展仍超时、断连和cleanup的失败回归。
-- [ ] 单独构建 manifest 与可复现 opt-in 命令。缺少本地真实镜像时显式 skip；合成测试不得静默 skip。
+- [x] 记录固定 manager/嵌套子模块 revision、源 dirty、编译器/ELF/bin SHA 与 Python 环境；现有命令 `make -j4 BUILD_DIR=$ROOT/build/gnwmanager-ram gnwmanager/firmware.bin`，独立 `build/gnwmanager-python` 安装同源码包。
+- [x] 用现有 Native harness 去掉 qtest accel，保留观察 qtest socket；为每个实验创建只绑定 loopback 的独立 GDB endpoint。保证 finally quit/kill/wait、socket cleanup 和 source hash。
+- [x] 最小实际 GnW/GDBBackend probe：寄存器 roundtrip、RAM write/read、reset/halt、固件 start+bounded IDLE，记录失败，不 monkeypatch 响应。
+- [x] API worker与gwemu由父harness监督。`worker.communicate(timeout=budget)`规定完整总期限，捕获TimeoutExpired后terminate/kill并wait worker，再finally退出/kill/wait native及源hash；禁止timeout thread遗留或把无进展timeout当总期限。初始启动30秒/Flash180秒/SD240秒。加入模拟worker持续报告进展仍超时、断连和cleanup的失败回归。
+- [x] 单独构建 manifest 与可复现 opt-in 命令。缺少本地真实镜像时显式 skip；合成测试不得静默 skip。
 
 ### Task 2: Required transport compatibility
 Files if demonstrated: externals/gnwmanager/gnwmanager/ocdbackend/gdb_backend.py, externals/gnwmanager/tests/test_gdb_backend.py, tests/test_gwemu_manager.py.
@@ -32,8 +32,8 @@ Files: tests/test_gwemu_manager.py, tests/test_gwemu_manager_firmware.py; extern
 - [ ] 相关 manager/native/真实固件 tests GREEN，独立规范/质量检查；原生本地 commit+clean rebuild（新输出目录，不污染旧产物）。
 
 ### Task 4: SD wiring and final closeout
-Files: tests/test_gwemu_manager_firmware.py, docs/research/2026-11-12-gwemu-manager-ram.md, docs/desktop/gwemu-migration.md, plan/spec.
-- [ ] 两种 SD 接线：actual manager ls/read/write/hash/delete 临时文件、chunk 和退出重开，卡及所有原始镜像只挂副本。
+Files: tests/test_gwemu_manager_firmware.py, docs/research/2026-11-12-gwemu-manager-ram.md, docs/desktop/gwemu-migration.md, plan/spec; necessary demonstrated manager SD driver/host error fixes in externals/gnwmanager/Core/Src/FatFs/user_diskio_softspi.c and gnwmanager/gnw.py, plus native SPI files for demonstrated packed MMIO transfer defects.
+- [ ] 两种 SD 接线：actual manager ls/read/write/hash/delete 临时文件、chunk 和退出重开，卡及所有原始镜像只挂副本。用独立FAT工具核对卡上文件，区分guest读回与持久化写入；manager驱动逐块CRC/token处理与宿主saved error状态须按真实失败在正确层修复，不能用native虚假Nac延迟掩盖驱动错误。
 - [ ] 明确功能性 NOR/RDP/VBAT 限制，不把 manager boot/flash 当完整工具链。必要 native 变更回归 cold/supply/RTC/softSPI/savestate；桌面切换产物时运行能力预检与相应 GUI。
 - [ ] root 独立复测、最终审查、manifest/SHA/source/原 PID16603/无孤儿进程核对；报告实际 commands 和未验收项。
 - [ ] 已授权 native 发布若有变更；父仓库仅本地提交，默认 legacy。不退休旧库，不实现备份迁移或 UI 会话发现。
