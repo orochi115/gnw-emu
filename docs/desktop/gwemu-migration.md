@@ -101,3 +101,13 @@ npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts
 ```
 
 本地固件验收需要 SD profile、对应 ELF/nm 和 mtools；所有镜像先复制，检查挂载标志、接线类型、NES core 身份和固件保存文件，并核对源镜像哈希。原生协议测试和桌面会话测试另覆盖块写入/停止/重开。GPIO 桥增加一字节响应延迟，保留普通字节边界 CS 间隔的待发响应；部分字节取消不保证任意中途命令恢复。真实卡供电/电池断开、桌面完整即时存档及管理工具仍待后续验收。详见 [SD 接线实测报告](../research/2026-11-12-gwemu-softspi-sd.md)。
+
+## 原生冷循环验收
+
+后续原生提交补强 `gnw-cold-cycle` 的 ITCM 启动 seed 和 TAMP 备份域清除。独立验证产物位于 `build/gwemu-cold-cycle`；桌面预览固定产物路径仍为上一批 `build/gwemu-softspi`。这批没有新增桌面冷启动操作或电池断开功能。
+
+```sh
+GNW_FIRMWARE_COLD_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-cold-cycle/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_cold_firmware.py
+```
+
+该检查只挂载本地 profile 的临时副本，复核源哈希。每类固件运行后重复两轮冷循环，确认 LTDC 经关闭后重新启用；Retro-Go 必须重新交接到 bank2。清除备份域后，patched OFW 需要先完成 PRESS TIME 画面再用 Left+GAME 进入 Retro-Go。实际供电、RTC/VBAT 和保护转换仍待验收，详见 [冷循环报告](../research/2026-11-12-gwemu-cold-cycle.md)。

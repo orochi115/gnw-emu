@@ -187,3 +187,54 @@ def test_cold_cycle_clears_ram_retains_flash_uid_and_power_inputs(tmp_path):
         assert machine.read32(GPIOA) & 1 == 0
         machine.step(200_000_000)
         assert machine.read32(GPIOA) & 1
+
+
+def cold_cycle(machine):
+    machine.command("human-monitor-command", {"command-line": "gnw-cold-cycle"})
+    machine.command("query-status")
+
+
+def test_cold_cycle_restores_startup_itcm_not_live_guest_ram(tmp_path):
+    seed = tmp_path / "itcm.bin"
+    seed.write_bytes(bytes(range(256)))
+    machine = Native(tmp_path)
+    machine.args += ["-device", f"loader,file={seed},addr=0,force-raw=on"]
+    with machine:
+        assert machine.read32(0x40) == 0x43424140
+        machine.command("cont")
+        machine.step(10_000_000)
+        machine.command("stop")
+        for marker in (0x11223344, 0x55667788):
+            machine.write32(0x40, marker)
+            machine.write32(0x1000, marker)
+            cold_cycle(machine)
+            assert machine.read32(0x40) == 0x43424140
+            assert machine.read32(0x1000) == 0
+
+
+def test_cold_cycle_clears_backup_registers_but_warm_reset_retains_them(tmp_path):
+    with Native(tmp_path) as machine:
+        addresses = (0x58004500, 0x5800457c)
+        for address in addresses:
+            machine.write32(address, 0x12345678)
+        machine.command("system_reset")
+        machine.command("query-status")
+        assert [machine.read32(address) for address in addresses] == [0x12345678] * 2
+        cold_cycle(machine)
+        assert [machine.read32(address) for address in addresses] == [0, 0]
+
+
+def test_repeated_cold_cycle_releases_power_and_reschedules_press(tmp_path):
+    with Native(tmp_path) as machine:
+        machine.command("cont")
+        cold_cycle(machine)
+        machine.step(800_000_000)
+        assert machine.read32(GPIOA) & 1 == 0
+        cold_cycle(machine)
+        assert machine.read32(GPIOA) & 1
+        machine.step(100_000_000)
+        assert machine.read32(GPIOA) & 1
+        machine.step(650_000_000)
+        assert machine.read32(GPIOA) & 1 == 0
+        machine.step(200_000_000)
+        assert machine.read32(GPIOA) & 1
