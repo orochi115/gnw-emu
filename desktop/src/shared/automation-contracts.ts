@@ -14,6 +14,15 @@ const level = z.enum([
   "silent",
 ]);
 const empty = z.object({}).strict();
+const deviceMenuIds = [
+  "device.batteryDown",
+  "device.batteryUp",
+  "device.batteryPresent",
+  "device.usb",
+  "device.pause",
+  "device.resume",
+  "device.coldStart",
+] as const;
 const schemas: Record<string, z.ZodType> = {
   "ui.inspect": empty,
   "app.getState": empty,
@@ -23,6 +32,7 @@ const schemas: Record<string, z.ZodType> = {
   "ui.contextMenu": z
     .object({
       id: z.enum([
+        ...deviceMenuIds,
         "view.clock",
         "view.chassis",
         "audio.mute",
@@ -45,6 +55,7 @@ const schemas: Record<string, z.ZodType> = {
   "ui.menu": z
     .object({
       id: z.enum([
+        ...deviceMenuIds,
         "file.open",
         "file.make",
         "controls.open",

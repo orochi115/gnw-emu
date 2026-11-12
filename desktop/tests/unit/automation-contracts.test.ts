@@ -1,5 +1,22 @@
 import { test, expect } from "vitest";
 import { validateAutomationParams } from "../../src/shared/automation-contracts";
+test("supply menu actions are accepted in ordinary and clock menus with bounded IDs", () => {
+  for (const method of ["ui.menu", "ui.contextMenu"])
+    for (const id of [
+      "device.batteryDown",
+      "device.batteryUp",
+      "device.batteryPresent",
+      "device.usb",
+      "device.pause",
+      "device.resume",
+      "device.coldStart",
+    ])
+      expect(validateAutomationParams(method, { id })).toEqual({ id });
+  for (const method of ["ui.menu", "ui.contextMenu"])
+    expect(() =>
+      validateAutomationParams(method, { id: "device.unknown" }),
+    ).toThrow();
+});
 test("clock context actions are bounded separately from File and native menu roles", () => {
   for (const id of [
     "clock.dock.topLeft",

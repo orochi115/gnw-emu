@@ -27,7 +27,7 @@ import {
 import type { DockCorner } from "../shared/dock-geometry";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { WindowMode } from "./window-mode";
-import { menuTemplate, clockMenuTemplate } from "./menu";
+import { menuTemplate, clockMenuTemplate, deviceMenuItems } from "./menu";
 import type { AppState, ViewPreferences } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
 import { join, resolve } from "node:path";
@@ -112,6 +112,7 @@ function syncControlBlock() {
       !window.isFocused() ||
       windowMode.transitioning ||
       ["starting", "stopping"].includes(controller.state.status) ||
+      !!controller.state.deviceOperation ||
       !!controller.state.stateOperation,
   );
   if (epoch !== controlRouter.epoch) publishInputEpoch();
@@ -156,7 +157,8 @@ async function runControlAction(id: HotkeyAction) {
       await toggleMute();
       break;
     default:
-      await controller.deviceAction(id);
+      observedActivity = controller.deviceAction(id);
+      await observedActivity;
       break;
   }
 }
@@ -574,6 +576,14 @@ function updateMenu() {
     ["starting", "stopping"].includes(controller.state.status) ||
     !!controller.state.stateOperation;
   const menu = Menu.getApplicationMenu();
+  for (const value of deviceMenuItems(deviceMenuActions())) {
+    if (!value.id) continue;
+    const item = menu?.getMenuItemById(value.id);
+    if (item) {
+      item.enabled = value.enabled ?? false;
+      if (value.type === "checkbox") item.checked = value.checked ?? false;
+    }
+  }
   for (const id of ["controls.open", "controls.hotkeys"]) {
     const item = menu?.getMenuItemById(id);
     if (item)
@@ -770,11 +780,29 @@ function stateMenuActions() {
     selectStateSlot: (slot: number) => controller.selectStateSlot(slot),
   };
 }
+function deviceMenuActions() {
+  return {
+    deviceSupported: paths.kernel === "gwemu",
+    deviceState: controller.state,
+    canDevice:
+      !shuttingDown &&
+      !makerOpen &&
+      !controlSettings?.opened &&
+      !nativeDialog &&
+      !active &&
+      !windowMode.transitioning,
+    deviceAction: (id: Parameters<SessionController["deviceAction"]>[0]) => {
+      observedActivity = runControlAction(id);
+      void observedActivity.catch(showError);
+    },
+  };
+}
 function createMenu() {
   Menu.setApplicationMenu(
     Menu.buildFromTemplate(
       menuTemplate(process.platform, {
         ...stateMenuActions(),
+        ...deviceMenuActions(),
         openHotkeys: () => {
           void openControlSettings("hotkeys").catch(showError);
         },
@@ -833,6 +861,7 @@ function createClockMenu() {
   return Menu.buildFromTemplate(
     clockMenuTemplate({
       ...stateMenuActions(),
+      ...deviceMenuActions(),
       normal: () => {
         void toggleClock().catch(showError);
       },

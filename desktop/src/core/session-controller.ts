@@ -29,6 +29,15 @@ import {
   stateSlotTimes,
 } from "./savestate-store";
 import type { ToastMessage } from "../shared/contracts";
+import type { GwemuPowerSnapshot } from "./schemas";
+export type DeviceAction =
+  | "device.batteryDown"
+  | "device.batteryUp"
+  | "device.usb"
+  | "device.batteryPresent"
+  | "device.pause"
+  | "device.resume"
+  | "device.coldStart";
 export async function deadline<T>(
   promise: Promise<T>,
   ms: number,
@@ -63,6 +72,8 @@ interface Runtime {
   stateFile: string;
   stopping: boolean;
   powerWork: Promise<void>;
+  deviceJobs: number;
+  execution?: AppState["execution"];
 }
 export class SessionController extends EventEmitter {
   state: AppState = { status: "idle" };
@@ -145,7 +156,7 @@ export class SessionController extends EventEmitter {
             ? join(this.options.userData, "kernels", "gwemu")
             : this.options.userData;
         lease = await acquireLease(join(data, "leases", profile.id), id);
-        const session = await prepareSession(profile, data);
+        const session = await prepareSession(profile, data, kernel);
         const runDir = join(session.directory, "runs", id);
         await mkdir(runDir, { recursive: true });
         const stateFile = join(runDir, "state.json");
@@ -202,8 +213,14 @@ export class SessionController extends EventEmitter {
           stateFile,
           stopping: false,
           powerWork: Promise.resolve(),
+          deviceJobs: 0,
         };
         this.runtime = runtime;
+        const checkRuntime = () => {
+          check();
+          if (this.runtime !== runtime || runtime.stopping)
+            throw new UserError("error.startCancelled");
+        };
         transferred = true;
         const child = spawn(this.options.qemu, args, {
           stdio: ["ignore", "pipe", "pipe"],
@@ -273,23 +290,34 @@ export class SessionController extends EventEmitter {
           this.options.timeout ?? 10000,
           "connect",
         );
+        checkRuntime();
         if (kernel === "legacy") await backend.resetInput();
-        const frame = display.waitForFrame();
-        await qmp.command("cont");
-        // Standard QMP input rejects events while the VM is paused.
-        if (kernel === "gwemu") await backend.resetInput();
-        this.publish({ ...this.state, stage: "start" });
-        await deadline(
-          Promise.race([frame, startupFailure, cancelled]),
-          this.options.timeout ?? 10000,
-          "frame",
-        );
-        check();
+        checkRuntime();
+        let deviceState =
+          kernel === "gwemu" ? await backend.readDeviceState() : undefined;
+        checkRuntime();
+        if (!deviceState || deviceState.devicePower.powered) {
+          const frame = display.waitForFrame();
+          await qmp.command("cont");
+          checkRuntime();
+          // Standard QMP input rejects events while the VM is paused.
+          if (kernel === "gwemu") await backend.resetInput();
+          checkRuntime();
+          this.publish({ ...this.state, stage: "start" });
+          await deadline(
+            Promise.race([frame, startupFailure, cancelled]),
+            this.options.timeout ?? 10000,
+            "frame",
+          );
+          if (kernel === "gwemu") deviceState = await backend.readDeviceState();
+        }
+        checkRuntime();
+        runtime.execution = deviceState?.execution;
         const slots =
           kernel === "legacy"
             ? await stateSlotTimes(session.directory)
             : Array(10).fill(null);
-        check();
+        checkRuntime();
         this.slot = 0;
         this.publish({
           ...this.state,
@@ -298,6 +326,7 @@ export class SessionController extends EventEmitter {
           stateSlot: this.slot,
           canInstantState: kernel === "legacy",
           stateSlots: slots,
+          ...deviceState,
         });
       } catch (error) {
         if (transferred) await this.stopActiveRuntime().catch(() => {});
@@ -335,7 +364,7 @@ export class SessionController extends EventEmitter {
   }
   key(code: string, down: boolean) {
     const runtime = this.runtime;
-    if (!runtime || this.state.status !== "running" || this.stateWork) return;
+    if (!runtime || !this.canInput(runtime)) return;
     this.options
       .logFor?.("input")
       .debug(
@@ -363,31 +392,139 @@ export class SessionController extends EventEmitter {
   async flushInput() {
     await this.runtime?.input.flush();
   }
-  async deviceAction(
-    action: "device.batteryDown" | "device.batteryUp" | "device.usb",
-  ) {
-    if (!this.runtime || this.state.status !== "running" || this.stateWork)
+  async deviceAction(action: DeviceAction) {
+    if (
+      !this.runtime ||
+      this.runtime.stopping ||
+      this.state.status !== "running" ||
+      this.stateWork ||
+      this.busy
+    )
       return;
     const runtime = this.runtime;
-    const work = runtime.powerWork.then(() =>
-      this.deviceShortcut(
-        runtime,
-        action === "device.usb"
-          ? "KeyC"
-          : action === "device.batteryDown"
-            ? "Minus"
-            : "Equal",
-      ),
-    );
+    const executionAction = [
+      "device.pause",
+      "device.resume",
+      "device.coldStart",
+    ].includes(action);
+    if (
+      runtime.backend.kind === "legacy" &&
+      !["device.batteryDown", "device.batteryUp", "device.usb"].includes(action)
+    )
+      return;
+    runtime.deviceJobs++;
+    if (runtime.backend.kind === "gwemu")
+      this.publish({ ...this.state, deviceOperation: true });
+    const work = runtime.powerWork
+      .then(async () => {
+        if (this.runtime !== runtime || (runtime.stopping && executionAction))
+          return;
+        if (runtime.backend.kind === "legacy") {
+          await this.deviceShortcut(
+            runtime,
+            action === "device.usb"
+              ? "KeyC"
+              : action === "device.batteryDown"
+                ? "Minus"
+                : "Equal",
+          );
+          return;
+        }
+        try {
+          const current = await runtime.backend.readDeviceState();
+          runtime.execution = current.execution;
+          if (runtime.stopping && executionAction) return;
+          if (current.execution === "running") {
+            runtime.input.releaseAll();
+            await runtime.input.flush();
+          }
+          if (runtime.stopping && executionAction) return;
+          if (action === "device.pause") {
+            await runtime.qmp.command("stop");
+          } else if (
+            action === "device.resume" ||
+            action === "device.coldStart"
+          ) {
+            if (!current.devicePower.powered)
+              throw new Error("No power supply");
+            if (action === "device.coldStart") {
+              await runtime.qmp.command("stop");
+              runtime.execution = "paused";
+              await runtime.backend.coldReset();
+            }
+            if (runtime.stopping) return;
+            await runtime.qmp.command("cont");
+            await runtime.backend.resetInput();
+          } else {
+            const property =
+              action === "device.usb"
+                ? "usb-power"
+                : action === "device.batteryPresent"
+                  ? "battery-present"
+                  : "battery";
+            const value =
+              property === "usb-power"
+                ? !current.devicePower.usbPower
+                : property === "battery-present"
+                  ? !current.devicePower.batteryPresent
+                  : Math.min(
+                      100,
+                      Math.max(
+                        0,
+                        current.devicePower.battery +
+                          (action === "device.batteryDown" ? -10 : 10),
+                      ),
+                    );
+            await runtime.qmp.command("qom-set", {
+              path: "/machine",
+              property,
+              value,
+            });
+          }
+        } finally {
+          try {
+            const value = await runtime.backend.readDeviceState();
+            runtime.execution = value.execution;
+            if (this.runtime === runtime && !runtime.stopping)
+              this.publish({ ...this.state, ...value });
+          } catch (error) {
+            runtime.execution = "unknown";
+            if (this.runtime === runtime && !runtime.stopping)
+              this.publish({
+                ...this.state,
+                execution: "unknown",
+                devicePower: undefined,
+              });
+            throw error;
+          }
+        }
+      })
+      .finally(() => {
+        runtime.deviceJobs--;
+        if (
+          runtime.backend.kind === "gwemu" &&
+          this.runtime === runtime &&
+          !runtime.stopping
+        )
+          this.publish({
+            ...this.state,
+            deviceOperation: runtime.deviceJobs > 0,
+          });
+      });
     runtime.powerWork = work.catch(() => {});
     await work;
   }
+  private canInput(runtime: Runtime) {
+    return (
+      this.state.status === "running" &&
+      !this.stateWork &&
+      !runtime.stopping &&
+      runtime.deviceJobs === 0 &&
+      (runtime.backend.kind === "legacy" || runtime.execution === "running")
+    );
+  }
   button(bit: number, down: boolean, source: string, runtimeSessionId: string) {
-    if (
-      this.runtime?.id !== runtimeSessionId ||
-      this.state.status !== "running" ||
-      this.stateWork
-    )
+    if (this.runtime?.id !== runtimeSessionId || !this.canInput(this.runtime))
       return;
     this.options
       .logFor?.("input")
@@ -575,6 +712,8 @@ export class SessionController extends EventEmitter {
   private stopActiveRuntime(): Promise<void> {
     if (this.stopPromise) return this.stopPromise;
     if (!this.runtime) return Promise.resolve();
+    // Close the execution gate before any queued action can reach cont.
+    this.runtime.stopping = true;
     this.stopPromise = (this.stateWork ?? Promise.resolve())
       .catch(() => {})
       .then(() => this.stopRuntime())
@@ -600,11 +739,9 @@ export class SessionController extends EventEmitter {
       stage: "stop",
     });
     let error: Error | undefined;
-    let power: { battery: number; usbPower: boolean } | undefined;
+    let power: GwemuPowerSnapshot | undefined;
     let powerError: Error | undefined;
     try {
-      runtime.input.releaseAll();
-      await deadline(runtime.input.flush(), 1000, "release").catch(() => {});
       if (
         runtime.child &&
         runtime.child.exitCode === null &&
@@ -612,6 +749,15 @@ export class SessionController extends EventEmitter {
       ) {
         try {
           await deadline(runtime.powerWork, 5000, "power");
+          if (
+            runtime.backend.kind === "legacy" ||
+            runtime.execution === "running"
+          ) {
+            runtime.input.releaseAll();
+            await deadline(runtime.input.flush(), 1000, "release").catch(
+              () => {},
+            );
+          }
           if (runtime.backend.kind === "gwemu")
             power = await runtime.backend.snapshotPower();
         } catch {

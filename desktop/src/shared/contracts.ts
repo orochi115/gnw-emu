@@ -37,6 +37,14 @@ export interface ToastMessage {
   duration?: number;
 }
 export interface AppState {
+  execution?: "running" | "paused" | "unpowered" | "unknown";
+  devicePower?: {
+    battery: number;
+    batteryPresent: boolean;
+    usbPower: boolean;
+    powered: boolean;
+  };
+  deviceOperation?: boolean;
   canInstantState?: boolean;
   stateSlot?: number;
   stateSlots?: (string | null)[];

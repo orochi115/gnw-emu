@@ -57,7 +57,7 @@ export function gwemuArguments(
   const machine =
     endpoints.framePort === undefined
       ? wiring
-      : `${wiring},frame-endpoint=127.0.0.1:${endpoints.framePort},session-lock=${qemuEscape(join(session.directory, "qemu.lock"))},power-model=on,battery=${session.battery},usb-power=${session.usbPower ? "on" : "off"},battery-life-min=${session.batteryLifeMinutes},charge-time-min=${session.chargeTimeMinutes}`;
+      : `${wiring},frame-endpoint=127.0.0.1:${endpoints.framePort},session-lock=${qemuEscape(join(session.directory, "qemu.lock"))},power-model=on,battery=${session.battery},battery-present=${session.batteryPresent === false ? "off" : "on"},usb-power=${session.usbPower ? "on" : "off"},battery-life-min=${session.batteryLifeMinutes},charge-time-min=${session.chargeTimeMinutes}`;
   const args = [
     "-M",
     machine,

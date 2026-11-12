@@ -45,6 +45,9 @@ export const sessionSchema = z
     chargeTimeMinutes: z.number().int().nonnegative().default(180),
   })
   .strict();
+export const gwemuSessionSchema = sessionSchema.extend({
+  batteryPresent: z.boolean().default(true),
+});
 export const settingsSchema = z
   .object({
     formatVersion: z.literal(1),
@@ -79,6 +82,13 @@ export const exitStateSchema = z
     usbPower: z.boolean(),
   })
   .strict();
+export const gwemuPowerSnapshotSchema = exitStateSchema
+  .omit({ formatVersion: true })
+  .extend({ batteryPresent: z.boolean() });
+export const gwemuPowerSchema = gwemuPowerSnapshotSchema.extend({
+  powered: z.boolean(),
+});
+export type GwemuPowerSnapshot = z.infer<typeof gwemuPowerSnapshotSchema>;
 export type ProfileFields = Omit<
   z.infer<typeof profileSchema>,
   "formatVersion" | "id"

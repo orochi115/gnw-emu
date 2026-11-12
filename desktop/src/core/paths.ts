@@ -82,7 +82,7 @@ export function applicationPaths(options: {
       : join(
           options.project,
           "build",
-          ...(kernel === "gwemu" ? ["gwemu-softspi"] : []),
+          ...(kernel === "gwemu" ? ["gwemu-supply"] : []),
           process.platform === "win32"
             ? "qemu-system-arm.exe"
             : "qemu-system-arm",

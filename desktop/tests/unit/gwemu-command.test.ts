@@ -93,7 +93,7 @@ test("desktop endpoints bind the native frame and lock and leave GDB disabled", 
     { audio: false },
   );
   expect(args).toContain(
-    "gnw-h7b0,sd-wiring=spi1,frame-endpoint=127.0.0.1:4321,session-lock=/session/qemu.lock,power-model=on,battery=35,usb-power=on,battery-life-min=480,charge-time-min=180",
+    "gnw-h7b0,sd-wiring=spi1,frame-endpoint=127.0.0.1:4321,session-lock=/session/qemu.lock,power-model=on,battery=35,battery-present=on,usb-power=on,battery-life-min=480,charge-time-min=180",
   );
   expect(args).not.toContain("-gdb");
   expect(args).toContain("gnw-h7b0-sai1.audio-muted=on");

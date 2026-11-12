@@ -46,7 +46,10 @@ export function App() {
   controlState.current = {
     controls,
     modal: maker || controlsOpen,
-    running: state.status === "running",
+    running:
+      state.status === "running" &&
+      (!state.execution || state.execution === "running") &&
+      !state.deviceOperation,
   };
 
   const [error, setError] = useState("");
@@ -226,13 +229,30 @@ export function App() {
           showChassis={preferences.showChassis}
           renderScale={host.renderScale}
           mask={desiredMask}
-          disabled={state.status !== "running" || maker || controlsOpen}
+          disabled={
+            state.status !== "running" ||
+            (!!state.execution && state.execution !== "running") ||
+            !!state.deviceOperation ||
+            maker ||
+            controlsOpen
+          }
           resetGeneration={
             input.runtimeSessionId === state.runtimeSessionId
               ? input.resetGeneration
               : 0
           }
         />
+        {state.status === "running" &&
+          state.execution &&
+          state.execution !== "running" && (
+            <div
+              data-ui="device-execution"
+              role="status"
+              className={`device-execution ${state.execution}`}
+            >
+              {t(`device.execution.${state.execution}`)}
+            </div>
+          )}
         {!running && (
           <div className="empty-state">
             <div className="empty-symbol" aria-hidden="true">

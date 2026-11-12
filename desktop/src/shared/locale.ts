@@ -4,6 +4,15 @@ import { UserError } from "./user-error";
 export type Locale = "zh-CN" | "en";
 export type LanguagePreference = Locale | "system";
 const en = {
+  "device.menu": "Device",
+  "device.execution.paused": "Paused · choose Device → Resume to run",
+  "device.execution.unpowered":
+    "No power supply · connect a battery or USB in Device",
+  "device.execution.unknown": "Device state unavailable · check the connection",
+  "controls.action.device.batteryPresent": "Battery Connected",
+  "controls.action.device.pause": "Pause Execution",
+  "controls.action.device.resume": "Resume Execution",
+  "controls.action.device.coldStart": "Cold Start",
   "state.emptyLabel": "Empty",
   "error.startCancelled": "Device startup was cancelled.",
   "state.unsupportedKernel":
@@ -236,6 +245,14 @@ const en = {
   "action.closeDisplay": "closing the display connection",
 };
 const zh: Record<keyof typeof en, string> = {
+  "device.menu": "设备",
+  "device.execution.paused": "已暂停 · 从「设备」菜单选择继续运行",
+  "device.execution.unpowered": "无电源 · 从「设备」菜单连接电池或 USB",
+  "device.execution.unknown": "无法读取设备状态 · 请检查连接",
+  "controls.action.device.batteryPresent": "连接电池",
+  "controls.action.device.pause": "暂停运行",
+  "controls.action.device.resume": "继续运行",
+  "controls.action.device.coldStart": "冷启动",
   "state.emptyLabel": "空",
   "error.startCancelled": "已取消设备启动。",
   "state.unsupportedKernel": "此设备暂不支持即时存档。",

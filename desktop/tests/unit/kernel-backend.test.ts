@@ -87,12 +87,14 @@ test("power snapshot freezes guest time and rejects malformed readings", async (
   const backend = new KernelBackend("gwemu", {
     command: async (...args: any[]) => {
       calls.push(args);
+      if (args[0] === "query-status") return { running: false };
       if (args[0] === "qom-get")
         return args[1].property === "battery" ? battery : true;
     },
   } as any);
   expect(await backend.snapshotPower()).toEqual({
     battery: 42,
+    batteryPresent: true,
     usbPower: true,
   });
   expect(calls[0]).toEqual(["stop"]);

@@ -4,7 +4,14 @@ import { join } from "node:path";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Profile } from "./schemas";
-import { exitStateSchema } from "./schemas";
+import {
+  exitStateSchema,
+  gwemuPowerSchema,
+  gwemuPowerSnapshotSchema,
+  type GwemuPowerSnapshot,
+} from "./schemas";
+import { requireSupplyCapabilities } from "./gwemu-capabilities";
+import type { AppState } from "../shared/contracts";
 import { saveSession, type Session } from "./session-store";
 import { readJson } from "./atomic-file";
 import { gwemuArguments, validateGwemuConfiguration } from "./gwemu-command";
@@ -83,6 +90,7 @@ export async function preflightKernel(
       "sd-wiring",
       "power-model",
       "battery",
+      "battery-present",
       "usb-power",
       "battery-life-min",
       "charge-time-min",
@@ -91,6 +99,7 @@ export async function preflightKernel(
     !available[2].includes("audio-muted")
   )
     throw new UserError("error.kernelBuild");
+  await requireSupplyCapabilities(binary, kernelEnvironment(kind));
 }
 
 export async function kernelArguments(
@@ -116,7 +125,7 @@ export async function finishKernelSession(
   session: Session,
   stateFile: string,
   exitCode: number | null,
-  power?: { battery: number; usbPower: boolean },
+  power?: GwemuPowerSnapshot,
 ) {
   if (kind === "legacy") {
     const state = exitStateSchema.parse(await readJson(stateFile));
@@ -137,7 +146,7 @@ export async function finishKernelSession(
       await file.close();
     }
   }
-  await saveSession(session, power);
+  await saveSession(session, gwemuPowerSnapshotSchema.parse(power), "gwemu");
 }
 
 /** Kernel-specific control stays behind the UI's single QMP connection. */
@@ -181,6 +190,14 @@ export class KernelBackend {
   }
   async snapshotPower() {
     await this.qmp.command("stop");
+    const { devicePower } = await this.readDeviceState();
+    const { battery, batteryPresent, usbPower } = devicePower;
+    return { battery, batteryPresent, usbPower };
+  }
+  async readDeviceState(): Promise<{
+    execution: NonNullable<AppState["execution"]>;
+    devicePower: NonNullable<AppState["devicePower"]>;
+  }> {
     const battery = await this.qmp.command("qom-get", {
       path: "/machine",
       property: "battery",
@@ -189,11 +206,66 @@ export class KernelBackend {
       path: "/machine",
       property: "usb-power",
     });
-    const state = exitStateSchema.parse({
-      formatVersion: 1,
+    const batteryPresent = await this.qmp.command("qom-get", {
+      path: "/machine",
+      property: "battery-present",
+    });
+    const powered = await this.qmp.command("qom-get", {
+      path: "/machine",
+      property: "powered",
+    });
+    const devicePower = gwemuPowerSchema.parse({
       battery,
       usbPower,
+      batteryPresent,
+      powered,
     });
-    return { battery: state.battery, usbPower: state.usbPower };
+    if (powered !== (batteryPresent || usbPower))
+      throw new Error("Inconsistent power sources");
+    const status = await this.qmp.command("query-status");
+    if (typeof status?.running !== "boolean" || (!powered && status.running))
+      throw new Error("Invalid execution state");
+    return {
+      devicePower,
+      execution: !powered ? "unpowered" : status.running ? "running" : "paused",
+    };
+  }
+  async coldReset(timeout = 5000) {
+    let timer: NodeJS.Timeout | undefined;
+    let resolve!: () => void, reject!: (error: Error) => void;
+    const reset = new Promise<void>((r, j) => {
+      resolve = r;
+      reject = j;
+    });
+    // A disconnect can precede the HMP reply. Handle rejection immediately.
+    reset.catch(() => {});
+    const event = (value: any) => {
+      if (value.event === "RESET" && value.data?.reason === "host-ui")
+        resolve();
+    };
+    const disconnect = () =>
+      reject(new Error("QMP disconnected during cold reset"));
+    this.qmp.on("event", event);
+    this.qmp.on("disconnect", disconnect);
+    timer = setTimeout(() => reject(new Error("Cold reset timeout")), timeout);
+    try {
+      const response = await this.qmp.command(
+        "human-monitor-command",
+        { "command-line": "gnw-cold-cycle" },
+        timeout,
+      );
+      if (
+        typeof response !== "string" ||
+        !response.includes("GNW cold power cycle requested")
+      )
+        throw new Error(`Cold reset refused: ${response}`);
+      await reset;
+      // RESET is sent inside reset; this command runs after post-reset CPU sync.
+      await this.qmp.command("query-status");
+    } finally {
+      clearTimeout(timer);
+      this.qmp.off("event", event);
+      this.qmp.off("disconnect", disconnect);
+    }
   }
 }

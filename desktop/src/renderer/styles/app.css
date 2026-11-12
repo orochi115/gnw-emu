@@ -473,6 +473,23 @@ main {
   display: flex;
   flex-direction: column;
 }
+.device-execution {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--text-primary, #eee);
+  text-align: center;
+  background: rgba(16, 18, 22, 0.72);
+  pointer-events: none;
+}
+.device-execution.unpowered,
+.device-execution.unknown {
+  background: #101216;
+}
 .window-content {
   position: relative;
   width: 100%;

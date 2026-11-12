@@ -3,6 +3,60 @@ import { t } from "../shared/locale";
 import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { basename, dirname } from "node:path";
 import { DOCK_CORNERS, type DockCorner } from "../shared/dock-geometry";
+import type { AppState } from "../shared/contracts";
+import type { DeviceAction } from "../core/session-controller";
+
+interface DeviceActions {
+  deviceSupported?: boolean;
+  deviceState?: AppState;
+  canDevice?: boolean;
+  deviceAction?: (action: DeviceAction) => void;
+}
+export function deviceMenuItems(actions: DeviceActions): Item[] {
+  const state = actions.deviceState;
+  const enabled =
+    !!actions.canDevice &&
+    state?.status === "running" &&
+    !state.deviceOperation;
+  const powered = !!state?.devicePower?.powered;
+  const item = (id: DeviceAction, can: boolean = enabled): Item => ({
+    id,
+    label: t(`controls.action.${id}`),
+    enabled: can,
+    accelerator: undefined,
+    click: () => actions.deviceAction?.(id),
+  });
+  return [
+    item("device.batteryDown"),
+    item("device.batteryUp"),
+    {
+      ...item("device.batteryPresent"),
+      type: "checkbox",
+      checked: state?.devicePower?.batteryPresent ?? false,
+    },
+    {
+      ...item("device.usb"),
+      type: "checkbox",
+      checked: state?.devicePower?.usbPower ?? false,
+    },
+    { type: "separator" },
+    item("device.pause", enabled && state?.execution === "running"),
+    item("device.resume", enabled && powered && state?.execution === "paused"),
+    item(
+      "device.coldStart",
+      enabled &&
+        powered &&
+        ["running", "paused"].includes(state?.execution ?? ""),
+    ),
+  ];
+}
+function deviceMenuTemplate(actions: DeviceActions): Item {
+  return {
+    id: "menu.device",
+    label: t("device.menu"),
+    submenu: deviceMenuItems(actions),
+  };
+}
 
 type ScaleActions = Parameters<typeof scaleMenuTemplate>[0];
 interface StateActions {
@@ -50,7 +104,8 @@ export function stateMenuTemplate(actions: StateActions): Item {
 
 export function clockMenuTemplate(
   actions: ScaleActions &
-    StateActions & {
+    StateActions &
+    DeviceActions & {
       normal: () => void;
       dock: (corner: DockCorner) => void;
       clockDock: DockCorner;
@@ -100,6 +155,7 @@ export function clockMenuTemplate(
       click: actions.toggleMute,
     },
     stateMenuTemplate(actions),
+    ...(actions.deviceSupported ? [deviceMenuTemplate(actions)] : []),
     scaleMenuTemplate(actions),
     { type: "separator" },
     { id: "app.quit", label: t("menu.quit"), click: actions.quit },
@@ -138,25 +194,26 @@ export function scaleMenuTemplate(actions: {
 /** Explicit role lists keep Electron's default extra menus out of the product. */
 export function menuTemplate(
   platform: string,
-  actions: StateActions & {
-    open: () => void;
-    make: () => void;
-    openControls?: () => void;
-    openHotkeys?: () => void;
-    controlAccelerators?: Partial<Record<string, string | undefined>>;
-    recentRoms?: string[];
-    loadRecent?: (path: string) => void;
-    clearRecent?: () => void;
-    toggleChassis?: () => void;
-    showChassis?: boolean;
-    clockMode?: boolean;
-    toggleClock?: () => void;
-    muted?: boolean;
-    toggleMute?: () => void;
-    pixelScale?: number;
-    setScale?: (value: number) => void;
-    canScale?: (value: number) => boolean;
-  },
+  actions: StateActions &
+    DeviceActions & {
+      open: () => void;
+      make: () => void;
+      openControls?: () => void;
+      openHotkeys?: () => void;
+      controlAccelerators?: Partial<Record<string, string | undefined>>;
+      recentRoms?: string[];
+      loadRecent?: (path: string) => void;
+      clearRecent?: () => void;
+      toggleChassis?: () => void;
+      showChassis?: boolean;
+      clockMode?: boolean;
+      toggleClock?: () => void;
+      muted?: boolean;
+      toggleMute?: () => void;
+      pixelScale?: number;
+      setScale?: (value: number) => void;
+      canScale?: (value: number) => boolean;
+    },
 ): Item[] {
   const separator: Item = { type: "separator" };
   const quit: Item = { id: "app.quit", label: t("menu.quit"), role: "quit" };
@@ -230,6 +287,7 @@ export function menuTemplate(
         ...(platform === "darwin" ? [] : [separator, quit]),
       ],
     },
+    ...(actions.deviceSupported ? [deviceMenuTemplate(actions)] : []),
     {
       id: "menu.edit",
       label: t("menu.edit"),

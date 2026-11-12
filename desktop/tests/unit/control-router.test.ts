@@ -61,6 +61,34 @@ function setup(
   return { router, input, values, actions, errors, event };
 }
 afterEach(() => vi.useRealTimers());
+test("device-operation reset cancels held turbo while fresh supply hotkeys remain usable", async () => {
+  vi.useFakeTimers();
+  const s = setup([
+    bind("turbo", "a", key("KeyT"), 10),
+    bind("usb", "device.usb", key("KeyC")),
+  ]);
+  try {
+    s.event(key("KeyT"), true);
+    await s.input.flush();
+    expect(s.input.buttons).toBe(16);
+    const previous = s.router.epoch;
+    s.router.reset();
+    await s.input.flush();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(s.router.epoch).toBeGreaterThan(previous);
+    expect(s.input.buttons).toBe(0);
+    s.event(key("KeyT"), true); // still held physical source stays quarantined
+    await vi.advanceTimersByTimeAsync(300);
+    expect(s.input.buttons).toBe(0);
+    s.event(key("KeyC"), true);
+    expect(s.actions).toEqual(["device.usb"]);
+    s.event(key("KeyT"), false);
+    s.event(key("KeyT"), true);
+    expect(s.input.buttons).toBe(16);
+  } finally {
+    s.router.dispose();
+  }
+});
 test("remaps, repeats and multiple binding/device outputs preserve source OR", async () => {
   const s = setup([
     bind("x", "a", key("KeyJ")),

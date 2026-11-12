@@ -27,6 +27,10 @@ export const HOTKEY_ACTIONS = [
   { id: "device.batteryDown" },
   { id: "device.batteryUp" },
   { id: "device.usb" },
+  { id: "device.batteryPresent" },
+  { id: "device.pause" },
+  { id: "device.resume" },
+  { id: "device.coldStart" },
 ] as const;
 export type HotkeyAction = (typeof HOTKEY_ACTIONS)[number]["id"];
 export type Modifier = "Control" | "Shift" | "Alt" | "Meta";
