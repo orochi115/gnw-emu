@@ -74,10 +74,10 @@ Files：`externals/gwemu/hw/misc/gnw_h7b0_gpio.c`、`include/hw/misc/gnw_h7b0_gp
 
 ## Task 4：Python会话client与Unix GDB（backup实现结束后）
 
-- [ ] 写 manager `tests/test_session_client.py` 实socket服务fixture、共同JSONfixture：私有目录、stale、multi/no auto first、RPC fragmented/late/error、独立heartbeat长GDB命令不失效、固定totaldeadline、disconnectcleanup。
-- [ ] 实现独立reader thread按requestId派发、write lock，RPC等待只持pending状态不持心跳锁；daemon heartbeat可取消/join、异常保存给主操作检查。context退出显式release，异常completion=false；close本地socket不冒成功。
-- [ ] GDBBackend增加unix_socket与resume_on_connect=False；真实socket recv每次按remainingdeadline settimeout，避免buffered read(n)阻塞碎片拖延。test_gdb_backend.py加入持续慢碎片超deadline、Unix无TCP_NODELAY、原TCPdefaults回归。无需改真实物理backend算法。
-- [ ] manager全tests运行（`../../build/gnwmanager-python/bin/python -m pytest -q`），独立两级review，不提前发布未集成版。
+- [x] 写 manager `tests/test_session_client.py` 实socket服务fixture、共同JSONfixture：私有目录、stale、multi/no auto first、RPC fragmented/late/error、独立heartbeat长GDB命令不失效、固定totaldeadline、disconnectcleanup。
+- [x] 实现独立reader thread按requestId派发、write lock，RPC等待只持pending状态不持心跳锁；daemon heartbeat可取消/join、异常保存给主操作检查。context退出显式release，异常completion=false；close本地socket不冒成功。
+- [x] GDBBackend增加unix_socket与resume_on_connect=False；真实socket recv每次按remainingdeadline settimeout，避免buffered read(n)阻塞碎片拖延。test_gdb_backend.py加入持续慢碎片超deadline、Unix无TCP_NODELAY、原TCPdefaults回归。无需改真实物理backend算法。
+- [x] manager全tests运行（`../../build/gnwmanager-python/bin/python -m pytest -q`），独立两级review，不提前发布未集成版。
 
 ## Task 5：CLI auto路由、完整命令、GDB交接
 
