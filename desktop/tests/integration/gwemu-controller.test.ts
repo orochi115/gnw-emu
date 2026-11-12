@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile, open } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { Writable } from "node:stream";
@@ -14,7 +14,7 @@ import { createDisplayReceiver } from "../../src/display/receiver";
 import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
-  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-power/qemu-system-arm",
+  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-softspi/qemu-system-arm",
 );
 test.skipIf(!existsSync(binary))(
   "gwemu controller isolates data, preserves active ROM on unsupported input and stops cleanly",
@@ -157,14 +157,32 @@ test.skipIf(!existsSync(binary))(
       await expect(controller.load(unsupported.path)).rejects.toThrow(
         /capacity/,
       );
+      const card = await open(join(root, "sd.img"), "w");
+      await card.truncate(32 * 1024 * 1024);
+      await card.close();
       const ospi = await createProfile(join(root, "ospi.gnw.json"), {
         model: "mario",
         internalFlash: profile.internalFlash,
         externalFlash: profile.externalFlash,
-        sdCard: join(root, "external.bin"),
+        sdCard: join(root, "sd.img"),
         sdWiring: "ospi",
       });
-      await expect(controller.load(ospi.path)).rejects.toThrow(/OSPI/);
+      const oldBinary = resolve("../build/gwemu-power/qemu-system-arm");
+      if (existsSync(oldBinary)) {
+        const preflight = kernel.preflightKernel;
+        const old = vi
+          .spyOn(kernel, "preflightKernel")
+          .mockImplementation((kind, target) =>
+            preflight(kind, target, oldBinary),
+          );
+        try {
+          await expect(controller.load(ospi.path)).rejects.toThrow(
+            "error.kernelBuild",
+          );
+        } finally {
+          old.mockRestore();
+        }
+      }
       expect(controller.state.runtimeSessionId).toBe(id);
       expect(controller.state.status).toBe("running");
       await controller.stop();
@@ -210,6 +228,136 @@ test.skipIf(!existsSync(binary))(
       expect(controller.state.saveUncertain).toBe(true);
       await controller.load(profile.path);
       await controller.stop();
+      // Use the actual controller-created session image for protocol writes.
+      for (const wiring of ["spi1", "ospi"] as const) {
+        const target =
+          wiring === "ospi"
+            ? ospi
+            : await createProfile(join(root, "spi1.gnw.json"), {
+                model: "mario",
+                internalFlash: profile.internalFlash,
+                externalFlash: profile.externalFlash,
+                sdCard: join(root, "sd.img"),
+                sdWiring: wiring,
+              });
+        const setup = async () => {
+          if (wiring === "ospi")
+            await hardware([
+              "writel 0x58020400 0x14", // PB1/PB2 output
+              "writel 0x58020c00 0x0", // PD12 input
+              "writel 0x58021000 0x400000", // PE11 output
+              "writel 0x58021018 0x800", // PE11 high selects SD
+            ]);
+        };
+        const exchange = async (byte: number) => {
+          if (wiring === "spi1") {
+            const values = await hardware([
+              `writeb 0x40013020 ${byte}`,
+              "readb 0x40013030",
+            ]);
+            return Number(values[1]);
+          }
+          const commands: string[] = ["writel 0x58021018 0x800"];
+          for (let bit = 7; bit >= 0; bit--) {
+            const mosi = ((byte >> bit) & 1) << 1;
+            commands.push(
+              `writel 0x58020414 ${mosi}`,
+              `writel 0x58020414 ${mosi | 4}`,
+              "readl 0x58020c10",
+              `writel 0x58020414 ${mosi}`,
+            );
+          }
+          commands.push("writel 0x58021018 0x8000000");
+          const values = await hardware(commands);
+          let result = 0;
+          for (let bit = 0; bit < 8; bit++)
+            result = (result << 1) | ((Number(values[3 + bit * 4]) >> 12) & 1);
+          return result;
+        };
+        const response = async () => {
+          for (let attempt = 0; attempt < 12; attempt++) {
+            const result = await exchange(255);
+            if (result !== 255) return result;
+          }
+          throw new Error("SD response timed out");
+        };
+        const command = async (index: number, argument = 0) => {
+          // Consume response tail before issuing another command.
+          await exchange(255);
+          await exchange(255);
+          for (const byte of [
+            0x40 | index,
+            argument >>> 24,
+            (argument >>> 16) & 255,
+            (argument >>> 8) & 255,
+            argument & 255,
+            index === 0 ? 0x95 : 0x87,
+          ])
+            await exchange(byte);
+          return response();
+        };
+        const initialize = async () => {
+          await setup();
+          expect(await command(0)).toBe(1);
+          expect(await command(8, 0x1aa)).toBe(1);
+          for (let n = 0; n < 4; n++) await exchange(255);
+          let ready = false;
+          for (let n = 0; n < 20; n++) {
+            await command(55);
+            if ((await command(41, 0x40000000)) === 0) {
+              ready = true;
+              break;
+            }
+          }
+          expect(ready).toBe(true);
+          expect(await command(16, 512)).toBe(0);
+        };
+        const payload = Buffer.from(
+          Array.from({ length: 512 }, (_, i) => (i * 7 + 0x31) & 255),
+        );
+        await controller.load(target.path);
+        await initialize();
+        expect(await command(24, 512)).toBe(0); // 32 MiB SDSC uses byte addresses
+        await exchange(255);
+        await exchange(255);
+        await exchange(0xfe);
+        for (const byte of payload) await exchange(byte);
+        await exchange(255);
+        await exchange(255);
+        expect((await response()) & 0x1f).toBe(5);
+        await exchange(255);
+        await exchange(255);
+        await controller.stop();
+        const cardPath = join(
+          root,
+          "data",
+          "kernels",
+          "gwemu",
+          "sessions",
+          target.id,
+          "sdcard.img",
+        );
+        const saved = await open(cardPath, "r");
+        const bytes = Buffer.alloc(512);
+        await saved.read(bytes, 0, 512, 512);
+        await saved.close();
+        expect(bytes).toEqual(payload);
+        await controller.load(target.path);
+        await initialize();
+        expect(await command(17, 512)).toBe(0);
+        expect(await response()).toBe(0xfe);
+        const restored = Buffer.alloc(512);
+        for (let n = 0; n < 512; n++) restored[n] = await exchange(255);
+        expect(restored).toEqual(payload);
+        await exchange(255);
+        await exchange(255);
+        await controller.stop();
+      }
+      const sourceCard = await open(join(root, "sd.img"), "r");
+      const sourceSector = Buffer.alloc(512);
+      await sourceCard.read(sourceSector, 0, 512, 512);
+      await sourceCard.close();
+      expect(sourceSector).toEqual(Buffer.alloc(512));
       expect(await readFile(profile.internalFlash)).toEqual(internal);
       expect(await readFile(profile.externalFlash)).toEqual(external);
     } finally {
@@ -219,5 +367,5 @@ test.skipIf(!existsSync(binary))(
       await rm(root, { recursive: true, force: true });
     }
   },
-  25000,
+  60000,
 );

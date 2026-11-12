@@ -28,8 +28,6 @@ export function validateGwemuConfiguration(
     throw new Error(
       "gwemu UID must contain exactly 12 raw bytes in hexadecimal",
     );
-  if (profile.sdCard && profile.sdWiring === "ospi")
-    throw new Error("gwemu probe: OSPI SD wiring has not been adapted");
   for (const size of [sizes.internalFlash, sizes.bank2Flash])
     if (
       size !== undefined &&
@@ -55,10 +53,11 @@ export function gwemuArguments(
   settings?: { audio: boolean },
 ) {
   const chip = validateGwemuConfiguration(profile, sizes);
+  const wiring = `gnw-h7b0,sd-wiring=${profile.sdWiring ?? "spi1"}`;
   const machine =
     endpoints.framePort === undefined
-      ? "gnw-h7b0"
-      : `gnw-h7b0,frame-endpoint=127.0.0.1:${endpoints.framePort},session-lock=${qemuEscape(join(session.directory, "qemu.lock"))},power-model=on,battery=${session.battery},usb-power=${session.usbPower ? "on" : "off"},battery-life-min=${session.batteryLifeMinutes},charge-time-min=${session.chargeTimeMinutes}`;
+      ? wiring
+      : `${wiring},frame-endpoint=127.0.0.1:${endpoints.framePort},session-lock=${qemuEscape(join(session.directory, "qemu.lock"))},power-model=on,battery=${session.battery},usb-power=${session.usbPower ? "on" : "off"},battery-life-min=${session.batteryLifeMinutes},charge-time-min=${session.chargeTimeMinutes}`;
   const args = [
     "-M",
     machine,

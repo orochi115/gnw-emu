@@ -80,6 +80,7 @@ export async function preflightKernel(
     !available[0].includes("frame-endpoint") ||
     !available[0].includes("session-lock") ||
     ![
+      "sd-wiring",
       "power-model",
       "battery",
       "usb-power",

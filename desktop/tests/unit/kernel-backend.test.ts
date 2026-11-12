@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { expect, test } from "vitest";
 import { KernelBackend, preflightKernel } from "../../src/core/kernel-backend";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -116,7 +117,7 @@ test("legacy input and mute keep their existing QOM contract", async () => {
   ]);
 });
 
-test("gwemu preflight rejects unsupported source capacity and OSPI before invoking a binary", async () => {
+test("gwemu preflight rejects unsupported source capacity before invoking a binary", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-preflight-"));
   try {
     await writeFile(join(root, "internal.bin"), Buffer.alloc(128 * 1024));
@@ -128,14 +129,35 @@ test("gwemu preflight rejects unsupported source capacity and OSPI before invoki
     await expect(
       preflightKernel("gwemu", profile, "/missing-binary"),
     ).rejects.toThrow(/capacity/);
-    await expect(
-      preflightKernel(
-        "gwemu",
-        { ...profile, sdCard: "/sd", sdWiring: "ospi" },
-        "/missing-binary",
-      ),
-    ).rejects.toThrow(/OSPI/);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test.skipIf(
+  !existsSync(join(process.cwd(), "../build/gwemu-power/qemu-system-arm")),
+)(
+  "preflight refuses the old power-only binary with valid software SD configuration",
+  async () => {
+    const binary = join(process.cwd(), "../build/gwemu-power/qemu-system-arm");
+    const root = await mkdtemp(join(tmpdir(), "gnw-preflight-old-"));
+    try {
+      await writeFile(join(root, "internal.bin"), Buffer.alloc(128 * 1024));
+      await writeFile(join(root, "external.bin"), Buffer.alloc(1024 * 1024));
+      await expect(
+        preflightKernel(
+          "gwemu",
+          {
+            internalFlash: join(root, "internal.bin"),
+            externalFlash: join(root, "external.bin"),
+            sdCard: "/sd",
+            sdWiring: "ospi",
+          } as Profile,
+          binary,
+        ),
+      ).rejects.toThrow("error.kernelBuild");
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  },
+);

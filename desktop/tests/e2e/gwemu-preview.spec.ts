@@ -7,7 +7,7 @@ import { createHash } from "node:crypto";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(resolve("../build/gwemu-power/qemu-system-arm")),
+  !existsSync(resolve("../build/gwemu-softspi/qemu-system-arm")),
   "Build the fixed gwemu desktop kernel first",
 );
 test("gwemu renders in the real desktop, handles input and mute, changes ROM and closes", async () => {
@@ -111,7 +111,7 @@ test("gwemu renders in the real desktop, handles input and mute, changes ROM and
         // Require a substantial rendered panel before capturing the preview.
         .toBeGreaterThan(20000);
     await waitForPanel();
-    const output = resolve("../out/gwemu-power-controls");
+    const output = resolve("../out/gwemu-softspi-sd");
     await mkdir(output, { recursive: true });
     await rpc("ui.screenshot", { path: join(output, "zelda-desktop.png") });
     await action("ui.key", { key: "Left", down: true });

@@ -16,10 +16,10 @@
 ```sh
 git submodule sync -- externals/gwemu
 git submodule update --init externals/gwemu
-GWEMU_BUILD_DIR=build/gwemu-power sh scripts/build_gwemu.sh
+GWEMU_BUILD_DIR=build/gwemu-softspi sh scripts/build_gwemu.sh
 ```
 
-默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-power`，首批基线目录 `build/gwemu-fork` 保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
+默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-softspi`，首批基线目录 `build/gwemu-fork` 保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
 
 `gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、补丁审查副本哈希、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
 
@@ -40,7 +40,7 @@ GNW_KERNEL=gwemu npx electron . --user-data-dir=/tmp/gnw-gwemu-preview ../profil
 
 电量/USB 复用现有热键（默认 - / = 调整电量，C 切换 USB）和隔离 session 的电量/充放电周期配置。周期以虚拟时间计算，暂停时不消耗；0 周期固定相应状态。正常关闭先等待电源操作、暂停并读回电量/USB，退出0且同步文件后再保存；读回失败仍终止子进程并标记保存不确定。
 
-该板级模型使用 Retro-Go 标尺 11000..13000、PA2 PGOOD 与 PE7 CHG；0% 不代表物理断开或电源域失电，真实曲线与充电器 CE 限流未建模。上游原生默认不开启此模型，桌面显式传入 power-model=on。即时存档菜单仍禁用，热键明确提示暂不支持，旧 slots 不读不写。详见 [电量与 USB 实测报告](../research/2026-11-12-gwemu-power-controls.md)。音频后端已接通且静音有实际 PCM 证据，但音质、延迟、宿主实时限速设置、完整 RTC 和冷启动仍待回归。该入口只供开发验收，详细证据见 [桌面预览报告](../research/2026-11-12-gwemu-desktop-preview.md)。普通桌面 CLI 启动/探针仍使用旧内核，不能通过该环境变量切换。
+该板级模型使用 Retro-Go 标尺 11000..13000、PA2 PGOOD 与 PE7 CHG；0% 不代表物理断开或电源域失电，真实曲线与充电器 CE 限流未建模。上游原生默认不开启此模型，桌面显式传入 power-model=on。即时存档菜单仍禁用，热键明确提示暂不支持，旧 slots 不读不写。详见 [电量与 USB 实测报告](../research/2026-11-12-gwemu-softspi-controls.md)。音频后端已接通且静音有实际 PCM 证据，但音质、延迟、宿主实时限速设置、完整 RTC 和冷启动仍待回归。该入口只供开发验收，详细证据见 [桌面预览报告](../research/2026-11-12-gwemu-desktop-preview.md)。普通桌面 CLI 启动/探针仍使用旧内核，不能通过该环境变量切换。
 
 ## 同镜像实验
 
@@ -50,7 +50,7 @@ npm run build:cli
 node dist-cli/compare-kernels.js \
   --profile ../profiles/mario.gnw.json \
   --legacy ../build/qemu-system-arm \
-  --gwemu ../build/gwemu-power/qemu-system-arm \
+  --gwemu ../build/gwemu-softspi/qemu-system-arm \
   --output ../out/gwemu-my-mario-run \
   --seconds 3
 ```
@@ -61,7 +61,7 @@ node dist-cli/compare-kernels.js \
 
 `--seconds` 是墙钟观察时间，范围 `(0, 60]`。`--buttons left+game` 会在运行后 0.5 秒按住组合键 0.3 秒；两套内核用各自已有输入接口，报告记录该操作。它适合初步检查，不是按虚拟时间同步的游戏回归。两套内核可能在按键时处于不同启动阶段。
 
-已支持容量：外部 Flash 1/4/8/16/32/64/128/256 MiB，按容量选择上游 Macronix 芯片；片内每个 bank 至多 256 KiB。较短 bank 在 gwemu session 内填 `0xff` 扩展，不修改源。显式 UID 按 `.gnw.json` 的 12 raw bytes 契约传入，缺省时保留上游合成 UID。OSPI SD 和未支持容量会明确拒绝。芯片选择只提供容量匹配，没有给 profile 新增真实 JEDEC 身份。
+已支持容量：外部 Flash 1/4/8/16/32/64/128/256 MiB，按容量选择上游 Macronix 芯片；片内每个 bank 至多 256 KiB。较短 bank 在 gwemu session 内填 `0xff` 扩展，不修改源。显式 UID 按 `.gnw.json` 的 12 raw bytes 契约传入，缺省时保留上游合成 UID。SD 支持 `spi1`（缺省）和 `ospi`。后者为 PB2/PB1/PD12/PE11 的 GPIO 软件 SPI 接线；未支持容量会明确拒绝。芯片选择只提供容量匹配，没有给 profile 新增真实 JEDEC 身份。
 
 固定时间同时映射到 gwemu 自定义 RTC 的 `initial-epoch`，初始寄存器读回已验证；完整 RTC 用户流程仍需回归。实验关闭音频，不能据此宣称音频通过。
 
@@ -70,9 +70,9 @@ node dist-cli/compare-kernels.js \
 ## 回归检查
 
 ```sh
-GWEMU_BINARY="$PWD/build/gwemu-power/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py
+GWEMU_BINARY="$PWD/build/gwemu-softspi/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu.py tests/test_gwemu_desktop.py tests/test_gwemu_power.py tests/test_gwemu_softspi.py
 cd desktop
-GWEMU_BINARY="$PWD/../build/gwemu-power/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-power/qemu-system-arm" npm test
+GWEMU_BINARY="$PWD/../build/gwemu-softspi/qemu-system-arm" GWEMU_DESKTOP_BINARY="$PWD/../build/gwemu-softspi/qemu-system-arm" npm test
 npm run typecheck
 npm run build
 npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts
@@ -85,7 +85,19 @@ npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts
 本地固件电源验收可从仓库根运行：
 
 ```sh
-GNW_FIRMWARE_POWER_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-power/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_power_firmware.py
+GNW_FIRMWARE_POWER_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-softspi/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_power_firmware.py
 ```
 
-该检查需要本地 Mario/Zelda ROM、out/profiles 中的 Flash-only/SD profile 及原始镜像；缺少时显式跳过。所有挂载镜像均复制到临时目录（SD需要约1 GiB空间），核对源哈希，截图和 MMIO 证据写入 out/gwemu-power-controls/firmware。它验证板级输入，不代替真实供电、游戏回归或管理工具验收。
+该检查需要本地 Mario/Zelda ROM、out/profiles 中的 Flash-only/SD profile 及原始镜像；缺少时显式跳过。所有挂载镜像均复制到临时目录（SD需要约1 GiB空间），核对源哈希，截图和 MMIO 证据写入 out/gwemu-softspi-controls/firmware。它验证板级输入，不代替真实供电、游戏回归或管理工具验收。
+
+## 软件 SPI SD 验收
+
+桌面将 `.gnw.json` 的 `sdWiring` 映射为 startup-only `sd-wiring=spi1|ospi`，SD 后端始终绑定当前隔离 session 的卡镜像。软件模式复用上游 SSI SD/Card，SPI1 不同时消费卡数据；原生缺省 SPI1 保留现有 CS/供电行为。旧构建缺少 `sd-wiring` 能力时，在停止活动 ROM 前拒绝加载。
+
+```sh
+GNW_FIRMWARE_SD_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-softspi/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_softspi_firmware.py
+cd desktop
+npm run test:e2e -- tests/e2e/gwemu-preview.spec.ts tests/e2e/gwemu-sd.spec.ts
+```
+
+本地固件验收需要 SD profile、对应 ELF/nm 和 mtools；所有镜像先复制，检查挂载标志、接线类型、NES core 身份和固件保存文件，并核对源镜像哈希。原生协议测试和桌面会话测试另覆盖块写入/停止/重开。GPIO 桥增加一字节响应延迟，保留普通字节边界 CS 间隔的待发响应；部分字节取消不保证任意中途命令恢复。真实卡供电/电池断开、桌面完整即时存档及管理工具仍待后续验收。详见 [SD 接线实测报告](../research/2026-11-12-gwemu-softspi-sd.md)。
