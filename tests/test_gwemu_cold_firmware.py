@@ -7,11 +7,12 @@ import time
 import pytest
 
 from test_gwemu_desktop import ROOT, Native
-from test_gwemu_power import cold_cycle
+from test_gwemu_power import cold_cycle, property
 from test_gwemu_power_firmware import PROFILES, digest
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("GNW_FIRMWARE_COLD_TEST") != "1",
+    os.environ.get("GNW_FIRMWARE_COLD_TEST") != "1" and
+    os.environ.get("GNW_FIRMWARE_SUPPLY_TEST") != "1",
     reason="opt in to copied local firmware cold-start acceptance",
 )
 LTDC_GCR = 0x50001018
@@ -60,7 +61,13 @@ def wait_for_firmware(machine, screen, retrogo, after_cold=False):
 
 
 @pytest.mark.parametrize("name", PROFILES)
-def test_repeated_cold_start_after_firmware_execution(tmp_path, name):
+@pytest.mark.parametrize("mode", [
+    pytest.param("cold", marks=pytest.mark.skipif(
+        os.environ.get("GNW_FIRMWARE_COLD_TEST") != "1", reason="cold test opt-in")),
+    pytest.param("supply", marks=pytest.mark.skipif(
+        os.environ.get("GNW_FIRMWARE_SUPPLY_TEST") != "1", reason="supply test opt-in")),
+])
+def test_repeated_cold_start_after_firmware_execution(tmp_path, name, mode):
     profile_path = ROOT / PROFILES[name]
     if not profile_path.exists():
         pytest.skip("local profile absent")
@@ -90,15 +97,39 @@ def test_repeated_cold_start_after_firmware_execution(tmp_path, name):
     machine.args[index] = "gnw-h7b0-soc.extflash-chip=" + chip
     if "sdCard" in sources:
         machine.args += ["-drive", f"if=sd,format=raw,file={tmp_path / 'sdcard.img'}"]
-    evidence = ROOT / "out/gwemu-cold-cycle/firmware" / name
+    batch = "gwemu-supply" if mode == "supply" else "gwemu-cold-cycle"
+    evidence = ROOT / f"out/{batch}/firmware" / name
     evidence.mkdir(parents=True, exist_ok=True)
     try:
         with machine:
             machine.command("cont")
             observations = [wait_for_firmware(machine, evidence / "initial.ppm",
                                               "retrogo" in name)]
+            transitions = []
             for cycle in (1, 2):
-                cold_cycle(machine)
+                if mode == "cold":
+                    cold_cycle(machine)
+                else:
+                    property(machine, "battery-present", True)
+                    machine.command("cont")
+                    vtor = machine.read32(0xe000ed08)
+                    machine.write32(0x5800457c, 0x12345678)
+                    property(machine, "battery-present", False)
+                    assert machine.command("query-status")["running"]
+                    assert machine.read32(0xe000ed08) == vtor
+                    assert machine.read32(0x5800457c) == 0x12345678
+                    property(machine, "usb-power", False)
+                    assert property(machine, "powered") is False
+                    assert not machine.command("query-status")["running"]
+                    assert machine.read32(0x5800457c) == 0
+                    with pytest.raises(AssertionError, match="supply"):
+                        machine.command("cont")
+                    property(machine, "usb-power", True)
+                    assert property(machine, "powered") is True
+                    assert not machine.command("query-status")["running"]
+                    transitions.append({"cycle": cycle, "redundantSourceNoReset": True,
+                                        "lossPaused": True, "restorePaused": True,
+                                        "savedBattery": property(machine, "battery")})
                 # The previous enabled display cannot count as new evidence:
                 # reset disables LTDC; firmware must reconfigure it after cont.
                 assert machine.read32(LTDC_GCR) & 1 == 0
@@ -107,9 +138,10 @@ def test_repeated_cold_start_after_firmware_execution(tmp_path, name):
                 observations.append(wait_for_firmware(
                     machine, evidence / f"cycle-{cycle}.ppm", "retrogo" in name,
                     after_cold=True))
-            (evidence / "cold.json").write_text(json.dumps({
-                "profile": name, "cycles": observations, "sourceHashes": before,
-                "scope": "native repeated cold cycle; no physical supply/VBAT or RDP-transition acceptance",
+            (evidence / f"{mode}.json").write_text(json.dumps({
+                "profile": name, "mode": mode, "cycles": observations,
+                "supplyTransitions": transitions, "sourceHashes": before,
+                "scope": f"native repeated {mode} transition; no physical electrical/VBAT or RDP-transition acceptance",
             }, indent=2) + "\n")
     finally:
         assert {key: digest(path) for key, path in sources.items()} == before

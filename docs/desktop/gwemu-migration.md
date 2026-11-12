@@ -111,3 +111,13 @@ GNW_FIRMWARE_COLD_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-cold-cycle/qemu-system-a
 ```
 
 该检查只挂载本地 profile 的临时副本，复核源哈希。每类固件运行后重复两轮冷循环，确认 LTDC 经关闭后重新启用；Retro-Go 必须重新交接到 bank2。清除备份域后，patched OFW 需要先完成 PRESS TIME 画面再用 Left+GAME 进入 Retro-Go。实际供电、RTC/VBAT 和保护转换仍待验收，详见 [冷循环报告](../research/2026-11-12-gwemu-cold-cycle.md)。
+
+## 原生电池存在与执行门禁
+
+后续原生批次为 opt-in 电源模型增加 `battery-present` 和只读 `powered`。电池或 USB 任一存在即可运行；两者都断开则停机并拒绝 QMP/HMP/GDB 执行。恢复供电后保持暂停，显式继续才冷启动。电量 0% 不表示拔掉电池，真实电气截止和 RTC/VBAT 仍未实现。
+
+```sh
+GNW_FIRMWARE_COLD_TEST=1 GNW_FIRMWARE_SUPPLY_TEST=1 GWEMU_BINARY="$PWD/build/gwemu-supply/qemu-system-arm" .venv/bin/python -m pytest -q tests/test_gwemu_cold_firmware.py
+```
+
+这批只交付原生能力，验证产物为 `build/gwemu-supply`，桌面预览仍固定到 `build/gwemu-softspi`；尚无桌面电池开关或 session 存储字段。断电/恢复、两种 SD 接线的退出重开、源镜像安全及范围限制见 [供电报告](../research/2026-11-12-gwemu-supply.md)。
