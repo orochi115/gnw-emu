@@ -159,17 +159,19 @@ int main(void) {
     OSStatus result = AudioObjectGetPropertyData(kAudioObjectSystemObject, &address,
                                                 0, NULL, &size, &id);
     AudioStreamBasicDescription format = {0};
-    UInt32 frames = 0, running = 0;
+    UInt32 frames = 0, running = 0, running_somewhere = 0;
     AudioValueRange range = {0};
     if (!result && id) result = get_property(id, kAudioDevicePropertyStreamFormat, &format, sizeof(format));
     if (!result) result = get_property(id, kAudioDevicePropertyBufferFrameSize, &frames, sizeof(frames));
     if (!result) result = get_property(id, kAudioDevicePropertyBufferFrameSizeRange, &range, sizeof(range));
     if (!result) result = get_property(id, kAudioDevicePropertyDeviceIsRunning, &running, sizeof(running));
+    if (!result) result = get_property(id, kAudioDevicePropertyDeviceIsRunningSomewhere,
+                                      &running_somewhere, sizeof(running_somewhere));
     printf("{\"status\":%d,\"device\":%u,\"rate\":%.0f,\"channels\":%u,"
            "\"flags\":%u,\"bits\":%u,\"frames\":%u,\"minFrames\":%.0f,"
-           "\"maxFrames\":%.0f,\"running\":%u}\n", result, id, format.mSampleRate,
+           "\"maxFrames\":%.0f,\"running\":%u,\"runningSomewhere\":%u}\n", result, id, format.mSampleRate,
            format.mChannelsPerFrame, format.mFormatFlags, format.mBitsPerChannel,
-           frames, range.mMinimum, range.mMaximum, running);
+           frames, range.mMinimum, range.mMaximum, running, running_somewhere);
     return result || !id;
 }
 #endif
