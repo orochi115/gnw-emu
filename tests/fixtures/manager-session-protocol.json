@@ -1,0 +1,136 @@
+{
+  "protocol": 1,
+  "validRequests": [
+    {
+      "protocol": 1,
+      "id": "hello-1",
+      "method": "hello",
+      "params": { "serverId": "550e8400-e29b-41d4-a716-446655440000" }
+    },
+    { "protocol": 1, "id": "list-1", "method": "list", "params": {} },
+    {
+      "protocol": 1,
+      "id": "acquire-1",
+      "method": "acquire",
+      "params": {
+        "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+        "operation": "manage",
+        "timeoutMs": 300000
+      }
+    },
+    {
+      "protocol": 1,
+      "id": "heartbeat-1",
+      "method": "heartbeat",
+      "params": {
+        "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+        "leaseId": "550e8400-e29b-41d4-a716-446655440001"
+      }
+    },
+    {
+      "protocol": 1,
+      "id": "mark-1",
+      "method": "mark",
+      "params": {
+        "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+        "leaseId": "550e8400-e29b-41d4-a716-446655440001",
+        "managerUploaded": true,
+        "memoryWritten": false,
+        "executionChanged": false
+      }
+    },
+    {
+      "protocol": 1,
+      "id": "power-1",
+      "method": "control",
+      "params": {
+        "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+        "leaseId": "550e8400-e29b-41d4-a716-446655440001",
+        "action": "press",
+        "value": { "mask": 512, "durationMs": 100 }
+      }
+    },
+    {
+      "protocol": 1,
+      "id": "release-1",
+      "method": "release",
+      "params": {
+        "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+        "leaseId": "550e8400-e29b-41d4-a716-446655440001",
+        "completion": {
+          "success": true,
+          "managerUploaded": false,
+          "memoryWritten": false,
+          "executionChanged": false
+        }
+      }
+    }
+  ],
+  "invalidRequests": [
+    {
+      "code": "UNSUPPORTED_VERSION",
+      "request": { "protocol": 2, "id": "v2", "method": "list", "params": {} }
+    },
+    {
+      "code": "INVALID_REQUEST",
+      "request": { "protocol": 1, "id": "", "method": "list", "params": {} }
+    },
+    {
+      "code": "INVALID_REQUEST",
+      "request": {
+        "protocol": 1,
+        "id": "bad",
+        "method": "qmp",
+        "params": { "execute": "quit" }
+      }
+    },
+    {
+      "code": "INVALID_REQUEST",
+      "request": {
+        "protocol": 1,
+        "id": "bad",
+        "method": "list",
+        "params": { "path": "/private/source.bin" }
+      }
+    },
+    {
+      "code": "INVALID_REQUEST",
+      "request": {
+        "protocol": 1,
+        "id": "bad",
+        "method": "control",
+        "params": {
+          "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+          "leaseId": "550e8400-e29b-41d4-a716-446655440001",
+          "action": "press",
+          "value": { "mask": 4096, "durationMs": 1 }
+        }
+      }
+    },
+    {
+      "code": "INVALID_REQUEST",
+      "request": {
+        "protocol": 1,
+        "id": "bad",
+        "method": "release",
+        "params": {
+          "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+          "leaseId": "550e8400-e29b-41d4-a716-446655440001",
+          "completion": { "success": true }
+        }
+      }
+    }
+  ],
+  "validDescriptor": {
+    "protocol": 1,
+    "serverId": "550e8400-e29b-41d4-a716-446655440000",
+    "pid": 123,
+    "endpoint": "/tmp/gnw-manager-501/r-550e8400e29b41d4.sock"
+  },
+  "errorResponse": {
+    "protocol": 1,
+    "id": "request-1",
+    "ok": false,
+    "error": { "code": "BUSY", "message": "Device is busy" }
+  }
+}

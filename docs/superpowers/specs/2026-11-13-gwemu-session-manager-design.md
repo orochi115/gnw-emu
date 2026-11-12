@@ -18,7 +18,7 @@ SessionController.beginManager在第一次await前占owner，同步关闭输入/
 
 ## 协议动作与manager CLI
 
-RPC methods:hello/list/acquire/heartbeat/status/mark/control/release。mark在manager上传/写/未知GDB执行之前登记目标不再是安全应用，debug lease默认同样保守；press/resume未知目标先拒绝，明确warm/cold-start恢复应用后才允许。press期间临时运行应用使guest实际观察按下及释放，再暂停回管理基线，退出恢复初始或显式执行意图。control限定pause/resume/warm-reset/cold-start、battery百分比、battery-present/usb-power布尔、现有12bit按键组合（标准八游戏键及pause/power/start/select，POWER为bit9，沿用产品映射）。screenshot使用现有manager GDB截图命令，在同一lease下将结果写到client自己选择的路径，不通过RPC传PNG或要求UI写任意文件。禁止任意QMP/HMP字符串/文件路径或qom属性透传。所有错误有stable code/message，session stale与busy区分。
+RPC methods:hello/list/acquire/heartbeat/status/mark/control/release。mark在manager上传/写/未知GDB执行之前登记目标不再是安全应用，debug lease默认同样保守；press/resume未知目标先拒绝，明确warm/cold-start恢复应用后才允许。标准QMP暂停时拒绝输入，所以press先临时运行已知应用，再发送按下及释放，使guest实际观察事件，再暂停回管理基线，退出恢复初始或显式执行意图。control限定pause/resume/warm-reset/cold-start、battery百分比、battery-present/usb-power布尔、现有12bit按键组合（标准八游戏键及pause/power/start/select，POWER为bit9，沿用产品映射）。screenshot使用现有manager GDB截图命令，在同一lease下将结果写到client自己选择的路径，不通过RPC传PNG或要求UI写任意文件。异常/断电释放host-held键采用native专用gnw-release-host-input（清host键状态及相应物理输入，不改变CPU/RAM/自动POWER或恢复运行），避免为了keyup继续未知PC。禁止任意QMP/HMP字符串/文件路径或qom属性透传。所有错误有stable code/message，session stale与busy区分。
 
 manager新增session_client.py发现/RPC/lease上下文。CLI默认backend=auto用于当前UI session；明确--backend=openocd/pyocd/gdb保留旧模式，绝不因为发现失败偷偷连接物理probe。offline verify-backup/fetch-backup不发现/连接。--session指定身份；sessions列设备；device-state/power/press通过UI控制。所有涉及设备的manager命令在同一session lease内，GnW/GDBBackend携带machine_control上下文以协调unlock流程的模拟电源循环；不让旧连接自动命中新ROM。backup raw连接使用同一GDBproxy且不resume。
 
