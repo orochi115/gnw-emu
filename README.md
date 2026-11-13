@@ -6,6 +6,8 @@ Electron 桌面使用固定版本的 [gwemu](https://github.com/orochi115/gwemu)
 
 [gnwmanager](https://github.com/orochi115/gnwmanager) 负责完整备份、校验、选择区域恢复、刷写、文件系统、截图、监视、GDB 调试及保护状态管理。桌面发布当前设备的本地会话入口；没有加载 ROM 时不启动模拟器，也没有常驻 daemon。
 
+Windows 原生构建、工具链安装及目录包使用见 [Windows 文档](docs/windows/README.md)。
+
 ## 构建和启动
 
 需要 Node.js 24、C/C++ 编译器、Python >= 3.11、Ninja、CMake、pkg-config、GLib、Pixman、libpng 和 liblzma。macOS 可使用 Homebrew 安装依赖。gwemu 首次配置还会下载固定的 upstream wrap 依赖。
@@ -74,7 +76,7 @@ npm run package:dir
 
 目录包包含 gwemu 和依赖库、原构建 manifest、重定位/签名后真实哈希的 package manifest，不带 ROM、SD 或用户数据。stage 拒绝缺失、dirty、非固定来源或哈希不匹配的 native。开发版与打包版均默认使用 gwemu，`--kernel=legacy` 明确拒绝。
 
-原设计逐项验收与最终来源见[迁移完成报告](docs/research/2026-11-13-gwemu-migration-completion.md)，具体软件证据见[产品验收](docs/research/2026-11-13-gwemu-product-acceptance.md)和[真实桌面 manager 工作流](docs/research/2026-11-13-gwemu-session-manager.md)。实机（含 SD 改装机）和实体手柄验证按用户决定豁免，由用户后续进行；模拟器结果不构成实机兼容证明。Windows/Linux 包没有在此次 macOS 工作环境构建验收，不报告通过。
+原设计逐项验收与最终来源见[迁移完成报告](docs/research/2026-11-13-gwemu-migration-completion.md)，具体软件证据见[产品验收](docs/research/2026-11-13-gwemu-product-acceptance.md)和[真实桌面 manager 工作流](docs/research/2026-11-13-gwemu-session-manager.md)。实机（含 SD 改装机）和实体手柄验证按用户决定豁免，由用户后续进行；模拟器结果不构成实机兼容证明。上述报告记录原 macOS 验收；Windows 移植的独立验证见 [Windows 验收报告](docs/windows/acceptance.md)。Linux 包尚未构建验收。
 
 ## 目录和历史
 

@@ -15,7 +15,7 @@ test("power adjustments are serialized and stop waits for an accepted action", a
     userData: join(root, "data"),
     qemu: resolve(
       process.env.GWEMU_DESKTOP_BINARY ??
-        "../build/gwemu/qemu-system-arm",
+        (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
     ),
     logger: createLogManager({
       appInstanceId: "power-order",
@@ -50,8 +50,8 @@ test("power adjustments are serialized and stop waits for an accepted action", a
   try {
     const profile = await createProfile(join(root, "test.gnw.json"), {
       model: "zelda",
-      internalFlash: resolve("../../firmware/internal_flash_backup_zelda.bin"),
-      externalFlash: resolve("../../firmware/flash_backup_zelda.bin"),
+      internalFlash: resolve(process.env.GNW_TEST_FIRMWARE ?? "../../firmware", "internal_flash_backup_zelda.bin"),
+      externalFlash: resolve(process.env.GNW_TEST_FIRMWARE ?? "../../firmware", "flash_backup_zelda.bin"),
     });
     await controller.load(profile.path);
     intercept = true;

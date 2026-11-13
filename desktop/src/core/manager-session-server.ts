@@ -1,3 +1,4 @@
+import { connectManagerEndpoint } from "./windows-manager-transport";
 import { randomUUID } from "node:crypto";
 import { createConnection, type Socket, type Server } from "node:net";
 import { listenOwnedManagerSocket } from "./manager-socket-listener";
@@ -429,7 +430,7 @@ export async function startManagerSessionServer(options: ManagerServerOptions) {
       }
       if (peer.destroyed) return;
       current.nativeConnected = true;
-      const upstream = createConnection({ path: current.native! });
+      const upstream = await connectManagerEndpoint(current.native!);
       const bridge: Bridge = { peer, upstream, closed: Promise.resolve() };
       current.bridge = bridge;
       const peerClosed = socketClosed(peer),
@@ -619,7 +620,7 @@ function socketClosed(socket: Socket) {
 }
 /** A newly accepted native RSP response proves the previous single-client channel was retired. */
 async function nativeDisconnectBarrier(path: string) {
-  const socket = createConnection({ path });
+  const socket = await connectManagerEndpoint(path);
   socket.on("error", () => {});
   const until = performance.now() + 2000;
   let bytes = 0,

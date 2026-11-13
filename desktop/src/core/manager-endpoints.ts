@@ -25,6 +25,10 @@ function rpcName(serverId: string) {
 
 export interface OwnedManagerEndpoint {
   readonly path: string;
+  /** Windows authenticated loopback credential; never published in descriptors. */
+  credential?: { format: 1; port: number; token: string; pid: number };
+  attachPid?(pid: number): Promise<void>;
+  bind?(port: number): Promise<void>;
   /** Call immediately after binding/creating this socket to claim its inode and set mode0600. */
   secure(): Promise<void>;
   /** Atomically publish a freshly bound private socket without replacing an existing name. */
@@ -317,9 +321,9 @@ export async function openManagerDirectory(
   } = {},
 ): Promise<ManagerEndpointDirectory> {
   if ((options.platform ?? process.platform) === "win32")
-    unsupported(
-      "Current-session management requires Unix sockets on this platform",
-    );
+    return (
+      await import("./windows-manager-directory")
+    ).openWindowsManagerDirectory(options.directory);
   const uid = options.uid ?? process.getuid?.();
   if (uid === undefined || !Number.isInteger(uid) || uid < 0)
     unsupported("Current-session management requires a Unix user identity");

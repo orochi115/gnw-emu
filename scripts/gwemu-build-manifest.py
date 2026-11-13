@@ -11,7 +11,7 @@ import sys
 
 
 def run(*args):
-    return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+    return subprocess.check_output(args, text=True, encoding="utf-8", stderr=subprocess.STDOUT).strip()
 
 
 def digest(path):
@@ -39,7 +39,7 @@ def main():
     elif action == 'configured':
         config.write_text(json.dumps(signature, indent=2) + '\n')
     elif action == 'record':
-        binary = build / 'qemu-system-arm'
+        binary = build / ('qemu-system-arm.exe' if os.name == 'nt' else 'qemu-system-arm')
         tools = {}
         for name, args in [('compiler', [os.environ.get('CC', 'cc'), '--version']),
                            ('ninja', ['ninja', '--version']),

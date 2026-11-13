@@ -12,7 +12,7 @@ import sys
 
 
 def run(*args):
-    return subprocess.check_output(args, text=True, stderr=subprocess.STDOUT).strip()
+    return subprocess.check_output(args, text=True, encoding="utf-8", stderr=subprocess.STDOUT).strip()
 
 
 def digest(path):

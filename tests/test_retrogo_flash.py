@@ -1,6 +1,7 @@
 """Flash packaging must preserve OFW and reject layouts before writing."""
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 
@@ -123,7 +124,8 @@ def test_cheats_are_readable_in_writable_filesystem(tmp_path):
     builder = module()
     assert hasattr(builder, "pack_littlefs"), "cheats must be packed in the filesystem selected by firmware routing"
     root = SCRIPT.parents[1]
-    python = root.parent / ".venv-rgsd/bin/python"
+    python = (root / "build/windows-python/Scripts/python.exe" if os.name == "nt"
+              else root.parent / ".venv-rgsd/bin/python")
     if not python.exists():
         pytest.skip("Retro-Go build venv is needed for independent LittleFS readback")
     trial = tmp_path / "trial"
@@ -152,3 +154,21 @@ with fs.open('/cheats/nes/game.ggcodes','rb') as file:
  assert file.read()==b'AAAAAA: test cheat\\n'
 """
     subprocess.run([str(python), "-c", code, str(trial / "build/littlefs.bin")], check=True)
+
+
+def test_mapped_core_paths_are_relative_for_make_on_windows(tmp_path, monkeypatch):
+    # Make uses ':' to split MAPPED_BINS, so a Windows drive prefix must not
+    # enter this field. Exercise staging rather than merely testing a formatter.
+    import sys
+    from types import SimpleNamespace
+    builder = module()
+    monkeypatch.setitem(sys.modules, 'sd_cores_pack', SimpleNamespace(
+        core_declared_dirnames=lambda _: {'pce'}))
+    package = tmp_path / 'downloads/pce/x/cores'
+    package.mkdir(parents=True)
+    (package / 'pce.bin').write_bytes(b'core')
+    (package / 'pce.xip').write_bytes(b'mapped')
+    trial = tmp_path / 'output/source'
+    _, mapped = builder.stage_cores(tmp_path / 'downloads', trial, {'pce'}, tmp_path)
+    assert mapped == ['mapped/pce.xip:0xDEC00000']
+    assert (trial / 'mapped/pce.xip').read_bytes() == b'mapped'

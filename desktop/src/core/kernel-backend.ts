@@ -132,6 +132,7 @@ export async function kernelArguments(
     framePort: number;
     stateFile: string;
     gdbSocket?: string;
+    gdbCredential?: { port: number; token: string };
   },
 ) {
   return gwemuArguments(

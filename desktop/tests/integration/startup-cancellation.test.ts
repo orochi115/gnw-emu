@@ -24,7 +24,7 @@ test("stop waits for an interrupted startup to release its resources and prevent
   const controller = new SessionController({
     qemu: resolve(
       process.env.GWEMU_DESKTOP_BINARY ??
-        "../build/gwemu/qemu-system-arm",
+        (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
     ),
     userData: join(root, "data"),
     logger: createLogManager({

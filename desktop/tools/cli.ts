@@ -56,7 +56,7 @@ try {
     const seconds = Number(args[0] ?? 4);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 3600)
       throw new Error("Probe seconds must be 1..3600");
-    const output = resolve(args[1] ?? "/tmp/gnw-probe");
+    const output = resolve(args[1] ?? join(tmpdir(), "gnw-probe"));
     await mkdir(output, { recursive: true });
     const isolated = await mkdtemp(join(tmpdir(), "gnw-probe-"));
     await writeJson(join(isolated, "settings.json"), {
@@ -66,7 +66,7 @@ try {
     });
     const controller = new SessionController({
       userData: isolated,
-      qemu: resolve(import.meta.dirname, "../../build/gwemu/qemu-system-arm"),
+      qemu: resolve(import.meta.dirname, "../../build/gwemu/" + (process.platform === "win32" ? "qemu-system-arm.exe" : "qemu-system-arm")),
       logger: createLogManager({ appInstanceId: "probe" }).child("probe"),
       createDisplay: () => createDisplayReceiver(() => {}),
     });

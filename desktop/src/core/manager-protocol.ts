@@ -109,7 +109,8 @@ const descriptorSchema = z
         (value) =>
           isAbsolute(value) &&
           !value.includes("\0") &&
-          Buffer.byteLength(value) <= 100,
+          Buffer.byteLength(value) <=
+            (process.platform === "win32" ? 1024 : 100),
       ),
   })
   .strict();

@@ -1,0 +1,13 @@
+# Windows firmware tools review
+
+Read-only code review by `/root/windows_review/firmware_tools`, 2026-11-13. Initial and follow-up agent messages arrived as opaque `pv_` tokens, so scope was inferred from task name: Windows firmware/bootstrap/core scripts and the Windows change to `build_retrogo_flash.py`. No implementation edits or hardware operations performed.
+
+## Findings
+
+1. **P1 — manager firmware build selects CMD copy under MSYS Bash.** `scripts/windows/build-firmware.ps1:29` invokes MSYS `make` without overriding the inherited Windows `OS=Windows_NT`. `externals/gnwmanager/Makefile:34-42` consequently sets `CP=copy` and converts paths to backslashes; the `gnwmanager/firmware.bin` recipe runs `copy ...` in the MSYS shell, where `copy` is not an executable. Compilation can finish but updating the Python package firmware fails, and manifest recording is never reached. Pass a non-Windows `OS` override (and use the POSIX copy branch) for this MSYS make invocation. Evidence: `make -n -B OS=Windows_NT gnwmanager/firmware.bin` ends in `copy build\\gnwmanager.bin gnwmanager\\firmware.bin`; `/bin/sh -c 'command -v copy'` exits 1. Native Windows execution still needs confirmation.
+
+2. **P1 — Windows mapped `.xip` paths are split at the drive colon.** The new Windows route through `scripts/build_retrogo_flash.py:198-210` still feeds the absolute `destination` string from `stage_cores` (`:145-147`) to `MAPPED_BINS`. Windows paths contain a drive colon and backslashes. `externals/retro-go-sd/Makefile.common:1241-1242` obtains the source using `firstword(subst :, ,...)`, turning even a normalized `D:/.../mapped/pce.xip:0xDEC00000` into `--mapped-artifact D:D:0xDEC00000`. `make all` depends on FrogFS when `SD_CARD=0`, so PCE/GBA selections fail before the later explicit FrogFS command (which correctly uses rsplit) can run. Use a relative POSIX path, such as `mapped/pce.xip`, in MAPPED_BINS, and normalize separators for the later direct call too. Evidence: evaluated the exact Make expression with `D:/LLM_Work/Game_Watch/build/source/mapped/pce.xip:0xDEC00000`; result was `--mapped-artifact D:D:0xDEC00000`.
+
+## Coverage and limits
+
+Inspected `bootstrap.ps1`, `common.ps1`, `build-firmware.ps1`, `build-cores.ps1`, firmware manifests, ARM compiler invocation, Retro-Go Make dependency flow, and mapped sidecar packing. Review was conducted on macOS; no PowerShell/MSYS runtime and no authorized Windows host details were readable in this subagent's instructions. Bootstrap archive authentication and path-space robustness were not promoted to findings without concrete task-specific failures.

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { applicationPaths } from "../../src/core/paths";
 const base = {
   packaged: false,
@@ -39,7 +39,7 @@ test("explicit data overrides are accepted without preview isolation", () => {
       kernel: "gwemu",
       override: join(base.project, "UserData", "child"),
     }).userData,
-  ).toBe(join(base.project, "UserData", "child"));
+  ).toBe(resolve(base.project, "UserData", "child"));
 });
 test("retired legacy and unknown selection fail clearly", () => {
   expect(() => applicationPaths({ ...base, kernel: "legacy" })).toThrow(

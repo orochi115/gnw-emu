@@ -123,13 +123,15 @@ def main():
         img.unlink()
     subprocess.run([sys.executable, str(rg / "scripts" / "make_sdcard_image.py"),
                     str(img), "--size-mb", str(args.size_mb)], check=True)
-    part = f"{img}@@1M"
+    # Both paths are siblings. Relative POSIX spellings avoid mtools treating
+    # Windows source drive colons as DOS drive selectors.
+    part = f"{os.path.relpath(img.resolve(), stage.resolve()).replace(os.sep, '/')}@@1M"
     subprocess.run(["mformat", "-i", part, "-F", "-v", "RETROGO", "::"],
-                   check=True)
-    entries = [str(p) for p in sorted(stage.iterdir())]
+                   check=True, cwd=stage)
+    entries = [p.name for p in sorted(stage.iterdir())]
     env = dict(os.environ, MTOOLS_NO_VFAT="0")
     subprocess.run(["mcopy", "-i", part, "-s", "-Q", *entries, "::/"],
-                   check=True, env=env)
+                   check=True, env=env, cwd=stage)
     shutil.rmtree(stage)
     print(f"{img}: {args.size_mb} MiB FAT32")
 

@@ -9,7 +9,7 @@ test.each([false, true])(
   "RSP probe verifies checksum over fragmented replies (bad=%s)",
   async (bad) => {
     const root = await mkdtemp(join(tmpdir(), "gnw-rsp-")),
-      path = join(root, "gdb.sock");
+      path = process.platform === "win32" ? `\\\\.\\pipe\\gnw-rsp-${Date.now()}-${Math.random().toString(16).slice(2)}` : join(root, "gdb.sock");
     const reply = "PacketSize=1000;qXfer:features:read+";
     const checksum =
       [...reply].reduce((sum, c) => sum + c.charCodeAt(0), 0) & 255;

@@ -1,0 +1,2 @@
+# MSYS Bash requires LF scripts even when Git for Windows uses autocrlf.
+*.sh text eol=lf

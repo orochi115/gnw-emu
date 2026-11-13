@@ -388,28 +388,16 @@ async function main() {
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
   });
   {
-    if (process.platform === "win32") {
-      logger
-        .child("session")
-        .warn(
-          { event: "manager.unsupported" },
-          "Current-session management requires Unix sockets",
-        );
-      void dialog.showMessageBox(window, {
-        type: "info",
-        message: t("manager.unsupportedTitle"),
-        detail: t("manager.unsupportedPlatform"),
-      });
-    } else {
-      managerService = await startManagerSessionServer({ controller });
-      logger.child("session").info(
+    managerService = await startManagerSessionServer({ controller });
+    logger
+      .child("session")
+      .info(
         {
           event: "manager.started",
           serverId: managerService.descriptor.serverId,
         },
         "Current-session management service started",
       );
-    }
   }
   controlRouter = new ControlRouter(settings.controls, {
     button: (bit, down, source) => {

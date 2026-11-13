@@ -48,7 +48,12 @@ export function validateGwemuConfiguration(
 export function gwemuArguments(
   profile: Profile,
   session: Session,
-  endpoints: { qmpPort: number; gdbSocket?: string; framePort?: number },
+  endpoints: {
+    qmpPort: number;
+    gdbSocket?: string;
+    framePort?: number;
+    gdbCredential?: { port: number; token: string };
+  },
   sizes: GwemuSizes,
   settings?: { audio: boolean },
 ) {
@@ -84,7 +89,9 @@ export function gwemuArguments(
   if (endpoints.gdbSocket)
     args.push(
       "-gdb",
-      `unix:${qemuEscape(endpoints.gdbSocket)},server=on,wait=off`,
+      endpoints.gdbCredential
+        ? `tcp:127.0.0.1:${endpoints.gdbCredential.port},server=on,wait=off`
+        : `unix:${qemuEscape(endpoints.gdbSocket)},server=on,wait=off`,
     );
   if (settings)
     args.push(

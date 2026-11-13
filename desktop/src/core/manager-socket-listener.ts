@@ -8,6 +8,7 @@ import type {
   ManagerEndpointDirectory,
   OwnedManagerEndpoint,
 } from "./manager-endpoints";
+import { listenAuthenticatedLoopback } from "./windows-manager-transport";
 import { ManagerProtocolError } from "./manager-protocol";
 
 // Electron/Chromium can crash on shutdown after Node IPC receives a listening
@@ -93,6 +94,21 @@ export async function listenOwnedManagerSocket(
   accept: (socket: Socket) => void,
   signal?: AbortSignal,
 ): Promise<Server> {
+  if (endpoint.credential) {
+    if (signal?.aborted) throw failure();
+    const listener = await listenAuthenticatedLoopback(
+      endpoint.credential.token,
+      accept,
+    );
+    try {
+      await endpoint.bind!((listener.address() as { port: number }).port);
+      if (signal?.aborted) throw failure();
+      return listener;
+    } catch (error) {
+      await closeServer(listener);
+      throw error;
+    }
+  }
   const until = performance.now() + 2000;
   let cancelled = false,
     ready = false,

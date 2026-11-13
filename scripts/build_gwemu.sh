@@ -5,6 +5,9 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 SOURCE=${GWEMU_SRC:-$ROOT/externals/gwemu}
 BUILD=${GWEMU_BUILD_DIR:-$ROOT/build/gwemu}
 PYTHON=${GWEMU_PYTHON:-python3}
+if ! command -v "$PYTHON" >/dev/null 2>&1 && [ -z "${GWEMU_PYTHON:-}" ]; then
+    PYTHON=python
+fi
 if [ ! -f "$SOURCE/configure" ]; then
     echo "Missing gwemu source: git submodule update --init externals/gwemu" >&2
     exit 1
@@ -24,6 +27,16 @@ if [ ! -f "$BUILD/build.ninja" ]; then
     "$PYTHON" "$ROOT/scripts/gwemu-build-manifest.py" configured "$SOURCE" "$BUILD" "$@"
 fi
 # Upstream genconfig runs with QEMU's build interpreter, not the host pip.
-"$BUILD/pyvenv/bin/python" -m pip install --disable-pip-version-check 'PyYAML==6.0.3'
-ninja -C "$BUILD" qemu-system-arm
+BUILD_PYTHON=$BUILD/pyvenv/bin/python
+[ -x "$BUILD_PYTHON" ] || BUILD_PYTHON=$BUILD/pyvenv/Scripts/python.exe
+"$BUILD_PYTHON" -m pip install --disable-pip-version-check 'PyYAML==6.0.3'
+TARGET=qemu-system-arm
+case $(uname -s) in MINGW*|MSYS*) TARGET=$TARGET.exe ;; esac
+ninja -C "$BUILD" "$TARGET"
+case $(uname -s) in
+    MINGW*|MSYS*)
+        node "$ROOT/desktop/tools/collect-windows-dlls.mjs" \
+            "$(cygpath -m "$BUILD/$TARGET")" "$(cygpath -m /ucrt64/bin)"
+        ;;
+esac
 "$PYTHON" "$ROOT/scripts/gwemu-build-manifest.py" record "$SOURCE" "$BUILD" "$@"

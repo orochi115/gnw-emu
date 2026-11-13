@@ -13,7 +13,7 @@ import {
 import { Writable } from "node:stream";
 test("real QEMU lifecycle preserves running session on invalid ROM then saves on exit", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-lifecycle-"));
-  const firmware = resolve("../../firmware");
+  const firmware = resolve(process.env.GNW_TEST_FIRMWARE ?? "../../firmware");
   const profile = await createProfile(join(root, "game.gnw.json"), {
     model: "zelda",
     internalFlash: join(firmware, "internal_flash_backup_zelda.bin"),
@@ -31,7 +31,7 @@ test("real QEMU lifecycle preserves running session on invalid ROM then saves on
     userData: join(root, "UserData"),
     qemu: resolve(
       process.env.GWEMU_DESKTOP_BINARY ??
-        "../build/gwemu/qemu-system-arm",
+        (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
     ),
     logger: logs.child("session"),
     createDisplay: () => createDisplayReceiver(() => {}),
@@ -74,7 +74,7 @@ test("real QEMU lifecycle preserves running session on invalid ROM then saves on
 
 test("startup endpoint failure releases lease and missing power snapshot is never reported saved", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-faults-"));
-  const firmware = resolve("../../firmware");
+  const firmware = resolve(process.env.GNW_TEST_FIRMWARE ?? "../../firmware");
   const userData = join(root, "UserData");
   const profile = await createProfile(join(root, "game.gnw.json"), {
     model: "zelda",
@@ -93,7 +93,7 @@ test("startup endpoint failure releases lease and missing power snapshot is neve
     userData,
     qemu: resolve(
       process.env.GWEMU_DESKTOP_BINARY ??
-        "../build/gwemu/qemu-system-arm",
+        (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
     ),
     logger,
     createDisplay: async () => {
@@ -104,7 +104,7 @@ test("startup endpoint failure releases lease and missing power snapshot is neve
     userData,
     qemu: resolve(
       process.env.GWEMU_DESKTOP_BINARY ??
-        "../build/gwemu/qemu-system-arm",
+        (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
     ),
     logger,
     createDisplay: () => createDisplayReceiver(() => {}),
@@ -132,7 +132,7 @@ test("startup endpoint failure releases lease and missing power snapshot is neve
 
 test("state slots survive restart, corrupt loads roll back and stop waits for save", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-controller-states-"));
-  const firmware = resolve("../../firmware");
+  const firmware = resolve(process.env.GNW_TEST_FIRMWARE ?? "../../firmware");
   const profile = await createProfile(join(root, "game.gnw.json"), {
     model: "zelda",
     internalFlash: join(firmware, "internal_flash_backup_zelda.bin"),
@@ -142,7 +142,7 @@ test("state slots survive restart, corrupt loads roll back and stop waits for sa
     userData: join(root, "data"),
     qemu: resolve(
       process.env.GWEMU_DESKTOP_BINARY ??
-        "../build/gwemu/qemu-system-arm",
+        (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
     ),
     logger: createLogManager({
       appInstanceId: "states",
@@ -173,7 +173,7 @@ test("state slots survive restart, corrupt loads roll back and stop waits for sa
       "gwemu",
       resolve(
         process.env.GWEMU_DESKTOP_BINARY ??
-          "../build/gwemu/qemu-system-arm",
+          (process.platform === "win32" ? "../build/gwemu/qemu-system-arm.exe" : "../build/gwemu/qemu-system-arm"),
       ),
     );
     const path = await loadSlot(directory, 0, identity);

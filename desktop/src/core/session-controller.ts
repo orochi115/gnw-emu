@@ -239,10 +239,7 @@ export class SessionController extends EventEmitter {
         const qmpPort = await qmp.listen();
         display = await this.options.createDisplay(id);
         const backend = new KernelBackend(kernel, qmp);
-        if (
-          process.platform !== "win32" &&
-          this.options.enableManager !== false
-        ) {
+        if (this.options.enableManager !== false) {
           const directory = await openManagerDirectory({
             directory: this.options.managerDirectory,
           });
@@ -254,6 +251,7 @@ export class SessionController extends EventEmitter {
           framePort: display.port,
           stateFile,
           gdbSocket: gdbEndpoint?.path,
+          gdbCredential: gdbEndpoint?.credential,
         });
         check();
         const input = new InputController(
@@ -314,7 +312,12 @@ export class SessionController extends EventEmitter {
         const child = spawn(this.options.qemu, args, {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
-          env: kernelEnvironment(kernel),
+          env: {
+            ...kernelEnvironment(kernel),
+            ...(gdbEndpoint?.credential
+              ? { GWEMU_GDB_TOKEN: gdbEndpoint.credential.token }
+              : {}),
+          },
         });
         runtime.child = child;
         runtime.exit = new Promise((r, j) => {
@@ -325,7 +328,11 @@ export class SessionController extends EventEmitter {
         if (gdbEndpoint) {
           // Claim the native socket independently of display/QMP readiness, even
           // when the child exits immediately after bind. Cleanup awaits this task.
-          runtime.gdbReady = this.claimNativeEndpoint(runtime, gdbEndpoint);
+          runtime.gdbReady = (async () => {
+            if (gdbEndpoint.attachPid && child.pid)
+              await gdbEndpoint.attachPid(child.pid);
+            await this.claimNativeEndpoint(runtime, gdbEndpoint);
+          })();
           runtime.gdbReady.catch(() => {});
         }
         if (child.pid) await lease.attach(child.pid);

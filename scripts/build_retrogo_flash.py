@@ -143,7 +143,7 @@ def stage_cores(downloads, trial, selected_systems, source):
                     if artifact.stem not in ("pce", "gba"):
                         raise ValueError(f"unknown mapped artifact relocation base: {artifact}")
                     destination = trial / "mapped" / artifact.name
-                    mapped.append(f"{destination}:0xDEC00000")
+                    mapped.append(f"{destination.relative_to(trial).as_posix()}:0xDEC00000")
                 copy_regular(artifact, destination)
                 records.append({"path": str(artifact.resolve()), "sha256": digest(artifact)})
             bios = package / "bios"
@@ -195,15 +195,15 @@ def build(args):
         ".git", "build", "release", "sd_content", "roms", "__pycache__", "gwemu_bin", "gwemu.app"))
     stage_selected_assets(media, selection, trial)
     core_records, mapped = stage_cores(args.cores, trial, {Path(x).parts[0] for x in selection}, source)
-    python = args.python_venv.resolve() / "bin/python"
+    python = args.python_venv.resolve() / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     env = dict(os.environ)
-    env["PATH"] = str(python.parent) + ":/opt/homebrew/bin:" + env.get("PATH", "")
+    env["PATH"] = os.pathsep.join([str(python.parent), *([] if os.name == "nt" else ["/opt/homebrew/bin"]), env.get("PATH", "")])
     env["GIT_CEILING_DIRECTORIES"] = str(output)
-    make_vars = [f"GCC_PATH={args.gcc_path.resolve()}", "CHECK_DIRTY_SUBMODULE=0", "SD_CARD=0",
+    make_vars = [f"GCC_PATH={args.gcc_path.resolve().as_posix()}", "CHECK_DIRTY_SUBMODULE=0", "SD_CARD=0",
                  f"GNW_TARGET={args.model}", f"INTFLASH_BANK={args.bank}", "COVERFLOW=1",
                  "DOWNLOAD_COVERS=0", "CHEAT_CODES=1", "COMPRESS=0",
                  f"EXTFLASH_OFFSET={args.extflash_offset}", f"EXTFLASH_SIZE={layout['partitionSize']}",
-                 f"FILESYSTEM_SIZE={layout['littlefsSize']}", f"PYTHON3={python}"]
+                 f"FILESYSTEM_SIZE={layout['littlefsSize']}", f"PYTHON3={python.as_posix()}"]
     if mapped:
         make_vars.append("MAPPED_BINS=" + " ".join(mapped))
     with (output / "build.log").open("wb") as log:
