@@ -1,6 +1,6 @@
 # gwemu 与 gnwmanager 迁移完成验收
 
-日期：2026-11-13。依据[原始三阶段设计](../superpowers/specs/2026-11-12-gwemu-toolchain-migration-design.md)、用户实机/实体手柄豁免、已生成 UserData 不兼容的修订和有限审查规则逐项核验。现行产品只维护 gwemu，完整备份与当前模拟设备管理统一到 gnwmanager。两个旧 fork 均已保存最终公开 tag 并核实 GitHub `archived=true`。父仓库只做本地提交，没有推送。
+日期：2026-11-13。依据[原始三阶段设计](../superpowers/specs/2026-11-12-gwemu-toolchain-migration-design.md)、用户实机/实体手柄豁免、已生成 UserData 不兼容的修订和有限审查规则逐项核验。现行产品只维护 gwemu，完整备份与当前模拟设备管理统一到 gnwmanager。两个旧 fork 均已保存最终公开 tag 并核实 GitHub `archived=true`。父仓库先按此前授权完成本地合并；用户后续明确授权推送，见[子模块与发布核验](2026-11-13-submodule-publication-audit.md)。下文“只本地提交”的记录描述当时批次，不构成当前发布限制。
 
 ## 最终来源与实际产物
 
