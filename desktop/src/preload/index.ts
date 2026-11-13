@@ -25,6 +25,10 @@ contextBridge.exposeInMainWorld("desktop", {
   onControlsOpen: (cb: (v: unknown) => void) => subscribe("controls.open", cb),
   onInputEpoch: (cb: (v: unknown) => void) => subscribe("input.epoch", cb),
   inputEpoch: () => ipcRenderer.invoke("input.epoch"),
+  menuBar: () => ipcRenderer.invoke("window.menuBar"),
+  onMenuBar: (cb: (v: unknown) => void) => subscribe("window.menuBar", cb),
+  openMenu: (id: string, anchor: { x: number; y: number }) =>
+    ipcRenderer.invoke("window.openMenu", id, anchor),
   windowState: () => ipcRenderer.invoke("window.state"),
   onWindowState: (cb: (v: unknown) => void) => subscribe("window.state", cb),
   windowAction: (action: string) => ipcRenderer.invoke("window.action", action),

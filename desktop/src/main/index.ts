@@ -37,7 +37,8 @@ import { Writable } from "node:stream";
 import pino from "pino";
 import { EventEmitter } from "node:events";
 import { applicationPaths } from "../core/paths";
-import { popupWindowsMenu } from "./windows-menu";
+import { popupWindowsMenu, menuBarItems, menuBarSubmenu } from "./windows-menu";
+import { moveWindowsWindow } from "./windows-position";
 import { SessionController } from "../core/session-controller";
 import { startManagerSessionServer } from "../core/manager-session-server";
 import { createProfile } from "../core/profile-store";
@@ -389,6 +390,9 @@ async function main() {
     () => controller.state.status === "running" && !shuttingDown,
     settings,
     (patch) => viewSettings.update(patch),
+    process.platform === "win32"
+      ? (x, y) => moveWindowsWindow(window, x, y)
+      : undefined,
   );
   windowMode.setGameAvailable(false);
   controller = new SessionController({
@@ -706,6 +710,8 @@ function updateMenu() {
       !windowMode.transitioning &&
       controller.state.status === "running";
   }
+  if (process.platform === "win32" && !window.isDestroyed())
+    window.webContents.send("window.menuBar", menuBarItems(menu ?? null));
 }
 /** Queue toggles against the last committed preference; rollback native checks on failure. */
 function toggleChassis() {
@@ -890,10 +896,10 @@ function canClockInteract() {
     controller.state.status === "running"
   );
 }
-function popupMenu(menu: Menu | undefined) {
+function popupMenu(menu: Menu | undefined, anchor?: Electron.Point) {
   if (!menu || window.isDestroyed()) return;
   if (process.platform !== "win32") {
-    menu.popup({ window });
+    menu.popup({ window, ...(anchor ? { x: anchor.x, y: anchor.y } : {}) });
     return;
   }
   if (nativeMenuOpen) return;
@@ -914,7 +920,7 @@ function popupMenu(menu: Menu | undefined) {
       await controller.flushInput();
       if (window.isDestroyed()) return;
       menu.once("menu-will-close", finish);
-      popupWindowsMenu(menu, window);
+      popupWindowsMenu(menu, window, anchor && screen.dipToScreenPoint(anchor));
     } catch (error) {
       finish();
       logger
@@ -934,8 +940,6 @@ function createClockMenu() {
   if (!windowMode.state.clockMode) return undefined;
   return Menu.buildFromTemplate(
     clockMenuTemplate({
-      ...stateMenuActions(),
-      ...deviceMenuActions(),
       normal: () => {
         void toggleClock().catch(showError);
       },
@@ -1188,6 +1192,35 @@ function registerIpc() {
     if (!parsed.success) return;
     syncControlBlock();
     controlRouter.event(parsed.data);
+  });
+  ipcMain.handle("window.menuBar", (event) => {
+    trusted(event);
+    return process.platform === "win32"
+      ? menuBarItems(Menu.getApplicationMenu())
+      : [];
+  });
+  ipcMain.handle("window.openMenu", (event, id: unknown, anchor: unknown) => {
+    trusted(event);
+    if (process.platform !== "win32" || windowMode.state.clockMode) return;
+    const menu = menuBarSubmenu(Menu.getApplicationMenu(), id);
+    const point = anchor as Electron.Point;
+    const [width, height] = window.getContentSize();
+    if (
+      !menu ||
+      !point ||
+      !Number.isFinite(point.x) ||
+      !Number.isFinite(point.y) ||
+      point.x < 0 ||
+      point.y < 0 ||
+      point.x > width ||
+      point.y > Math.min(height, 32)
+    )
+      throw Error("Invalid menu request");
+    const origin = window.getContentBounds();
+    popupMenu(menu, {
+      x: origin.x + Math.round(point.x),
+      y: origin.y + Math.round(point.y),
+    });
   });
   ipcMain.handle("window.state", (event) => {
     trusted(event);

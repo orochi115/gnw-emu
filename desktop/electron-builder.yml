@@ -1,6 +1,7 @@
 appId: org.gnw-emu.desktop
 productName: gnw-emu
 asar: true
+beforePack: ./tools/protect-package-data.cjs
 directories:
   output: release
 files:

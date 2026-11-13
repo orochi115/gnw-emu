@@ -63,3 +63,15 @@ Portable ZIP 含 EXE 相邻的 `portable.txt`，数据写入同级 UserData。�
 ## 限制
 
 旧 macOS 产品验收套件固定了原提交、路径和本机资产，不作为 Windows 通过依据。POSIX socket/inode/shebang 专有 fixture 在 Windows 排除；以 Windows 专有 ACL/认证/会话及实际桌面验证覆盖平台行为。未验证实体设备、实体手柄、扬声器听感或所有 Retro-Go 核心。
+
+## Windows 横向菜单和拖动尺寸回归（2026-11-14）
+
+普通模式在现有标题栏横向显示菜单，按本地化文字、窗口按钮实际宽度及 48 DIP 拖动区域判断是否折叠。Session 1 验证半倍率折叠、3× 恢复横向菜单，并通过真实鼠标枚举两种入口的 Win32 `#32768` 下拉菜单；中文文件/设备/编辑/设置/视图/窗口文字及加载 ROM、普通模式即时存档菜单也通过验证。标题栏标签由应用绘制，下拉菜单保持 Win32 HMENU；macOS 系统菜单保留。
+
+旧版在 150% DPI 连续三次拖动后由 488 DIP 增宽至 576 DIP；单独调用 Electron setBounds 和 setPosition 也会增长。改用 SetWindowPos 的 SWP_NOSIZE，只移动位置，拖动和停靠均不回传尺寸。修复后六次往返真实鼠标拖动和左侧吸附，窗口及客户区物理宽高均严格保持 320×240；DIP 包围矩形随物理原点舍入最多变化 1 DIP，没有累积。时钟右键菜单移除设备及即时存档，返回、停靠、边框、静音、倍率和退出继续正常使用。
+
+完整普通包/portable 验收 8 组通过，包括菜单取消后按键重新响应、双击不最大化、工具栏显示/返回、ZIP 解压搬移重启、显式 UserData 覆盖，以及普通版 AppData 设置哈希不变。本地 45 个测试文件、231 项单元测试通过；Windows 新增构建保护及窗口回归 20 项通过。类型检查、双方构建和独立代码审查通过。运行结果在 out/windows-clock-portable-result.json、out/windows-menu-drag-final.log、out/windows-menu-bar-chinese.json；截图在 out/windows-menu-layout-0.5.png、out/windows-menu-layout-3.png、out/windows-menu-bar-chinese.png。
+
+打包期间发现 electron-builder 会清空已使用 portable 输出目录中的 UserData；本次旧目录被清理，用户确认只是试运行、没有需要保留的数据。已添加 beforePack 保护：输出目录有 UserData 则在清理之前拒绝打包。真实 Windows builder 验收以 exit 1 拒绝该情况，设置文件哈希和旧包哨兵文件保留，结果在 out/package-data-guard-result.json。今后使用绿色版应移至独立运行目录，或选择新的构建输出目录。
+
+普通正式包已更新，120 个打包文件逐项哈希与验收包一致，旧变更文件备份在 out/menu-drag-package-backup。最新 portable ZIP 为 desktop/release/portable/gnw-emu-0.1.0-win-x64-portable.zip，203858244 字节，SHA-256 `4b5360d66732aadd659317239050798ed058c6a86a6eefc4e2b2ee3213680028`。普通版用户数据、固件和自用 Windows profiles 保留。

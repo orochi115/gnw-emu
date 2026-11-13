@@ -78,66 +78,89 @@ async function launch(exe, args = []) {
     args: ["--language=en", ...args, profile],
     timeout: 60000,
   });
-  const page = await app.firstWindow();
-  await page.waitForFunction(
-    () =>
-      document.querySelector('[data-ui="app"]')?.dataset.status === "running",
-    {},
-    { timeout: 60000 },
-  );
-  await delay(1500);
-  const state = () => page.evaluate(() => window.desktop.windowState());
-  const native = () =>
-    app.evaluate(({ BrowserWindow, screen, app }) => {
-      const w = BrowserWindow.getAllWindows()[0],
-        bounds = w.getBounds(),
-        d = screen.getDisplayMatching(bounds);
-      return {
-        pid: process.pid,
-        bounds,
-        workArea: d.workArea,
-        density: d.scaleFactor,
-        maximized: w.isMaximized(),
-        maximizable: w.isMaximizable(),
-        fullscreenable: w.isFullScreenable(),
-        userData: app.getPath("userData"),
-      };
-    });
-  const command = async (id) => {
-    assert.equal(id, "view.clock");
-    const n = await native(),
-      b = await page.locator('[data-ui="window.menu"]').boundingBox();
-    await ui("click", {
-      x: (n.bounds.x + b.x + b.width / 2) * n.density,
-      y: (n.bounds.y + b.y + b.height / 2) * n.density,
-    });
-    await ui("select", { pid: n.pid, label: "View" });
-    await ui("select", { pid: n.pid, label: "Desktop Clock Mode" });
-  };
-  const canvasPoint = async () => {
-    const n = await native(),
-      b = await page.locator('[data-ui="game.canvas"]').boundingBox();
-    return {
-      x: Math.round((n.bounds.x + b.x + b.width / 2) * n.density),
-      y: Math.round((n.bounds.y + b.y + b.height / 2) * n.density),
-    };
-  };
-  const context = async () => {
-    const n = await native();
-    await ui("click", { ...(await canvasPoint()), button: "right" });
-    const menus = await ui("menus", { pid: n.pid });
-    assert.ok(menus.length, "No real Win32 menu");
-    assert.ok(
-      menus.some(
-        (m) =>
-          m.className === "#32768" &&
-          m.items.some((x) => x.label === "Return to normal window"),
-      ),
-      JSON.stringify(menus),
+  try {
+    const page = await app.firstWindow();
+    await page.waitForFunction(
+      () =>
+        document.querySelector('[data-ui="app"]')?.dataset.status === "running",
+      {},
+      { timeout: 60000 },
     );
-    return { pid: n.pid, menus };
-  };
-  return { app, page, state, native, command, canvasPoint, context };
+    await delay(1500);
+    const state = () => page.evaluate(() => window.desktop.windowState());
+    const native = async () => {
+      const info = await app.evaluate(({ BrowserWindow, screen, app }) => {
+        const w = BrowserWindow.getAllWindows()[0],
+          bounds = w.getBounds(),
+          d = screen.getDisplayMatching(bounds);
+        return {
+          pid: process.pid,
+          hwnd: w.getNativeWindowHandle().readBigUInt64LE().toString(),
+          bounds,
+          contentSize: w.getContentSize(),
+          workArea: d.workArea,
+          density: d.scaleFactor,
+          maximized: w.isMaximized(),
+          maximizable: w.isMaximizable(),
+          fullscreenable: w.isFullScreenable(),
+          userData: app.getPath("userData"),
+        };
+      });
+      return { ...info, physical: await ui("window", { hwnd: info.hwnd }) };
+    };
+    const openTop = async (id, label) => {
+      const n = await native();
+      const item = page.locator(`[data-ui="${id}"]`);
+      const expanded = await item.isVisible();
+      const button = expanded ? item : page.locator('[data-ui="window.menu"]');
+      const b = await button.boundingBox();
+      await ui("click", {
+        x: (n.bounds.x + b.x + b.width / 2) * n.density,
+        y: (n.bounds.y + b.y + b.height / 2) * n.density,
+      });
+      if (!expanded) await ui("select", { pid: n.pid, label });
+      return n;
+    };
+    const command = async (id) => {
+      assert.equal(id, "view.clock");
+      const n = await openTop("menu.view", "View");
+      await ui("select", { pid: n.pid, label: "Desktop Clock Mode" });
+    };
+    const canvasPoint = async () => {
+      const n = await native(),
+        b = await page.locator('[data-ui="game.canvas"]').boundingBox();
+      return {
+        x: Math.round((n.bounds.x + b.x + b.width / 2) * n.density),
+        y: Math.round((n.bounds.y + b.y + b.height / 2) * n.density),
+      };
+    };
+    const context = async () => {
+      const n = await native();
+      await ui("click", { ...(await canvasPoint()), button: "right" });
+      const menus = await ui("menus", { pid: n.pid });
+      assert.ok(menus.length, "No real Win32 menu");
+      assert.ok(
+        menus.some(
+          (m) =>
+            m.className === "#32768" &&
+            m.items.some((x) => x.label === "Return to normal window"),
+        ),
+        JSON.stringify(menus),
+      );
+      assert.ok(
+        menus.every((m) =>
+          m.items.every((i) => !["Device", "Instant State"].includes(i.label)),
+        ),
+      );
+      return { pid: n.pid, menus };
+    };
+    return { app, page, state, native, command, canvasPoint, context, openTop };
+  } catch (error) {
+    await ui("escape");
+    await ui("escape");
+    await app.close();
+    throw error;
+  }
 }
 const root = await mkdtemp(join(tmpdir(), "gnw-clock-fixed-"));
 let live;
@@ -145,6 +168,44 @@ try {
   live = await launch(join(packageDir, "gnw-emu.exe"), [
     `--user-data-dir=${root}`,
   ]);
+  await live.page.waitForSelector(".window-menubar:not(.collapsed)");
+  assert.equal(await live.page.locator('[data-ui="window.menu"]').count(), 0);
+  // Shrinking must collapse the bar, and widening must restore it.
+  for (const [factor, expanded] of [
+    [0.5, false],
+    [3, true],
+  ]) {
+    await live.app.evaluate(
+      ({ Menu }, factor) =>
+        Menu.getApplicationMenu()
+          .getMenuItemById(factor === 0.5 ? "view.scale.half" : "view.scale.3")
+          .click(),
+      factor,
+    );
+    await until(
+      async () =>
+        (await live.state()).pixelScale === factor &&
+        !(await live.state()).transitioning,
+      "scale",
+    );
+    await live.page.waitForSelector(
+      expanded ? ".window-menubar:not(.collapsed)" : '[data-ui="window.menu"]',
+    );
+    const n = await live.openTop("menu.file", "File");
+    const menus = await ui("menus", { pid: n.pid });
+    assert.ok(
+      menus.some(
+        (m) =>
+          m.className === "#32768" &&
+          m.items.some((i) => i.label.split("\t")[0] === "Load ROM…"),
+      ),
+      JSON.stringify(menus),
+    );
+    await ui("escape");
+    await ui("escape");
+    await live.page.screenshot({path:join(r,`out/windows-menu-layout-${factor}.png`)});
+    results.push({ case: "normal-menu-layout", factor, expanded, menus });
+  }
   await live.command("view.clock");
   await live.page.waitForSelector(".windows-clock");
   await until(
@@ -171,6 +232,7 @@ try {
   const held = await live.page.evaluate(() => window.desktop.inputState());
   await live.context();
   await ui("key-up", { key: 0x26 });
+  await ui("escape");
   await ui("escape");
   await until(
     async () =>
@@ -219,6 +281,42 @@ try {
       n.bounds.y + n.bounds.height - (n.workArea.y + n.workArea.height - 12),
     ) <= 1,
   );
+  const initialSize = { width: n.bounds.width, height: n.bounds.height };
+  const initialContent = n.contentSize;
+  const initialPhysical = n.physical;
+  for (let i = 0; i < 6; i++) {
+    const point = await live.canvasPoint();
+    await ui("drag", {
+      start: [point.x, point.y],
+      end: [point.x + (i % 2 ? 60 : -60), point.y + (i % 2 ? -30 : 30)],
+    });
+    await delay(200);
+    const after = await live.native();
+    assert.deepEqual(
+      after.physical.bounds.slice(2),
+      initialPhysical.bounds.slice(2),
+      "Dragging changed physical window size",
+    );
+    assert.deepEqual(
+      after.physical.client,
+      initialPhysical.client,
+      "Dragging changed physical client size",
+    );
+    // DIP enclosing rectangles can round differently when the physical origin moves at 150% DPI.
+    for (const key of ["width", "height"])
+      assert.ok(
+        Math.abs(after.bounds[key] - initialSize[key]) <= 1,
+        "Accumulated DIP size change",
+      );
+  }
+  results.push({
+    case: "repeated-drag-size",
+    initialSize,
+    initialContent,
+    initialPhysical,
+    after: await live.native(),
+  });
+  n = await live.native();
   const start = await live.canvasPoint();
   const target = {
     x: Math.round((n.workArea.x + 4 + n.bounds.width / 2) * n.density),
@@ -230,6 +328,16 @@ try {
     "Magnetic left edge",
   );
   n = await live.native();
+  assert.deepEqual(
+    n.physical.bounds.slice(2),
+    initialPhysical.bounds.slice(2),
+    "Docking changed physical window size",
+  );
+  assert.deepEqual(
+    n.physical.client,
+    initialPhysical.client,
+    "Docking changed physical client size",
+  );
   assert.ok(Math.abs(n.bounds.x - (n.workArea.x + 12)) <= 1);
   assert.equal((await live.state()).pixelScale, 1);
   await live.page.screenshot({ path: join(r, "out/windows-clock-fixed.png") });
@@ -254,18 +362,14 @@ try {
     "Toolbar return button",
   );
   assert.equal((await live.native()).maximizable, true);
-  n = await live.native();
-  const hamburger = await live.page
-    .locator('[data-ui="window.menu"]')
-    .boundingBox();
-  await ui("click", {
-    x: (n.bounds.x + hamburger.x + hamburger.width / 2) * n.density,
-    y: (n.bounds.y + hamburger.y + hamburger.height / 2) * n.density,
-  });
+  n = await live.openTop("menu.settings", "Settings");
   const mainMenu = await ui("menus", { pid: n.pid });
-  assert.ok(mainMenu.some((m) => m.items.some((x) => x.label === "File")));
+  assert.ok(
+    mainMenu.some((m) =>
+      m.items.some((x) => x.label.split("\t")[0] === "Button Mapping…"),
+    ),
+  );
   results.push({ case: "native-main-menu", menus: mainMenu });
-  await ui("select", { pid: n.pid, label: "Settings" });
   await ui("select", { pid: n.pid, label: "Button Mapping…" });
   await until(
     async () => (await live.app.windows()).length === 2,
@@ -287,6 +391,7 @@ try {
     join(r, "out/windows-clock-portable-partial.json"),
     JSON.stringify(results, null, 2),
   );
+  await ui("escape");
   await ui("escape");
   if (live) await live.app.close();
   live = undefined;
@@ -325,6 +430,7 @@ try {
     join(r, "out/windows-clock-portable-partial.json"),
     JSON.stringify(results, null, 2),
   );
+  await ui("escape");
   await ui("escape");
   if (live) await live.app.close();
   live = undefined;

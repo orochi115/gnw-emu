@@ -498,6 +498,7 @@ main {
   overflow: hidden;
 }
 .window-titlebar {
+  position: relative;
   height: 32px;
   flex: none;
   display: flex;
@@ -589,4 +590,26 @@ main {
 .toast-info,
 .toast-success {
   color: var(--text);
+}
+
+.window-menubar {
+  display: flex;
+  flex: none;
+  width: max-content;
+  white-space: nowrap;
+  app-region: no-drag;
+}
+.window-menubar.collapsed {
+  position: absolute;
+  visibility: hidden;
+  pointer-events: none;
+}
+.window-titlebar .window-menubar button {
+  font-size: 12px;
+  min-width: 0;
+  padding: 0 10px;
+}
+.window-menubar button:hover,
+.window-menubar button:focus-visible {
+  background: var(--border);
 }

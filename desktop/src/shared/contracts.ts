@@ -12,6 +12,11 @@ export interface InputState {
   appliedMask: number;
   resetGeneration: number;
 }
+export interface MenuBarItem {
+  id: string;
+  label: string;
+  enabled: boolean;
+}
 export interface WindowState {
   clockMode: boolean;
   clockDock: DockCorner;
@@ -89,6 +94,9 @@ export interface DesktopApi {
   onInputEpoch(callback: (epoch: number) => void): () => void;
   inputEpoch(): Promise<number>;
   windowState(): Promise<WindowState>;
+  menuBar(): Promise<MenuBarItem[]>;
+  onMenuBar(callback: (items: MenuBarItem[]) => void): () => void;
+  openMenu(id: string, anchor: { x: number; y: number }): Promise<void>;
   onWindowState(callback: (value: WindowState) => void): () => void;
   windowAction(
     action: "menu" | "minimize" | "maximize" | "close" | "normal",

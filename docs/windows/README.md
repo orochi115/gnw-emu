@@ -40,13 +40,13 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\build.ps1 -Portable
 
 生成 `desktop\release\portable\gnw-emu-0.1.0-win-x64-portable.zip`。解压整个 ZIP 后运行 `gnw-emu.exe`，无需安装。也可在已经构建内核的 `desktop` 目录运行 `npm run package:portable`，复用现有内核打包。
 
-包内 `portable.txt` 必须与 EXE 同目录；设置、存档、日志和 Electron 缓存写入旁边的 `UserData`。搬移时保留整个目录即可。普通目录包继续使用 `%APPDATA%\gnw-emu-desktop\UserData`；可通过 `--portable` 临时启用相邻数据目录，显式 `--user-data-dir=路径` 优先于 portable。已有普通版数据可在完全退出后将其 UserData 复制到 portable 目录下。固件和 profile 仍需另行准备，配置引用路径以 profile 所在位置为基准。
+包内 `portable.txt` 必须与 EXE 同目录；设置、存档、日志和 Electron 缓存写入旁边的 `UserData`。搬移时保留整个目录即可。普通目录包继续使用 `%APPDATA%\gnw-emu-desktop\UserData`；可通过 `--portable` 临时启用相邻数据目录，显式 `--user-data-dir=路径` 优先于 portable。已有普通版数据可在完全退出后将其 UserData 复制到 portable 目录下。构建前会检查输出目录中的 `UserData`，若已存在则停止，避免 electron-builder 清空使用过的绿色版数据。此时将整份已使用的程序移到独立目录，或用 `--config.directories.output=新目录` 打包。固件和 profile 仍需另行准备，配置引用路径以 profile 所在位置为基准。
 
 ## Windows 菜单和桌面时钟
 
-Windows 主菜单和时钟右键菜单使用 Win32 `HMENU`，保留中文、勾选、禁用状态及快捷键提示。时钟画面可拖动，双击不会最大化；右上角返回/关闭按钮只在鼠标悬停该区域或键盘聚焦时显示。右键可选择自由悬浮、四角或四条边停靠；拖动释放时，距工作区边缘 24 个逻辑像素以内会自动吸附，保留 12 个逻辑像素间距。缩放或切换机身边框后保持停靠位置，拖离边缘恢复自由悬浮。
+Windows 普通模式在标题栏中横向显示文件、设备、编辑、设置、视图和窗口菜单；空间不足时自动折叠为三线按钮。标题栏文字由应用绘制，下拉菜单及时钟右键菜单使用 Win32 `HMENU`，保留中文、勾选、禁用状态及快捷键提示。时钟右键菜单只保留返回普通模式、停靠、边框、静音、倍率和退出；设备及即时存档操作仍在普通模式提供。时钟画面可拖动，双击不会最大化；右上角返回/关闭按钮只在鼠标悬停该区域或键盘聚焦时显示。右键可选择自由悬浮、四角或四条边停靠；拖动释放时，距工作区边缘 24 个逻辑像素以内会自动吸附，保留 12 个逻辑像素间距。缩放或切换机身边框后保持停靠位置，拖离边缘恢复自由悬浮。
 
-构建普通包和 portable ZIP 后，在已解锁的 Session 1 桌面从 `desktop` 目录运行 `npm run test:windows-clock` 可重复验收。它操作真实鼠标，使用临时数据和 ZIP 副本，验证菜单、时钟交互及搬移重启；请在测试期间留出鼠标操作权。默认加载 `profiles/zelda.gnw.json`，可通过 `GNW_TEST_PROFILE` 指定自己的 Zelda 配置；`GNW_TEST_PACKAGE_DIR` 和 `GNW_TEST_PORTABLE_ZIP` 可指定待验收包。结果写入 `out/windows-clock-portable-result.json`。
+构建普通包和 portable ZIP 后，在已解锁的 Session 1 桌面从 `desktop` 目录运行 `npm run test:windows-clock` 可重复验收。它操作真实鼠标，使用临时数据和 ZIP 副本，验证横向菜单与窄窗口折叠、反复拖动后窗口/客户区尺寸不变、时钟交互及搬移重启；请在测试期间留出鼠标操作权。默认加载 `profiles/zelda.gnw.json`，可通过 `GNW_TEST_PROFILE` 指定自己的 Zelda 配置；`GNW_TEST_PACKAGE_DIR` 和 `GNW_TEST_PORTABLE_ZIP` 可指定待验收包。结果写入 `out/windows-clock-portable-result.json`。
 
 ## 固件、核心与 manager
 

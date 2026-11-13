@@ -578,3 +578,34 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
     match.mockRestore();
   }
 });
+
+test("clock drags and docking preserve dimensions with a move-only host adapter", async () => {
+  const host = resizingHost();
+  const move = vi.fn((x: number, y: number) => original({ x, y }));
+  const original = host.setBounds;
+  host.setBounds = (next: any) =>
+    original({ ...next, width: (next.width ?? host.getBounds().width) + 2 });
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {},
+    () => {},
+    move,
+  );
+  try {
+    await mode.fit("zelda", true);
+    await mode.toggle();
+    const initial = host.getBounds();
+    mode.drag("start", { x: 400, y: 300 });
+    for (let i = 1; i <= 60; i++) mode.drag("move", { x: 400 + i, y: 300 + i });
+    mode.drag("end", { x: 460, y: 360 });
+    mode.setDock("bottomRight");
+    expect(host.getBounds().width).toBe(initial.width);
+    expect(host.getBounds().height).toBe(initial.height);
+    expect(move).toHaveBeenCalled();
+  } finally {
+    host.emit("closed");
+  }
+});

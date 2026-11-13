@@ -1,5 +1,6 @@
 import { createRequire } from "node:module";
-import type { BrowserWindow, Menu, MenuItem } from "electron";
+import type { BrowserWindow, Menu, MenuItem, Point } from "electron";
+import type { MenuBarItem } from "../shared/contracts";
 
 interface NativeEntry {
   label: string;
@@ -59,6 +60,24 @@ export function nativeMenuModel(menu: Menu) {
   };
 }
 
+/** Only the main process selects submenus from the current application model. */
+export function menuBarItems(menu: Menu | null): MenuBarItem[] {
+  return (
+    menu?.items
+      .filter((item) => item.visible && item.submenu)
+      .map((item) => ({
+        id: item.id,
+        label: item.label,
+        enabled: item.enabled,
+      })) ?? []
+  );
+}
+export function menuBarSubmenu(menu: Menu | null, id: unknown) {
+  return menu?.items.find(
+    (item) => item.id === id && item.visible && item.enabled && item.submenu,
+  )?.submenu;
+}
+
 let api: ReturnType<typeof loadApi> | undefined;
 let open = false;
 function loadApi() {
@@ -108,7 +127,11 @@ function loadApi() {
 }
 
 /** A real HMENU (#32768), with all handles destroyed even on build/cancel errors. */
-export function popupWindowsMenu(menu: Menu, window: BrowserWindow) {
+export function popupWindowsMenu(
+  menu: Menu,
+  window: BrowserWindow,
+  anchor?: Point,
+) {
   if (open || window.isDestroyed()) return;
   const native = (api ??= loadApi());
   const model = nativeMenuModel(menu);
@@ -151,7 +174,8 @@ export function popupWindowsMenu(menu: Menu, window: BrowserWindow) {
   try {
     const hwnd = native.koffi.decode(window.getNativeWindowHandle(), "void *");
     const point = { x: 0, y: 0 };
-    if (!native.cursor(point)) throw new Error("GetCursorPos failed");
+    if (anchor) Object.assign(point, anchor);
+    else if (!native.cursor(point)) throw new Error("GetCursorPos failed");
     native.foreground(hwnd);
     menu.emit("menu-will-show");
     // RETURNCMD | NONOTIFY | RIGHTBUTTON; dispatch after Windows closes its loop.

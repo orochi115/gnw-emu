@@ -56,6 +56,8 @@ export class WindowMode {
     private canEnter: () => boolean,
     settings: Partial<Settings> = {},
     private persist: (patch: ViewSettingsPatch) => void = () => {},
+    private move: (x: number, y: number) => void = (x, y) =>
+      window.setBounds({ x, y }),
   ) {
     this.normalScale = settings.normalScale ?? 4;
     this.clockScale = settings.clockScale ?? 1;
@@ -308,7 +310,7 @@ export class WindowMode {
       }
       this.applyingBounds = true;
       try {
-        this.window.setBounds({ x: drag.bounds.x + dx, y: drag.bounds.y + dy });
+        this.move(drag.bounds.x + dx, drag.bounds.y + dy);
       } finally {
         this.applyingBounds = false;
       }
@@ -336,7 +338,7 @@ export class WindowMode {
     if (next.x !== bounds.x || next.y !== bounds.y) {
       this.applyingBounds = true;
       try {
-        this.window.setBounds(next);
+        this.move(next.x, next.y);
       } finally {
         this.applyingBounds = false;
       }

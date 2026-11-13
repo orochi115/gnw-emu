@@ -42,7 +42,7 @@ test("supply menu reflects running, paused, off and unknown execution", () => {
     );
   }
 });
-test("device menu appears only for gwemu in normal and clock menus", () => {
+test("device menu appears only for gwemu in normal menus", () => {
   const actions = {
     open() {},
     make() {},
@@ -64,11 +64,6 @@ test("device menu appears only for gwemu in normal and clock menus", () => {
   ).toBe(false);
   expect(
     menuTemplate("darwin", { ...actions, deviceSupported: true }).some(
-      (item) => item.id === "menu.device",
-    ),
-  ).toBe(true);
-  expect(
-    clockMenuTemplate({ ...actions, deviceSupported: true }).some(
       (item) => item.id === "menu.device",
     ),
   ).toBe(true);

@@ -165,3 +165,28 @@ test("state menu shows ten checked slots, save time and real callbacks", async (
   item.submenu.find((i: any) => i.id === "state.slot.9").click();
   expect(calls).toEqual(["save", 9]);
 });
+
+test("clock context omits device and instant states while normal menus retain them", () => {
+  const actions = {
+    normal() {},
+    dock() {},
+    clockDock: "none" as const,
+    canInteract: true,
+    showChassis: true,
+    toggleChassis() {},
+    muted: false,
+    toggleMute() {},
+    quit() {},
+    deviceSupported: true,
+  };
+  expect(clockMenuTemplate(actions).map((i) => i.id)).not.toContain(
+    "menu.device",
+  );
+  expect(clockMenuTemplate(actions).map((i) => i.id)).not.toContain(
+    "menu.state",
+  );
+  const normal = menuTemplate("win32", { ...actions, open() {}, make() {} });
+  expect(normal.map((i) => i.id)).toContain("menu.device");
+  const file: any = normal.find((i) => i.id === "menu.file");
+  expect(file.submenu.map((i: any) => i.id)).toContain("menu.state");
+});

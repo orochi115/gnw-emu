@@ -103,19 +103,17 @@ export function stateMenuTemplate(actions: StateActions): Item {
 }
 
 export function clockMenuTemplate(
-  actions: ScaleActions &
-    StateActions &
-    DeviceActions & {
-      normal: () => void;
-      dock: (corner: DockCorner) => void;
-      clockDock: DockCorner;
-      canInteract: boolean;
-      showChassis: boolean;
-      toggleChassis: () => void;
-      muted: boolean;
-      toggleMute: () => void;
-      quit: () => void;
-    },
+  actions: ScaleActions & {
+    normal: () => void;
+    dock: (corner: DockCorner) => void;
+    clockDock: DockCorner;
+    canInteract: boolean;
+    showChassis: boolean;
+    toggleChassis: () => void;
+    muted: boolean;
+    toggleMute: () => void;
+    quit: () => void;
+  },
 ): Item[] {
   return [
     {
@@ -154,8 +152,6 @@ export function clockMenuTemplate(
       enabled: actions.canInteract,
       click: actions.toggleMute,
     },
-    stateMenuTemplate(actions),
-    ...(actions.deviceSupported ? [deviceMenuTemplate(actions)] : []),
     scaleMenuTemplate(actions),
     { type: "separator" },
     { id: "app.quit", label: t("menu.quit"), click: actions.quit },

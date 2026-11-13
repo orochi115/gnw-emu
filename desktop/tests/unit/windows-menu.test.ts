@@ -62,3 +62,30 @@ test("native menu dispatch checks the current state and uses Electron's role/cli
     window.webContents,
   );
 });
+
+test("menu bar exposes only visible top-level submenus and validates requested ids", async () => {
+  const { menuBarItems, menuBarSubmenu } =
+    await import("../../src/main/windows-menu");
+  const submenu = { items: [] };
+  const menu: any = {
+    items: [
+      { id: "menu.file", label: "文件", visible: true, enabled: true, submenu },
+      { id: "hidden", visible: false, submenu },
+      { id: "leaf", visible: true, enabled: true },
+      {
+        id: "menu.edit",
+        label: "Edit",
+        visible: true,
+        enabled: false,
+        submenu,
+      },
+    ],
+  };
+  expect(menuBarItems(menu)).toEqual([
+    { id: "menu.file", label: "文件", enabled: true },
+    { id: "menu.edit", label: "Edit", enabled: false },
+  ]);
+  expect(menuBarSubmenu(menu, "menu.file")).toBe(submenu);
+  for (const id of ["hidden", "leaf", "menu.edit", "file.open", "__proto__"])
+    expect(menuBarSubmenu(menu, id)).toBeUndefined();
+});

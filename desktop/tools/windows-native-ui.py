@@ -61,3 +61,8 @@ elif action=='drag':
 elif action=='escape':u.keybd_event(27,0,0,0);u.keybd_event(27,0,2,0);print('{}')
 elif action=='key-up':u.keybd_event(arg['key'],u.MapVirtualKeyW(arg['key'],0),3,0);print('{}')
 elif action=='key-down':u.keybd_event(arg['key'],u.MapVirtualKeyW(arg['key'],0),1,0);print('{}')
+
+elif action=='window':
+ hwnd=W.HWND(int(arg['hwnd']));rect=W.RECT();client=W.RECT()
+ if not u.GetWindowRect(hwnd,C.byref(rect)) or not u.GetClientRect(hwnd,C.byref(client)):raise RuntimeError('Window geometry unavailable')
+ print(json.dumps({'bounds':[rect.left,rect.top,rect.right-rect.left,rect.bottom-rect.top],'client':[client.right-client.left,client.bottom-client.top]}))
