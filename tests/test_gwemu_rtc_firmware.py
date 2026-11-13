@@ -70,14 +70,28 @@ def test_stock_time_button_and_reopen_keep_rtc(tmp_path, name):
 def wait_for_display(n, screen, retrogo, kernel, after_cold=False):
     if retrogo:
         time.sleep(3 if after_cold else 1)
-        if after_cold:
-            for down in (True, False):
-                n.command('input-send-event', {'events': [{'type': 'key', 'data': {
-                    'down': down, 'key': {'type': 'qcode', 'data': 't'}}}]})
-                time.sleep(.5)
         keys(n, True)
+        if after_cold:
+            # With valid NOR settings, stock may already be in Stop. Only
+            # POWER is armed as a wake source; hold the boot chord at wake.
+            n.command('input-send-event', {'events': [{'type': 'key', 'data': {
+                'down': True, 'key': {'type': 'qcode', 'data': 'p'}}}]})
         time.sleep(1)
+        if after_cold:
+            n.command('input-send-event', {'events': [{'type': 'key', 'data': {
+                'down': False, 'key': {'type': 'qcode', 'data': 'p'}}}]})
         keys(n, False)
+    elif after_cold:
+        time.sleep(3)
+        def key(name, down):
+            n.command('input-send-event', {'events': [{'type': 'key', 'data': {
+                'down': down, 'key': {'type': 'qcode', 'data': name}}}]})
+        key('t', True)
+        key('p', True)
+        time.sleep(.05)
+        key('p', False)
+        time.sleep(.5)
+        key('t', False)
     time.sleep(3)
     deadline = time.monotonic() + 20
     expected = b'640 480'
@@ -156,10 +170,9 @@ def test_firmware_clock_and_post_boot_setting(tmp_path, name):
                 'seedHex': [hex(v) for v in cold_seed],
                 'bootHex': [hex(v) for v in cold_boot],
             }, indent=2) + '\n')
-            # Patched OFW actively initializes 12:00 after TAMP loss.
-            # Accept its writes; sync-host's old suppression hid this.
-            assert cold_boot[0] >> 16 == (0x12 if 'retrogo' in name else 9)
-            assert cold_boot[1] == (0x21A101 if 'retrogo' in name else 0x268101)
+            # Valid settings avoid stock's first-boot RTC initialization.
+            assert cold_boot[0] >> 16 == 9
+            assert cold_boot[1] == 0x268101
             (evidence / 'rtc.json').write_text(json.dumps({
                 'kernel': kernel, 'name': name, 'boot': boot,
                 'adjusted': adjusted, 'warm': warm, 'display': display,

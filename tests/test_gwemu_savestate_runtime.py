@@ -254,6 +254,7 @@ def test_partial_hash_message_continues_after_restore(tmp_path):
 def test_partial_ospi_program_and_read_continue_at_saved_position(tmp_path):
     base = 0x52005000
     with backed(tmp_path / 'session', OPT_IN) as n:
+        n.write32(base + 0x110, 6)  # WREN before NOR page program.
         n.write32(base + 0x100, 2 << 12)  # Macronix synthetic 24-bit addressing
         n.write32(base + 0x40, 7)
         n.write32(base + 0x110, 0x38)  # configured MX25U8035F quad page program

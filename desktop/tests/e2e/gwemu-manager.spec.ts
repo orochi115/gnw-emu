@@ -57,7 +57,7 @@ test.beforeAll(async () => {
     ),
   );
   expect(manifest.sourceDirty).toBe(false);
-  expect(manifest.revision).toBe("a38484468d947ce6447fcc7dec47ebeef041f853");
+  expect(manifest.revision).toBe("57b2b378e2001f20a241ecbaf9ce7c8f22aae9a3");
   expect(await digest(native)).toBe(manifest.artifact.sha256);
   expect(
     await digest(join(project, "externals/gnwmanager/gnwmanager/firmware.bin")),

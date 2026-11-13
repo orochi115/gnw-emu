@@ -216,6 +216,9 @@ def test_frames_are_paused_rgba_with_ack_backpressure_and_real_surface(tmp_path)
                 with pytest.raises(socket.timeout):
                     client.recv(1)
                 client.settimeout(3)
+                # Drive the synthetic recovery panel backlight high.
+                machine.write32(0x58020000, 1 << 8)
+                machine.write32(0x58020014, 1 << 4)
                 # This existing native recovery-screen path publishes known blue pixels.
                 machine.write32(0x50001000 + 0x9c, 0xff0000ff)
                 machine.write32(0x50001000 + 0x88, 32 << 16)

@@ -30,16 +30,33 @@ def wait_for_firmware(machine, screen, retrogo, after_cold=False):
     if retrogo:
         # Hold long enough for the SD loader and its guest-time key polling.
         time.sleep(3 if after_cold else 1)
-        if after_cold:
-            # Cleared backup state presents OFW's PRESS TIME screen first.
-            for down in (True, False):
-                machine.command("input-send-event", {"events": [
-                    {"type": "key", "data": {"down": down,
-                     "key": {"type": "qcode", "data": "t"}}}]})
-                time.sleep(.5)
         keys(machine, True)
+        if after_cold:
+            # Valid NOR settings can put stock into Stop before the chord.
+            # POWER is its wake source; hold LEFT+GAME when pressing it.
+            machine.command("input-send-event", {"events": [
+                {"type": "key", "data": {"down": True,
+                 "key": {"type": "qcode", "data": "p"}}}]})
         time.sleep(1)
+        if after_cold:
+            machine.command("input-send-event", {"events": [
+                {"type": "key", "data": {"down": False,
+                 "key": {"type": "qcode", "data": "p"}}}]})
         keys(machine, False)
+    elif after_cold:
+        # Valid stock settings may restore a sleeping clock. Wake POWER
+        # while holding TIME to select the clock screen after supply loss.
+        time.sleep(3)
+        def key(name, down):
+            machine.command("input-send-event", {"events": [
+                {"type": "key", "data": {"down": down,
+                 "key": {"type": "qcode", "data": name}}}]})
+        key("t", True)
+        key("p", True)
+        time.sleep(.05)  # A long POWER hold can turn Zelda off again.
+        key("p", False)
+        time.sleep(.5)
+        key("t", False)
     deadline = started + 30
     time.sleep(max(0, 3 - (time.monotonic() - started)))
     while True:
@@ -51,7 +68,11 @@ def wait_for_firmware(machine, screen, retrogo, after_cold=False):
         assert (magic, geometry, maximum) == (b"P6", b"640 480", b"255")
         lit = sum(r + g + b > 30 for r, g, b in
                   zip(pixels[::3], pixels[1::3], pixels[2::3]))
-        if enabled and lit > 20000 and (not retrogo or vtor == 0x08100000):
+        # Zelda's valid midnight clock is mostly black (~5,900 lit pixels),
+        # unlike the launcher. Reset's disabled GCR is checked by the caller;
+        # require fresh LTDC configuration as well as visible pixels here.
+        minimum_lit = 20000 if retrogo else 1000
+        if enabled and lit > minimum_lit and (not retrogo or vtor == 0x08100000):
             return {"litPixels": lit, "vtor": vtor,
                     "ltdcEnabled": bool(enabled),
                     "seconds": time.monotonic() - started}

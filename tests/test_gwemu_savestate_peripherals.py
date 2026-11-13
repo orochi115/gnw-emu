@@ -128,6 +128,9 @@ def fill(n, address, value, width=32, height=16, palette=False):
 
 
 def setup_display(n, address=FB, width=32, height=16, palette=False):
+    # The synthetic panel needs its PA4 backlight driven high.
+    n.write32(0x58020000, (n.read32(0x58020000) & ~(3 << 8)) | (1 << 8))
+    n.write32(0x58020014, 1 << 4)
     stride = width * (1 if palette else 2)
     for offset, value in ((0x18, 1), (0x84, 1), (0x94, 5 if palette else 2),
                           (0x98, 255), (0x88, width << 16), (0x8c, height << 16),

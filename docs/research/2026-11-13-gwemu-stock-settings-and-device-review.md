@@ -1,5 +1,7 @@
 # 原厂启动修复与 legacy/gwemu 设备差异审查
 
+后续状态：本页的未修设备和冷启动调查已由[设备修复与维护判断](2026-11-13-gwemu-device-parity-and-maintenance.md)更新。以下保留当时的证据，失败记录不是当前验收状态。
+
 日期：2026-11-13。旧机器取本地最终历史快照（来源见[迁移历史](2026-11-13-gwemu-migration-history.md)），新机器基于 `a38484468d947ce6447fcc7dec47ebeef041f853`，本次修复为 gwemu `a99dd14`。父仓库仅本地提交。
 
 干净源码 `a99dd14263c0cb5d3a29bedc379f41cf366e8d46` 独立构建成功，native SHA-256 为 `7f1023e8aed4e6cada6eed441ea55c6872001bef4150e4aea035170e47feb6cb`。113 项及 4 项原厂测试均在这一干净产物上重跑通过。`build/gwemu` 指向 `build/gwemu-stock-settings`，默认开发启动脚本使用新产物；原调试构建完整保留在 `build/gwemu-stock-settings-debug-2026-11-13`。manifest 的源码、dirty 状态和实际二进制哈希已核对。既有 macOS 目录包未在本轮重新打包，其历史验收不代表包含这次修复。
