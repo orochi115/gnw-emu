@@ -16,6 +16,57 @@ pytestmark = pytest.mark.skipif(os.environ.get('GNW_FIRMWARE_RTC_TEST') != '1',
                                 reason='copied local ROM acceptance opt-in')
 
 
+@pytest.mark.parametrize('name', ('mario', 'zelda'))
+def test_stock_time_button_and_reopen_keep_rtc(tmp_path, name):
+    """Valid NOR settings must not send stock firmware through first boot."""
+    profile_path = ROOT / PROFILES[name]
+    if not profile_path.exists():
+        pytest.skip('local profile missing')
+    profile = json.loads(profile_path.read_text())
+    sources = [(profile_path.parent / profile[key]).resolve()
+               for key in ('internalFlash', 'externalFlash')]
+    if not all(path.exists() for path in sources):
+        pytest.skip('local firmware missing')
+    before = [digest(path) for path in sources]
+    evidence = ROOT / 'out/gwemu-rtc/stock-reopen' / name
+    evidence.mkdir(parents=True, exist_ok=True)
+    observations = []
+    try:
+        for source, target in zip(sources, ('bank1.bin', 'flash.bin')):
+            shutil.copyfile(source, tmp_path / target)
+        for launch in range(2):
+            globals = POLICY + ['gnw-h7b0-rtc.initial-epoch=1767258000']
+            if profile.get('deviceUid'):
+                globals.append(f'gnw-h7b0-soc.uid={profile["deviceUid"]}')
+            n = Native(tmp_path, globals=globals)
+            index = n.args.index('-accel')
+            del n.args[index:index + 2]
+            chip = 'c2-25-34' if name == 'mario' else 'c2-25-36'
+            index = n.args.index('gnw-h7b0-soc.extflash-chip=c2-25-34')
+            n.args[index] = 'gnw-h7b0-soc.extflash-chip=' + chip
+            n.args += ['-rtc', 'base=2026-01-01T09:00:00,clock=vm']
+            n.stderr_path = evidence / f'launch-{launch}.log'
+            with n:
+                n.command('cont')
+                time.sleep(3)
+                n.command('stop')
+                boot = calendar(n)
+                n.command('screendump', {'filename': str(evidence / f'boot-{launch}.ppm')})
+                n.command('cont')
+                for down in (True, False):
+                    n.command('input-send-event', {'events': [{'type': 'key', 'data': {
+                        'down': down, 'key': {'type': 'qcode', 'data': 't'}}}]})
+                    time.sleep(.5)
+                n.command('stop')
+                after_time = calendar(n)
+                assert boot[0] >> 16 == after_time[0] >> 16 == 9
+                assert boot[1] == after_time[1] == 0x268101
+                observations.append({'launch': launch, 'boot': boot, 'afterTime': after_time})
+        (evidence / 'results.json').write_text(json.dumps(observations, indent=2) + '\n')
+    finally:
+        assert [digest(path) for path in sources] == before
+
+
 def wait_for_display(n, screen, retrogo, kernel, after_cold=False):
     if retrogo:
         time.sleep(3 if after_cold else 1)

@@ -2,6 +2,8 @@
 
 Electron 桌面使用固定版本的 [gwemu](https://github.com/orochi115/gwemu) 内核，运行 Mario/Zelda 原厂固件、Flash-only Retro-Go 和 SD Retro-Go。`.gnw.json` 配置指定内部 Flash、外部 Flash、可选 Bank 2/SD、接线和设备 UID；源镜像复制到独立 session 后运行，刷写和恢复不会写入原始 ROM。
 
+原厂反复出现 PRESS TIME / 12:00 的 OSPI/CRYP 设置读取问题已修复。最新[设备差异与回归记录](docs/research/2026-11-13-gwemu-stock-settings-and-device-review.md)包含仍待修复的 Retro-Go 冷启动路径、背光及 NOR 等设备缺口。
+
 [gnwmanager](https://github.com/orochi115/gnwmanager) 负责完整备份、校验、选择区域恢复、刷写、文件系统、截图、监视、GDB 调试及保护状态管理。桌面发布当前设备的本地会话入口；没有加载 ROM 时不启动模拟器，也没有常驻 daemon。
 
 ## 构建和启动
