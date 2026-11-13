@@ -53,6 +53,31 @@ export function App() {
   };
 
   const [error, setError] = useState("");
+  useEffect(() => {
+    const dragOver = (event: DragEvent) => {
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    };
+    const drop = (event: DragEvent) => {
+      event.preventDefault();
+      const files = event.dataTransfer?.files;
+      if (!files?.length) return;
+      if (files.length !== 1) {
+        setError(t("error.profileDropCount"));
+        return;
+      }
+      setError("");
+      window.desktop
+        .openDroppedRom(files[0])
+        .catch((error) => setError(error.message));
+    };
+    window.addEventListener("dragover", dragOver);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragover", dragOver);
+      window.removeEventListener("drop", drop);
+    };
+  }, []);
   const [toast, setToast] = useState<ToastMessage | null>(null);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined;

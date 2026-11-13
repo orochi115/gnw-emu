@@ -2,7 +2,11 @@
 
 支持 Windows 11 x64，PowerShell 5.1+。桌面端和 gwemu 为 Windows 原生进程；MSYS2 UCRT64 只用于构建。安装 Node.js 24+、Python 3.11+、Git for Windows，并确保 `node`、`python`、`git`、`curl.exe`、`tar.exe` 可用。建议使用无空格的工作目录。
 
-本次部署目录为 `D:\LLM_Work\Game_Watch\gnw-emu`，工具链位于同级 `toolchains`。在 PowerShell 中：
+本次部署目录为 `D:\LLM_Work\Game_Watch\gnw-emu`，工具链位于同级 `toolchains`。
+
+本机的 Mario/Zelda 备份也位于 `D:\LLM_Work\Game_Watch\firmware`，因此仓库自带的 `profiles\mario.gnw.json` 和 `profiles\zelda.gnw.json` 可直接打开。它们通过 `../../firmware` 引用备份；配置的相对路径以配置文件所在目录为基准。固件不随 Git 源码分发，复制源码到其他机器时需单独准备自己的备份。
+
+在 PowerShell 中：
 
 ```powershell
 cd D:\LLM_Work\Game_Watch\gnw-emu
@@ -23,6 +27,8 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\build.ps1 -Package
 ```
 
 目录包包含内核、递归收集的 MinGW DLL 和构建来源记录。整目录移动即可，运行无需 MSYS2、Python 或 Node.js。使用外部 `gnwmanager` CLI 时仍需下面的 Python 环境。包不附带 ROM 或用户数据，需用自己的备份创建 `.gnw.json` 或从界面打开已有配置。
+
+可把一个 `.gnw.json` 配置从资源管理器拖入主窗口打开，也可在游戏运行时拖入配置切换。拖入无效配置或 `.bin` 固件会显示错误并保留当前游戏；制作 ROM 或设置对话框打开时需先关闭对话框。
 
 打包要求 gwemu 工作树干净、提交与主仓库 HEAD 中固定的子模块提交一致、manifest 与二进制哈希一致。自定义内核需要先更新对应提交，不能跳过此检查。
 
@@ -70,10 +76,10 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\make-sd-image.ps1 -Outp
 
 可加 `-Assets D:\media` 打包资源。包装脚本要求新输出路径；镜像中的文件由 mtools 读写，无需挂载或管理员权限。
 
-移植源码使用主仓库 `feat/windows-native` 分支；修改过的 gwemu 和 gnwmanager 子模块使用各自 fork 的 `gnw-emu` 分支，具体提交由主仓库固定。可从 GitHub 获取完整源码：
+移植源码使用主仓库 `master` 分支；修改过的 gwemu 和 gnwmanager 子模块使用各自 fork 的 `gnw-emu` 分支，具体提交由主仓库固定。可从 GitHub 获取完整源码：
 
 ```powershell
-git -c core.autocrlf=false clone --branch feat/windows-native --recurse-submodules https://github.com/orochi115/gnw-emu.git
+git -c core.autocrlf=false clone --branch master --recurse-submodules https://github.com/orochi115/gnw-emu.git
 ```
 
 随后在项目目录运行 bootstrap。本次部署也保留了源码 Git bundles，便于离线传输。
@@ -81,7 +87,7 @@ git -c core.autocrlf=false clone --branch feat/windows-native --recurse-submodul
 完整源码 bundles 位于 `D:\LLM_Work\Game_Watch`。在包含这三个文件的目录中，可重建新的源码目录：
 
 ```powershell
-git -c core.autocrlf=false clone --branch feat/windows-native gnw-emu-windows-source.bundle gnw-emu-copy
+git -c core.autocrlf=false clone --branch master gnw-emu-windows-source.bundle gnw-emu-copy
 git -c core.autocrlf=false clone --branch gnw-emu gwemu-windows-source.bundle gnw-emu-copy\externals\gwemu
 git -c core.autocrlf=false clone --branch gnw-emu-manager-ram gnwmanager-windows-source.bundle gnw-emu-copy\externals\gnwmanager
 git -C gnw-emu-copy submodule absorbgitdirs externals/gwemu externals/gnwmanager

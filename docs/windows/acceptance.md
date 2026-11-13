@@ -36,6 +36,12 @@ manager 实际构建另复现原生 GCC 依赖文件参数无法读取 MSYS `/d/
 - 原始 ROM 和已有 UserData 保留；测试使用隔离数据，验证来源文件哈希未变化。目录包未配置代码签名证书。
 - Windows 证据位于项目 `out/windows-full-tests.json`、`out/windows-e2e-final.log`、`out/windows-packaged-e2e.log`、`out/windows-acceptance` 和各固件构建日志。
 
+## 后续修复：自带配置与文件拖放
+
+仓库自带的 `profiles/mario.gnw.json` 和 `profiles/zelda.gnw.json` 使用 `../../firmware`，与原先验收专用的 `windows-*.gnw.json` 不同。已将四个原厂备份另行传至 `D:\LLM_Work\Game_Watch\firmware`，核验 SHA-256 与原始备份一致，两份自带配置通过 CLI 路径/镜像校验。固件未加入 Git。
+
+新增主窗口 `.gnw.json` 拖放打开，复用可信 IPC、加载保护和最近记录。真实 Windows CDP 文件拖放测试在旧版本上失败（保持 idle），修复后的开发版通过（中文/空格文件名）。更新的目录包使用自带 `profiles/zelda.gnw.json` 通过拖放验收：Zelda 画面、运行中重新加载、无效配置/`.bin`/多文件拒绝、制作对话框期间禁止换 ROM、最近记录、页面不导航和来源文件哈希均验证。两次验收各 1 passed；本机配置/最近记录/菜单回归 13 passed，TypeScript 检查及独立代码审查通过。目录包 native 和全部 39 个 DLL 的哈希再次核验通过。
+
 ## 限制
 
 旧 macOS 产品验收套件固定了原提交、路径和本机资产，不作为 Windows 通过依据。POSIX socket/inode/shebang 专有 fixture 在 Windows 排除；以 Windows 专有 ACL/认证/会话及实际桌面验证覆盖平台行为。未验证实体设备、实体手柄、扬声器听感或所有 Retro-Go 核心。

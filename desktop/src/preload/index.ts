@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from "electron";
+import { contextBridge, ipcRenderer, webUtils } from "electron";
 const subscribe = (channel: string, callback: (value: any) => void) => {
   const listener = (_event: Electron.IpcRendererEvent, value: any) =>
     callback(value);
@@ -45,6 +45,8 @@ contextBridge.exposeInMainWorld("desktop", {
   releaseChassis: (id: string) => ipcRenderer.send("input.releaseChassis", id),
   onMake: (cb: () => void) => subscribe("ui.make", cb),
   openRom: () => ipcRenderer.invoke("rom.open"),
+  openDroppedRom: async (file: File) =>
+    ipcRenderer.invoke("rom.drop", webUtils.getPathForFile(file)),
   makeRom: () => ipcRenderer.invoke("rom.make"),
   pickImage: (field: string) => ipcRenderer.invoke("rom.pick", field),
   saveRom: (fields: unknown, load: boolean) =>

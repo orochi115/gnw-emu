@@ -108,6 +108,7 @@ export interface DesktopApi {
   ): void;
   releaseChassis(runtimeSessionId: string): void;
   openRom(): Promise<void>;
+  openDroppedRom(file: File): Promise<void>;
   makeRom(): Promise<void>;
   pickImage(field: string): Promise<string | null>;
   saveRom(

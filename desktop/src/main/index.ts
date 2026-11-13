@@ -30,7 +30,7 @@ import { WindowMode } from "./window-mode";
 import { menuTemplate, clockMenuTemplate, deviceMenuItems } from "./menu";
 import type { AppState, ViewPreferences } from "../shared/contracts";
 import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 import { mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
@@ -1184,6 +1184,21 @@ function registerIpc() {
       showError(error);
       throw new Error(userMessage(error));
     });
+  });
+  ipcMain.handle("rom.drop", async (event, path: unknown) => {
+    trusted(event);
+    try {
+      if (
+        typeof path !== "string" ||
+        !isAbsolute(path) ||
+        !path.endsWith(".gnw.json")
+      )
+        throw new UserError("error.profileExtension");
+      await openRecent(path);
+    } catch (error) {
+      showError(error as Error);
+      throw new Error(userMessage(error));
+    }
   });
   ipcMain.handle("rom.make", (event) => {
     trusted(event);

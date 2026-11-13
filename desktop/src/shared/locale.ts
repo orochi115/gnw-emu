@@ -217,6 +217,7 @@ const en = {
   "error.imageSize":
     "{{field}}: The image is empty or exceeds the supported size.",
   "error.profileExtension": "Choose a .gnw.json ROM configuration file.",
+  "error.profileDropCount": "Drop one .gnw.json ROM configuration at a time.",
   "error.profileChanged":
     "The existing ROM configuration differs from the supplied images. Use --fresh to create a new identity; previous saves will be kept.",
   "error.leaseRecovery":
@@ -450,6 +451,7 @@ const zh: Record<keyof typeof en, string> = {
   "error.imageRead": "{{field}}：无法读取文件 {{path}}",
   "error.imageSize": "{{field}}：镜像为空或超出支持范围",
   "error.profileExtension": "请选择 .gnw.json ROM 配置文件",
+  "error.profileDropCount": "请每次拖入一个 .gnw.json ROM 配置文件",
   "error.profileChanged":
     "现有 ROM 配置与输入不同；使用 --fresh 创建新身份，原存档会保留",
   "error.leaseRecovery": "存档被占用：另一个启动器正在核验租约",
