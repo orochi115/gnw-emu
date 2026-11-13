@@ -6,10 +6,6 @@
 	path = externals/game-and-watch-patch
 	url = https://github.com/orochi115/game-and-watch-patch.git
 	branch = gnw-emu
-[submodule "externals/game-and-watch-retro-go"]
-	path = externals/game-and-watch-retro-go
-	url = https://github.com/orochi115/game-and-watch-retro-go.git
-	branch = rabbit-gnw
 [submodule "externals/gnwmanager"]
 	path = externals/gnwmanager
 	url = https://github.com/orochi115/gnwmanager.git

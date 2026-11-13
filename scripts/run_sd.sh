@@ -12,7 +12,7 @@
 #
 #   SD_WIRING=spi1|ospi   SD mod wiring (default spi1)
 #   ROMS=DIR              old Retro-Go roms/ tree for the card
-#                         (default ../xx/game-and-watch-retro-go/roms)
+#                         (default normalized local/retrogo-assets/media)
 #   SYSTEMS=nes,gb,...    only these systems on the card
 #   SDCARD=FILE           card image (default out/sd/sdcard.img)
 #   FRESH=1               new identity; rebuild a generated card, never explicit SDCARD
@@ -34,7 +34,12 @@ case ${1:-} in
 *) B=$1; shift ;;
 esac
 B=$(cd "$B" && pwd)
-ROMS=${ROMS:-$WS/xx/game-and-watch-retro-go/roms}
+if [ -n "${ROMS:-}" ]; then
+    ROMS_ARG=--roms
+else
+    ROMS_ARG=--assets
+    ROMS=$ROOT/local/retrogo-assets/media
+fi
 . "$ROOT/scripts/launch_common.sh"
 select_sd_assets
 GNW_EXPLICIT_CARD=${SDCARD:-}
@@ -84,9 +89,9 @@ PROFILE=$ROOT/out/profiles/sd-$NAME-${SD_WIRING:-spi1}.gnw.json
 if [ ! -f "$SDCARD" ] || { [ "${FRESH:-0}" = 1 ] && [ -z "$GNW_EXPLICIT_CARD" ]; }; then
     mkdir -p "$(dirname "$SDCARD")"
     if [ -n "${SYSTEMS:-}" ]; then
-        python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --retrogo "$RG" --dl "$ASSETS/out/dl" --roms "$ROMS" --systems "$SYSTEMS"
+        python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --retrogo "$RG" --dl "$ASSETS/out/dl" "$ROMS_ARG" "$ROMS" --systems "$SYSTEMS"
     else
-        python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --retrogo "$RG" --dl "$ASSETS/out/dl" --roms "$ROMS"
+        python3 "$ROOT/scripts/make_sd_image.py" "$SDCARD" --retrogo "$RG" --dl "$ASSETS/out/dl" "$ROMS_ARG" "$ROMS"
     fi
 fi
 ensure_rom "$PROFILE" zelda internalFlash="$BANK1" externalFlash="$B/ext.bin" bank2Flash="$FWBIN" sdCard="$SDCARD" sdWiring="${SD_WIRING:-spi1}"

@@ -30,7 +30,12 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WS=$(cd "$ROOT/.." && pwd)
-ROMS=${ROMS:-$WS/xx/game-and-watch-retro-go/roms}
+if [ -n "${ROMS:-}" ]; then
+    ROMS_ARG=--roms
+else
+    ROMS_ARG=--assets
+    ROMS=$ROOT/local/retrogo-assets/media
+fi
 D=$ROOT/out/sd/update
 . "$ROOT/scripts/launch_common.sh"
 select_sd_assets
@@ -67,9 +72,9 @@ fi
 if [ ! -f "$CARD" ] || { [ "${FRESH:-0}" = 1 ] && [ -z "$GNW_EXPLICIT_CARD" ]; }; then
     mkdir -p "$(dirname "$CARD")"
     if [ -n "${SYSTEMS:-}" ]; then
-        python3 "$ROOT/scripts/make_sd_image.py" "$CARD" --retrogo "$RG" --dl "$ASSETS/out/dl" --roms "$ROMS" --systems "$SYSTEMS" --with-update
+        python3 "$ROOT/scripts/make_sd_image.py" "$CARD" --retrogo "$RG" --dl "$ASSETS/out/dl" "$ROMS_ARG" "$ROMS" --systems "$SYSTEMS" --with-update
     else
-        python3 "$ROOT/scripts/make_sd_image.py" "$CARD" --retrogo "$RG" --dl "$ASSETS/out/dl" --roms "$ROMS" --with-update
+        python3 "$ROOT/scripts/make_sd_image.py" "$CARD" --retrogo "$RG" --dl "$ASSETS/out/dl" "$ROMS_ARG" "$ROMS" --with-update
     fi
 fi
 ensure_rom "$PROFILE" zelda internalFlash="$DB/bank1.bin" externalFlash="$DB/ext.bin" bank2Flash="$BLANK" sdCard="$CARD" sdWiring="${SD_WIRING:-spi1}"

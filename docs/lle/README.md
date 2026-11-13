@@ -16,7 +16,7 @@
 - `externals/game-and-watch-patch/patches/firmware.py`：外挂 Flash 的 AES-CTR 解密（`crypt()`）。Mario 密钥字段在片内偏移 `0x106F4`（16 字节）、nonce 在 `0x106E4`（8 字节）。Zelda 为 `0x165A4` / `0x16590`。
 - `externals/game-and-watch-patch/patches/mario.py`、`zelda.py`：外挂 Flash 上 ROM 与资源的区间。
 - `externals/game-and-watch-patch/docs/journal.md`：片内固件的 Ghidra 流程和按键处理函数。
-- `externals/game-and-watch-retro-go/STM32H7B0VBTx_FLASH.ld`：ITCM、DTCM、AXI SRAM、`0x90000000` 的链接布局。
+- `externals/retro-go-sd/STM32H7B0VBTx_FLASH.ld`：当前 Flash-only 固件的 ITCM、DTCM、AXI SRAM、`0x90000000` 链接布局。
 - `externals/game-and-watch-backup/openocd/target_mario.cfg`、`target_zelda.cfg`：ITCM 快照从 `0x00` 或 `0x20` 起，长度 1300。
 - `../firmware/`：片内 Flash、外挂 SPI、ITCM 快照。模拟器加载前两份即可。
 

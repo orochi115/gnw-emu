@@ -3,6 +3,7 @@ __pycache__/
 .venv/
 *.pyc
 /out/
+/local/
 /UserData/
 build/
 .cache/
@@ -33,6 +34,7 @@ build/
 # Retired sources/submodules remain locally; new checkouts use gwemu/gnwmanager.
 /externals/qemu/
 /externals/game-and-watch-backup/
+/externals/game-and-watch-retro-go/
 /qemu-gnw/
 /scripts/qemu-savestate-hook.py
 /harness/gnw.py

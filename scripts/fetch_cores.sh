@@ -11,11 +11,13 @@ CORES=${CORES:-"fceumm tgb-dual SMSPlusGX gwenesis prosystem potator caprice32 b
 
 mkdir -p "$DL"
 for c in $CORES; do
+    git -C "$ROOT" submodule update --init "externals/cores/$c-retro-go-sd"
+    tag=$(git -C "$ROOT/externals/cores/$c-retro-go-sd" describe --tags --exact-match)
     mkdir -p "$DL/$c"
-    gh release download -R "sylverb/$c-retro-go-sd" -D "$DL/$c" \
+    gh release download "$tag" -R "sylverb/$c-retro-go-sd" -D "$DL/$c" \
         --skip-existing -p '*.zip'
     for z in "$DL/$c"/*.zip; do
-        case "$z" in *-debug.zip) continue ;; esac
+        case "$z" in *-debug.zip) continue ;; *-"$tag".zip) ;; *) continue ;; esac
         rm -rf "$DL/$c/x"
         mkdir "$DL/$c/x"
         unzip -q -o "$z" -d "$DL/$c/x"
@@ -24,6 +26,8 @@ for c in $CORES; do
 done
 
 mkdir -p "$DL/bootloader"
-gh release download -R sylverb/game-and-watch-bootloader -D "$DL/bootloader" \
+git -C "$ROOT" submodule update --init externals/cores/game-and-watch-bootloader
+tag=$(git -C "$ROOT/externals/cores/game-and-watch-bootloader" describe --tags --exact-match)
+gh release download "$tag" -R sylverb/game-and-watch-bootloader -D "$DL/bootloader" \
     --skip-existing -p '*.bin'
 ls "$DL/bootloader"

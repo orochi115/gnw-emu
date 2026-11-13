@@ -16,7 +16,7 @@ Content, in this order (later sources win):
 The partition table comes from Retro-Go's scripts/make_sdcard_image.py, the
 filesystem from mtools (mformat/mcopy), like its gwemu_release target.
 
-  scripts/make_sd_image.py out/sd/sdcard.img --roms ../xx/game-and-watch-retro-go/roms
+  scripts/make_sd_image.py out/sd/sdcard.img --assets local/retrogo-assets/media
 """
 import argparse
 import os
@@ -50,7 +50,7 @@ def stage_roms(roms: pathlib.Path, stage: pathlib.Path, systems):
         n = 0
         for f in sorted(sysdir.iterdir()):
             ext = f.suffix.lower()
-            if not f.is_file() or ext in SKIP_EXT:
+            if not f.is_file() or f.name.startswith('.') or ext in SKIP_EXT:
                 continue
             if ext == ".img":
                 sub = "covers"
@@ -66,6 +66,20 @@ def stage_roms(roms: pathlib.Path, stage: pathlib.Path, systems):
     return counts
 
 
+def stage_assets(assets: pathlib.Path, stage: pathlib.Path, systems):
+    """Stage a normalized local library, including separated resource trees."""
+    counts = stage_roms(assets / "roms", stage, systems)
+    for kind in ("covers", "cheats"):
+        source = assets / kind
+        if source.is_dir():
+            for system in source.iterdir():
+                if system.is_dir() and (not systems or system.name in systems):
+                    copy_tree(system, stage / kind / system.name)
+    if (assets / "bios").is_dir():
+        copy_tree(assets / "bios", stage / "bios")
+    return counts
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -73,7 +87,9 @@ def main():
     ap.add_argument("--retrogo", default=str(ROOT / "externals" / "retro-go-sd"))
     ap.add_argument("--dl", default=str(ROOT / "out" / "dl"),
                     help="directory filled by scripts/fetch_cores.sh")
-    ap.add_argument("--roms", help="old Retro-Go roms/ tree")
+    sources = ap.add_mutually_exclusive_group()
+    sources.add_argument("--roms", help="old Retro-Go roms/ tree")
+    sources.add_argument("--assets", help="normalized local library media/ tree")
     ap.add_argument("--systems", help="comma separated subset, e.g. nes,gb")
     ap.add_argument("--size-mb", type=int, default=1024)
     ap.add_argument("--with-update", action="store_true")
@@ -94,9 +110,10 @@ def main():
         copy_tree(x, stage)
     cores = sorted(p.name for p in (stage / "cores").glob("*.bin"))
     print(f"cores: {', '.join(cores) or 'none'}")
-    if args.roms:
+    if args.roms or args.assets:
         systems = set(args.systems.split(",")) if args.systems else None
-        counts = stage_roms(pathlib.Path(args.roms), stage, systems)
+        counts = (stage_assets(pathlib.Path(args.assets), stage, systems)
+                  if args.assets else stage_roms(pathlib.Path(args.roms), stage, systems))
         print("roms: " + ", ".join(f"{k} {v}" for k, v in counts.items()))
     if args.with_update:
         shutil.copy2(rg / "release" / "retro-go_update.bin", stage)

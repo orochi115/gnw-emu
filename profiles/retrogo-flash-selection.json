@@ -1,0 +1,14 @@
+{
+  "description": "Nine games from eight platform families, including GB and GBC, for a 64 MiB Flash-only build; edit the explicit list to choose your games.",
+  "roms": [
+    "a7800/Asteroids (USA).a78",
+    "gb/Super Mario Land 1.gb",
+    "gbc/0702 - Mario Tennis GB (JP).gbc",
+    "gg/Bare Knuckle II ~ Streets of Rage 2 ~ Streets of Rage II (World).gg",
+    "gw/Game & Watch Ball.gw",
+    "md/Aladdin (USA).md",
+    "nes/tankedazhan.nes",
+    "pce/1943kai.pce",
+    "sms/1.sms"
+  ]
+}

@@ -34,7 +34,7 @@ scripts/run_sd_update.sh BACKUP_DIR
 PROFILE=FILE.gnw.json scripts/probe.sh 4
 ```
 
-完整 dump 的 `bank1.bin`、`bank2.bin`、`ext.bin` 可继续作为输入资产。SD 直启、卡升级与核心构建见 [SD 文档](docs/sdcard.md)。Flash-only 和 SD 两种固件用途均保留；不提供 OpenOCD 模拟服务。
+完整 dump 的 `bank1.bin`、`bank2.bin`、`ext.bin` 可继续作为输入资产。Flash-only 与 SD 固件共用 `retro-go-sd`，传统 Retro-Go 源码已退役；资源迁移和无卡构建见 [Retro-Go 文档](docs/retrogo.md)，SD 直启、卡升级与核心构建见 [SD 文档](docs/sdcard.md)。
 
 ## 桌面和数据
 

@@ -58,14 +58,14 @@ FRESH=1 ./run_sd_update_emu.sh   # 新身份回到升级前，保留旧存档（
 
 | 子模块 | 用途 |
 |---|---|
-| `qemu` | orochi115/qemu `gnw` 分支：v11.1.3 加上 gnw 钩子 |
+| `gwemu` | orochi115/gwemu `gnw-emu` 分支，当前模拟内核 |
 | `retro-go-sd` | orochi115/game-and-watch-retro-go-sd `gnw-emu` 分支（基于 sylverb external_cores） |
 | `game-and-watch-patch` | orochi115 fork `gnw-emu` 分支：给原厂固件打 `--sd-bootloader` 补丁 |
 | `cores/*-retro-go-sd`、`cores/game-and-watch-bootloader` | sylverb 上游，固定在 release tag |
-| `game-and-watch-backup`、`gnwmanager`、`stm32h7xx-hal-driver`、`game-and-watch-retro-go` | 备份工具、刷机工具、HAL 参考、旧版 Retro-Go（orochi115 fork，不含 ROM） |
+| `gnwmanager`、`stm32h7xx-hal-driver` | 备份/刷机工具与 HAL 参考；传统 Retro-Go 源码已退役 |
 
 ```sh
-git submodule update --init externals/qemu        # 其他子模块由各脚本按需初始化
+git submodule update --init externals/gwemu       # 其他子模块由各脚本按需初始化
 brew install mtools keystone
 python3 -m venv ../.venv-rgsd && ../.venv-rgsd/bin/pip install -r externals/retro-go-sd/requirements.txt
 
@@ -73,7 +73,7 @@ scripts/build_retrogo_sd.sh      # 固件、sd_content/、retro-go_update.bin（
 scripts/fetch_cores.sh           # 下载核心与 SD bootloader → out/dl/<core>/x/{cores,bios}/…, out/dl/bootloader/
 #   或者
 scripts/build_cores.sh           # 从源码编译同一批文件，并逐字节比对 release（见下文）
-scripts/make_sd_image.py out/sd/sdcard.img --roms ../xx/game-and-watch-retro-go/roms
+scripts/make_sd_image.py out/sd/sdcard.img --assets local/retrogo-assets/media
 #   --systems nes,gb    只放部分系统
 #   --with-update       把 retro-go_update.bin 放到根目录，供升级流程使用
 scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升级流程用的 Bank 1 和 ext
@@ -118,7 +118,7 @@ scripts/run_sd_update.sh
 ```sh
 scripts/build_sd_patch.sh
 scripts/make_sd_dualboot.py out/sd/dualboot
-scripts/make_sd_image.py out/sd/update/card.img --roms ../xx/game-and-watch-retro-go/roms --with-update
+scripts/make_sd_image.py out/sd/update/card.img --assets local/retrogo-assets/media --with-update
 ```
 
 流程：原厂时钟 → ← + G → 0x08032000 的 bootloader 在卡上发现 `retro-go_update.bin`，把 firmware_update 载入 RAM（VTOR=0x24000000）→ 解包 tar → 擦写 Bank 2 → 屏幕显示 “Firmware update done” → 按任意键复位 → 原厂 → ← + G → Retro-Go SD。Bank 2 的结果与 `gw_retro_go_intflash.bin` 逐字节相同。原厂固件存在时 bootloader 本身不更新，Bank 1 保持不变。
@@ -149,7 +149,7 @@ GnW("zelda", internal=..., bank2=..., sdcard="card.img", sd_snapshot=True,
 - 独立 bootloader 的 SD 升级；
 - 双系统的 SD 升级（需要先生成 `out/sd/dualboot/`）。
 
-依赖：`externals/retro-go-sd` 的编译产物、`out/dl` 里的核心和 bootloader、旧版 ROM 目录、mtools，以及 arm-none-eabi-nm。
+依赖：`externals/retro-go-sd` 的编译产物、`out/dl` 里的核心和 bootloader、[统一本地资源库](retrogo.md)、mtools，以及 arm-none-eabi-nm。
 
 ## 已知局限
 
