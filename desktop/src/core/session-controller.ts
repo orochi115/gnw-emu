@@ -202,7 +202,7 @@ export class SessionController extends EventEmitter {
       // Validate all immutable inputs before stopping the old machine.
       const profile = await loadProfile(path);
       await access(this.options.qemu);
-      const kernel = this.options.kernel ?? "legacy";
+      const kernel = this.options.kernel ?? "gwemu";
       const identity = await preflightKernel(
         kernel,
         profile,
@@ -226,10 +226,7 @@ export class SessionController extends EventEmitter {
       let transferred = false;
       let gdbEndpoint: OwnedManagerEndpoint | undefined;
       try {
-        const data =
-          kernel === "gwemu"
-            ? join(this.options.userData, "kernels", "gwemu")
-            : this.options.userData;
+        const data = join(this.options.userData, "kernels", "gwemu");
         lease = await acquireLease(join(data, "leases", profile.id), id);
         const session = await prepareSession(profile, data, kernel);
         const runDir = join(session.directory, "runs", id);
@@ -243,7 +240,6 @@ export class SessionController extends EventEmitter {
         display = await this.options.createDisplay(id);
         const backend = new KernelBackend(kernel, qmp);
         if (
-          kernel === "gwemu" &&
           process.platform !== "win32" &&
           this.options.enableManager !== false
         ) {
@@ -390,17 +386,14 @@ export class SessionController extends EventEmitter {
           "connect",
         );
         checkRuntime();
-        if (kernel === "legacy") await backend.resetInput();
+        let deviceState = await backend.readDeviceState();
         checkRuntime();
-        let deviceState =
-          kernel === "gwemu" ? await backend.readDeviceState() : undefined;
-        checkRuntime();
-        if (!deviceState || deviceState.devicePower.powered) {
+        if (deviceState.devicePower.powered) {
           const frame = display.waitForFrame();
           await qmp.command("cont");
           checkRuntime();
           // Standard QMP input rejects events while the VM is paused.
-          if (kernel === "gwemu") await backend.resetInput();
+          await backend.resetInput();
           checkRuntime();
           this.publish({ ...this.state, stage: "start" });
           await deadline(
@@ -408,10 +401,10 @@ export class SessionController extends EventEmitter {
             this.options.timeout ?? 10000,
             "frame",
           );
-          if (kernel === "gwemu") deviceState = await backend.readDeviceState();
+          deviceState = await backend.readDeviceState();
         }
         checkRuntime();
-        runtime.execution = deviceState?.execution;
+        runtime.execution = deviceState.execution;
         const slots = await stateSlotTimes(session.directory, identity);
         const support = await qmp.command("qom-get", {
           path: "/machine",
@@ -504,7 +497,6 @@ export class SessionController extends EventEmitter {
     const runtime = this.runtime;
     if (
       !runtime ||
-      runtime.backend.kind !== "gwemu" ||
       runtime.stopping ||
       !runtime.child ||
       runtime.child.exitCode !== null ||
@@ -1089,28 +1081,14 @@ export class SessionController extends EventEmitter {
     runtime.input.key(code, down);
     if (!down) this.releasePhysicalInput();
   }
-  private async deviceShortcut(runtime: Runtime, code: string) {
-    const qmp = runtime.qmp;
-    const property = code === "KeyC" ? "usb-power" : "battery";
-    const value = await qmp.command("qom-get", { path: "/machine", property });
-    await qmp.command("qom-set", {
-      path: "/machine",
-      property,
-      value:
-        code === "KeyC"
-          ? !value
-          : Math.min(100, Math.max(0, value + (code === "Minus" ? -10 : 10))),
-    });
-  }
   private hostOnlyRelease(runtime: Runtime) {
     return (
-      runtime.backend.kind === "gwemu" &&
-      (runtime.execution !== "running" ||
-        runtime.suppressRelease ||
-        !!this.stateOwner ||
-        !!this.startup ||
-        runtime.stopping ||
-        runtime.uncertain)
+      runtime.execution !== "running" ||
+      runtime.suppressRelease ||
+      !!this.stateOwner ||
+      !!this.startup ||
+      runtime.stopping ||
+      runtime.uncertain
     );
   }
   releaseInput() {
@@ -1150,14 +1128,8 @@ export class SessionController extends EventEmitter {
       "device.resume",
       "device.coldStart",
     ].includes(action);
-    if (
-      runtime.backend.kind === "legacy" &&
-      !["device.batteryDown", "device.batteryUp", "device.usb"].includes(action)
-    )
-      return;
     runtime.deviceJobs++;
-    if (runtime.backend.kind === "gwemu")
-      this.publish({ ...this.state, deviceOperation: true });
+    this.publish({ ...this.state, deviceOperation: true });
     const work = runtime.powerWork
       .then(async () => {
         if (
@@ -1165,17 +1137,6 @@ export class SessionController extends EventEmitter {
           ((runtime.stopping || runtime.uncertain) && executionAction)
         )
           return;
-        if (runtime.backend.kind === "legacy") {
-          await this.deviceShortcut(
-            runtime,
-            action === "device.usb"
-              ? "KeyC"
-              : action === "device.batteryDown"
-                ? "Minus"
-                : "Equal",
-          );
-          return;
-        }
         try {
           const current = await runtime.backend.readDeviceState();
           if (!runtime.uncertain) runtime.execution = current.execution;
@@ -1254,11 +1215,7 @@ export class SessionController extends EventEmitter {
       })
       .finally(() => {
         runtime.deviceJobs--;
-        if (
-          runtime.backend.kind === "gwemu" &&
-          this.runtime === runtime &&
-          !runtime.stopping
-        )
+        if (this.runtime === runtime && !runtime.stopping)
           this.publish({
             ...this.state,
             deviceOperation:
@@ -1278,7 +1235,7 @@ export class SessionController extends EventEmitter {
       !runtime.uncertain &&
       !runtime.stopping &&
       runtime.deviceJobs === 0 &&
-      (runtime.backend.kind === "legacy" || runtime.execution === "running")
+      runtime.execution === "running"
     );
   }
   button(bit: number, down: boolean, source: string, runtimeSessionId: string) {
@@ -1380,10 +1337,8 @@ export class SessionController extends EventEmitter {
       slot = this.slot;
     this.stateOwner = owner;
     runtime.suppressRelease = true;
-    if (runtime.backend.kind === "gwemu") {
-      runtime.input.resetHost();
-      runtime.backend.deferHostRelease();
-    }
+    runtime.input.resetHost();
+    runtime.backend.deferHostRelease();
     // Main/router callbacks run synchronously from publish. The gate is already closed.
     this.publish({ ...this.state, stateOperation: action });
     const work = this.performState(runtime, action, slot).finally(() => {
@@ -1421,11 +1376,9 @@ export class SessionController extends EventEmitter {
   ) {
     let originallyRunning = false,
       paused = false;
-    const gwemu = runtime.backend.kind === "gwemu";
     const active = () =>
       this.runtime === runtime && !runtime.stopping && !runtime.uncertain;
     const refresh = async () => {
-      if (!gwemu) return true;
       try {
         const value = await runtime.backend.readDeviceState();
         if (!runtime.uncertain) runtime.execution = value.execution;
@@ -1466,20 +1419,12 @@ export class SessionController extends EventEmitter {
       await runtime.input.flush();
       const status = await runtime.qmp.command("query-status");
       originallyRunning = status.running === true;
-      if (originallyRunning) {
-        if (gwemu) await runtime.backend.buttons(0);
-        else {
-          runtime.input.releaseAll();
-          await runtime.input.flush();
-        }
-      }
+      if (originallyRunning) await runtime.backend.buttons(0);
       await runtime.qmp.command("stop");
       paused = true;
-      if (gwemu) {
-        runtime.execution = "paused";
-        runtime.input.resetHost();
-        runtime.backend.resetHostInput();
-      }
+      runtime.execution = "paused";
+      runtime.input.resetHost();
+      runtime.backend.resetHostInput();
       const call = (property: string, value: string) =>
         runtime.qmp.command(
           "qom-set",
@@ -1501,10 +1446,8 @@ export class SessionController extends EventEmitter {
           (p) => call("load-state", p),
           runtime.identity,
         );
-      if (gwemu) {
-        runtime.input.resetHost();
-        runtime.backend.resetHostInput();
-      } else await runtime.backend.resetInput();
+      runtime.input.resetHost();
+      runtime.backend.resetHostInput();
       const powered = await refresh();
       const slots = await stateSlotTimes(
         runtime.session.directory,
@@ -1515,7 +1458,7 @@ export class SessionController extends EventEmitter {
       if (originallyRunning && powered && active()) {
         await runtime.qmp.command("cont");
         originallyRunning = false;
-        if (gwemu) await refresh();
+        await refresh();
       }
       if (active())
         this.toast({
@@ -1546,7 +1489,7 @@ export class SessionController extends EventEmitter {
         try {
           if ((await refresh()) && active()) {
             await runtime.qmp.command("cont");
-            if (gwemu) await refresh();
+            await refresh();
           }
         } catch {
           this.uncertainState(runtime);
@@ -1613,20 +1556,15 @@ export class SessionController extends EventEmitter {
       ) {
         try {
           await deadline(runtime.powerWork, 5000, "power");
-          if (
-            runtime.backend.kind === "legacy" ||
-            runtime.execution === "running"
-          ) {
+          if (runtime.execution === "running") {
             runtime.input.releaseAll();
             await deadline(runtime.input.flush(), 1000, "release").catch(
               () => {},
             );
           }
-          if (runtime.backend.kind === "gwemu") {
-            if (this.manager?.runtime === runtime)
-              await runtime.backend.releaseHostInput(1000);
-            power = await runtime.backend.snapshotPower();
-          }
+          if (this.manager?.runtime === runtime)
+            await runtime.backend.releaseHostInput(1000);
+          power = await runtime.backend.snapshotPower();
         } catch {
           // Snapshot failure must not bypass child shutdown or claim a save.
           powerError = new UserError("error.saveUncertain");

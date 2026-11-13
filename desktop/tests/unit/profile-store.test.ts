@@ -49,7 +49,11 @@ test("session copies are isolated, never replace a save, and persist only device
   const again = await prepareSession(profile, join(root, "UserData"));
   expect(await readFile(again.externalFlash, "utf8")).toBe("saved");
   expect((await readFile(profile.externalFlash)).length).toBe(1024 * 1024);
-  await saveSession(again, { battery: 38, usbPower: true });
+  await saveSession(again, {
+    battery: 38,
+    usbPower: true,
+    batteryPresent: true,
+  });
   const state = JSON.parse(
     await readFile(join(session.directory, "session.json"), "utf8"),
   );

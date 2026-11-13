@@ -24,13 +24,13 @@ import { closeOwnedApplication, processHooks } from "./helpers/owned-processes";
 
 const project = resolve("..");
 const python = join(project, "build/gnwmanager-python/bin/python");
-const native = join(
-  project,
-  "build/gwemu-session-manager-release/qemu-system-arm",
-);
+const native = join(project, "build/gwemu/qemu-system-arm");
 const elf = join(project, "build/gnwmanager-ram-release/gnwmanager.elf");
 const gdb = "/opt/gcc-arm-none-eabi-10.3-2021.10/bin/arm-none-eabi-gdb";
-const evidenceRoot = join(project, "out/gwemu-completion/manager-workflow");
+const evidenceRoot = join(
+  project,
+  "out/gwemu-completion/product-final-manager",
+);
 const discovery = `/tmp/gnw-manager-${process.getuid!()}`;
 const mario: ProfileFields = {
   model: "mario",
@@ -52,18 +52,13 @@ test.beforeAll(async () => {
     expect(existsSync(path), path).toBe(true);
   const manifest = JSON.parse(
     await readFile(
-      join(
-        project,
-        "build/gwemu-session-manager-release/gnw-build-manifest.json",
-      ),
+      join(project, "build/gwemu/gnw-build-manifest.json"),
       "utf8",
     ),
   );
   expect(manifest.sourceDirty).toBe(false);
   expect(manifest.revision).toBe("a38484468d947ce6447fcc7dec47ebeef041f853");
-  expect(await digest(native)).toBe(
-    "a6ae9db084e1268fad8d5a4cc4bea3ba139dfe927a6b1d4d555197004515798e",
-  );
+  expect(await digest(native)).toBe(manifest.artifact.sha256);
   expect(
     await digest(join(project, "externals/gnwmanager/gnwmanager/firmware.bin")),
   ).toBe("bf2c67e6cf352d7e5e0586b13f608431e32c294b12908558e48f63863445d9e9");
@@ -130,7 +125,11 @@ class Desktop {
         `--user-data-dir=${this.root}`,
         ...(profile ? [profile.path] : []),
       ],
-      env: { ...process.env, GNW_KERNEL: "gwemu" },
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key, value]) => key !== "GNW_KERNEL" && value !== undefined,
+        ),
+      ) as Record<string, string>,
     });
     this.appChild = this.app.process();
     await this.app.firstWindow();

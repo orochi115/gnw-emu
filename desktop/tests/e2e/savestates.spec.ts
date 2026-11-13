@@ -44,12 +44,12 @@ test("real hotkeys and native slots save/load with bottom toasts and survive rel
     await expect(
       page.getByRole("status").filter({ hasText: "已保存槽位 0" }),
     ).toBeVisible();
-    const slot = join(data, "sessions", id, "states", "slot-0.json");
+    const slot = join(data, "kernels", "gwemu", "sessions", id, "states-gwemu", "slot-0.json");
     const manifest = JSON.parse(await readFile(slot, "utf8"));
     expect(
       (
         await readFile(
-          join(data, "sessions", id, "states", manifest.id, "state.bin"),
+          join(data, "kernels", "gwemu", "sessions", id, "states-gwemu", manifest.id, "state.bin"),
         )
       ).length,
     ).toBeGreaterThan(4 * 1024 * 1024);
@@ -73,6 +73,8 @@ test("real hotkeys and native slots save/load with bottom toasts and survive rel
     await expect(
       page.getByRole("status").filter({ hasText: "已选择即时存档槽位 9" }),
     ).toBeVisible();
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+    await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
     await page.keyboard.press("F8");
     await expect(
       page.getByRole("alert").filter({ hasText: "槽位 9 为空" }),
@@ -106,6 +108,8 @@ test("real hotkeys and native slots save/load with bottom toasts and survive rel
     await app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()[0].focus(),
     );
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+    await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
     await page.keyboard.press("F8");
     await expect(
       page.getByRole("status").filter({ hasText: "已读取槽位 0" }),

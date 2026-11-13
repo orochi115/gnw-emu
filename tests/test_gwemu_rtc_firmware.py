@@ -1,4 +1,4 @@
-"""Opt-in legacy/gwemu RTC acceptance; firmware and SD are always copied."""
+"""Opt-in gwemu RTC acceptance; firmware and SD are always copied."""
 import json
 import os
 import shutil
@@ -24,19 +24,12 @@ def wait_for_display(n, screen, retrogo, kernel, after_cold=False):
                 n.command('input-send-event', {'events': [{'type': 'key', 'data': {
                     'down': down, 'key': {'type': 'qcode', 'data': 't'}}}]})
                 time.sleep(.5)
-        if kernel == 'legacy':
-            n.command('qom-set', {'path': '/machine', 'property': 'buttons',
-                                  'value': (1 << 0) | (1 << 7)})
-        else:
-            keys(n, True)
+        keys(n, True)
         time.sleep(1)
-        if kernel == 'legacy':
-            n.command('qom-set', {'path': '/machine', 'property': 'buttons', 'value': 0})
-        else:
-            keys(n, False)
+        keys(n, False)
     time.sleep(3)
     deadline = time.monotonic() + 20
-    expected = b'320 240' if kernel == 'legacy' else b'640 480'
+    expected = b'640 480'
     while True:
         n.command('stop')
         n.command('screendump', {'filename': str(screen)})
@@ -53,8 +46,8 @@ def wait_for_display(n, screen, retrogo, kernel, after_cold=False):
 
 
 @pytest.mark.parametrize('name', PROFILES)
-@pytest.mark.parametrize('kernel', ['legacy', 'gwemu'])
-def test_firmware_clock_and_post_boot_setting(tmp_path, name, kernel):
+def test_firmware_clock_and_post_boot_setting(tmp_path, name):
+    kernel = "gwemu"
     profile_path = ROOT / PROFILES[name]
     if not profile_path.exists():
         pytest.skip('local profile missing')
@@ -79,68 +72,43 @@ def test_firmware_clock_and_post_boot_setting(tmp_path, name, kernel):
                    'battery-life-min=0,charge-time-min=0', globals=globals)
         index = n.args.index('-accel')
         del n.args[index:index + 2]
-        if kernel == 'gwemu':
-            chip = {1: 'c2-25-34', 4: 'c2-25-36', 64: 'c2-25-3a'}[
-                sources['externalFlash'].stat().st_size // (1024 * 1024)]
-            index = n.args.index('gnw-h7b0-soc.extflash-chip=c2-25-34')
-            n.args[index] = 'gnw-h7b0-soc.extflash-chip=' + chip
-        else:
-            n.args[0] = str(ROOT / 'build/qemu-system-arm')
-            n.args[2] = (f'gnw-{profile["model"]},internal={n.internal},external={n.external},'
-                         'audio=off,realtime=off,battery=80,usb-power=on')
-            if 'bank2Flash' in sources:
-                n.args[2] += f',bank2={tmp_path / "bank2.bin"}'
-            if profile.get('deviceUid'):
-                n.args[2] += ',uid=' + profile['deviceUid']
-            if 'sdCard' in sources:
-                n.args[2] += ',sd-wiring=' + profile.get('sdWiring', 'spi1')
-            # Keep only transport/common args, removing gwemu device globals/audio.
-            args = n.args[:]
-            n.args = []
-            i = 0
-            while i < len(args):
-                if args[i] in ('-global', '-audiodev'):
-                    i += 2
-                else:
-                    n.args.append(args[i]); i += 1
+        chip = {1: 'c2-25-34', 4: 'c2-25-36', 64: 'c2-25-3a'}[
+            sources['externalFlash'].stat().st_size // (1024 * 1024)]
+        index = n.args.index('gnw-h7b0-soc.extflash-chip=c2-25-34')
+        n.args[index] = 'gnw-h7b0-soc.extflash-chip=' + chip
         n.args += ['-rtc', 'base=2026-01-01T09:00:00,clock=vm']
         if 'sdCard' in sources:
             n.args += ['-drive', f'if=sd,format=raw,file={tmp_path / "sdcard.img"}']
         with n:
             n.command('cont')
-            display = wait_for_display(n, evidence / 'boot.ppm', 'retrogo' in name and kernel == 'gwemu', kernel)
+            display = wait_for_display(n, evidence / 'boot.ppm', 'retrogo' in name, kernel)
             boot = calendar(n)
             assert boot[0] >> 16 == 9, f'{kernel}/{name} changed startup hour: {boot}'
             assert boot[1] == 0x268101
             set_calendar(n, 0x123456, 0x26C228)
             adjusted = calendar(n)
-            # Legacy qemu_timedate_diff truncates a fractional-second offset;
-            # its readback can be one second early. Gwemu anchor is exact.
-            assert adjusted[1] == 0x26C228
-            assert adjusted[0] in ((0x123455, 0x123456) if kernel == 'legacy'
-                                    else (0x123456,))
+            assert adjusted == (0x123456, 0x26C228)
             n.command('system_reset')
             n.command('query-status')
             warm = calendar(n)
             assert warm == adjusted
             cold_seed = cold_boot = None
-            if kernel == 'gwemu':
-                cold_cycle(n)
-                cold_seed = calendar(n)
-                assert cold_seed == (0x090000, 0x268101)
-                n.command('cont')
-                wait_for_display(n, evidence / 'cold.ppm', 'retrogo' in name,
-                                 kernel, after_cold=True)
-                cold_boot = calendar(n)
-                (evidence / 'cold-calendar.json').write_text(json.dumps({
-                    'seed': cold_seed, 'boot': cold_boot,
-                    'seedHex': [hex(v) for v in cold_seed],
-                    'bootHex': [hex(v) for v in cold_boot],
-                }, indent=2) + '\n')
-                # Patched OFW actively initializes 12:00 after TAMP loss.
-                # Accept its writes; sync-host's old suppression hid this.
-                assert cold_boot[0] >> 16 == (0x12 if 'retrogo' in name else 9)
-                assert cold_boot[1] == (0x21A101 if 'retrogo' in name else 0x268101)
+            cold_cycle(n)
+            cold_seed = calendar(n)
+            assert cold_seed == (0x090000, 0x268101)
+            n.command('cont')
+            wait_for_display(n, evidence / 'cold.ppm', 'retrogo' in name,
+                             kernel, after_cold=True)
+            cold_boot = calendar(n)
+            (evidence / 'cold-calendar.json').write_text(json.dumps({
+                'seed': cold_seed, 'boot': cold_boot,
+                'seedHex': [hex(v) for v in cold_seed],
+                'bootHex': [hex(v) for v in cold_boot],
+            }, indent=2) + '\n')
+            # Patched OFW actively initializes 12:00 after TAMP loss.
+            # Accept its writes; sync-host's old suppression hid this.
+            assert cold_boot[0] >> 16 == (0x12 if 'retrogo' in name else 9)
+            assert cold_boot[1] == (0x21A101 if 'retrogo' in name else 0x268101)
             (evidence / 'rtc.json').write_text(json.dumps({
                 'kernel': kernel, 'name': name, 'boot': boot,
                 'adjusted': adjusted, 'warm': warm, 'display': display,

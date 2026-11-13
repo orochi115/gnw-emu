@@ -1,3 +1,13 @@
+# 当前产品状态（2026-11-13）
+
+产品已统一为 gwemu，开发默认 `build/gwemu/qemu-system-arm`，源码固定 `a38484468d947ce6447fcc7dec47ebeef041f853`。`scripts/build.sh` 委托独立构建；目录包包含固定 native 与来源/重定位后 manifest。默认使用正常 UserData，无需 preview 内核或隔离目录参数；开发验收仍仅使用隔离临时目录。
+
+不导入已生成的 legacy UserData；新 session 首次复制 profile baseline，并在 `kernels/gwemu/sessions/<profileId>` 正常持久化。旧文件保留。gnwmanager 旧归档格式支持不受此决定影响。桌面当前会话管理验收见 [真实工作流](../research/2026-11-13-gwemu-session-manager.md)，现行用法见 [主 README](../../README.md)。旧比较工具退出当前构建，其复现必须使用 [历史快照](../research/2026-11-13-gwemu-migration-history.md)。
+
+下面保留迁移期间的构建、preview 和同镜像实验记录；其中 legacy 默认、实验限制及历史产物路径仅描述当时状态，不是当前运行指令。实机/实体手柄豁免，Windows/Linux 包未在本机验收。
+
+---
+
 # gwemu 迁移实验
 
 当前提供阶段一的隔离桌面开发预览，桌面默认仍使用旧 QEMU。gwemu 已接入持续帧、输入、静音、UID、电量/USB 控制和正常退出持久化。电池连接状态、断电 session、暂停/继续/冷启动，以及 host/fixed RTC、固件校时及暖复位保留已验收。完整即时存档已通过原生、桌面与 Electron 验收。RAM 管理固件的实际 Flash、HASH、恢复启动及两种 SD 接线已通过规格和质量审查；桌面现在使用包含 SPI 接收队列修复的干净产物，关闭记录见 [RAM 管理固件报告](../research/2026-11-12-gwemu-manager-ram.md)。完整工具链尚未验收。

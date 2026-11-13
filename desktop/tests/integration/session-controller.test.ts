@@ -1,4 +1,4 @@
-import { test, expect } from "vitest";
+import { test, expect, vi } from "vitest";
 import { mkdtemp, rm, readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
@@ -6,6 +6,10 @@ import { SessionController } from "../../src/core/session-controller";
 import { createDisplayReceiver } from "../../src/display/receiver";
 import { createProfile } from "../../src/core/profile-store";
 import { createLogManager } from "../../src/observability/logger";
+import {
+  KernelBackend,
+  captureKernelIdentity,
+} from "../../src/core/kernel-backend";
 import { Writable } from "node:stream";
 test("real QEMU lifecycle preserves running session on invalid ROM then saves on exit", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-lifecycle-"));
@@ -25,7 +29,10 @@ test("real QEMU lifecycle preserves running session on invalid ROM then saves on
   });
   const controller = new SessionController({
     userData: join(root, "UserData"),
-    qemu: resolve("../build/qemu-system-arm"),
+    qemu: resolve(
+      process.env.GWEMU_DESKTOP_BINARY ??
+        "../build/gwemu/qemu-system-arm",
+    ),
     logger: logs.child("session"),
     createDisplay: () => createDisplayReceiver(() => {}),
   });
@@ -46,7 +53,15 @@ test("real QEMU lifecycle preserves running session on invalid ROM then saves on
     expect(controller.state.status).toBe("idle");
     const saved = JSON.parse(
       await readFile(
-        join(root, "UserData", "sessions", profile.id, "session.json"),
+        join(
+          root,
+          "UserData",
+          "kernels",
+          "gwemu",
+          "sessions",
+          profile.id,
+          "session.json",
+        ),
         "utf8",
       ),
     );
@@ -57,7 +72,7 @@ test("real QEMU lifecycle preserves running session on invalid ROM then saves on
   }
 }, 20000);
 
-test("startup endpoint failure releases lease and missing exit snapshot is never reported saved", async () => {
+test("startup endpoint failure releases lease and missing power snapshot is never reported saved", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-faults-"));
   const firmware = resolve("../../firmware");
   const userData = join(root, "UserData");
@@ -76,7 +91,10 @@ test("startup endpoint failure releases lease and missing exit snapshot is never
   }).child("session");
   const failed = new SessionController({
     userData,
-    qemu: resolve("../build/qemu-system-arm"),
+    qemu: resolve(
+      process.env.GWEMU_DESKTOP_BINARY ??
+        "../build/gwemu/qemu-system-arm",
+    ),
     logger,
     createDisplay: async () => {
       throw new Error("endpoint unavailable");
@@ -84,7 +102,10 @@ test("startup endpoint failure releases lease and missing exit snapshot is never
   });
   const working = new SessionController({
     userData,
-    qemu: resolve("../build/qemu-system-arm"),
+    qemu: resolve(
+      process.env.GWEMU_DESKTOP_BINARY ??
+        "../build/gwemu/qemu-system-arm",
+    ),
     logger,
     createDisplay: () => createDisplayReceiver(() => {}),
   });
@@ -96,20 +117,14 @@ test("startup endpoint failure releases lease and missing exit snapshot is never
     const startup = working.load(profile.path);
     await expect(working.load(profile.path)).rejects.toThrow("busy");
     await startup;
-    await rm(
-      join(
-        userData,
-        "sessions",
-        profile.id,
-        "runs",
-        working.state.runtimeSessionId!,
-      ),
-      { recursive: true },
+    vi.spyOn(KernelBackend.prototype, "snapshotPower").mockRejectedValueOnce(
+      new Error("power snapshot unavailable"),
     );
     await expect(working.stop()).rejects.toThrow();
     expect(working.state.saveUncertain).toBe(true);
     expect(working.state.status).toBe("error");
   } finally {
+    vi.restoreAllMocks();
     await working.stop().catch(() => {});
     await rm(root, { recursive: true, force: true });
   }
@@ -125,7 +140,10 @@ test("state slots survive restart, corrupt loads roll back and stop waits for sa
   });
   const controller = new SessionController({
     userData: join(root, "data"),
-    qemu: resolve("../build/qemu-system-arm"),
+    qemu: resolve(
+      process.env.GWEMU_DESKTOP_BINARY ??
+        "../build/gwemu/qemu-system-arm",
+    ),
     logger: createLogManager({
       appInstanceId: "states",
       destination: new Writable({
@@ -142,9 +160,23 @@ test("state slots survive restart, corrupt loads roll back and stop waits for sa
     await controller.load(profile.path);
     await controller.instantState("save");
     expect(messages.at(-1).code).toBe("state.saved");
-    const directory = join(root, "data", "sessions", profile.id);
+    const directory = join(
+      root,
+      "data",
+      "kernels",
+      "gwemu",
+      "sessions",
+      profile.id,
+    );
     const { loadSlot } = await import("../../src/core/savestate-store");
-    const path = await loadSlot(directory, 0);
+    const identity = await captureKernelIdentity(
+      "gwemu",
+      resolve(
+        process.env.GWEMU_DESKTOP_BINARY ??
+          "../build/gwemu/qemu-system-arm",
+      ),
+    );
+    const path = await loadSlot(directory, 0, identity);
     expect((await readFile(path)).length).toBeGreaterThan(4 * 1024 * 1024);
     controller.selectStateSlot(1);
     await controller.instantState("load");
@@ -169,7 +201,7 @@ test("state slots survive restart, corrupt loads roll back and stop waits for sa
     await controller.stop();
     await saving;
     expect(controller.state.status).toBe("idle");
-    expect(await loadSlot(directory, 2)).toBeTruthy();
+    expect(await loadSlot(directory, 2, identity)).toBeTruthy();
   } finally {
     await controller.stop().catch(() => {});
     await rm(root, { recursive: true, force: true });

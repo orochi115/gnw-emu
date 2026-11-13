@@ -1,7 +1,7 @@
 """gnwmanager subprocess supervision and opt-in actual RAM firmware probes.
 
 Build: GNWMANAGER_PYTHON=python3.13 scripts/build_gnwmanager_acceptance.sh
-Run: GWEMU_MANAGER_TEST=1 GWEMU_BINARY=build/gwemu-manager-ram/qemu-system-arm \
+Run: GWEMU_MANAGER_TEST=1 GWEMU_BINARY=build/gwemu/qemu-system-arm \
      build/gnwmanager-python/bin/python -m pytest -q tests/test_gwemu_manager.py
 Synthetic probes fail (rather than skip) when an opted-in prerequisite is absent.
 """

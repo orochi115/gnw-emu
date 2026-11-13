@@ -387,7 +387,7 @@ async function main() {
     logFor: (module) => logger.child(module),
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
   });
-  if (paths.kernel === "gwemu") {
+  {
     if (process.platform === "win32") {
       logger
         .child("session")
@@ -814,7 +814,7 @@ function stateMenuActions() {
 }
 function deviceMenuActions() {
   return {
-    deviceSupported: paths.kernel === "gwemu",
+    deviceSupported: true,
     deviceState: controller.state,
     canDevice:
       !shuttingDown &&

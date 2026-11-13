@@ -23,19 +23,16 @@ async function root() {
   roots.push(p);
   return p;
 }
-test("same numbered legacy and gwemu slots remain independent", async () => {
+test("new slots require a gwemu build identity", async () => {
   const d = await root();
-  await saveSlot(d, 0, (p) => writeFile(p, "legacy"));
+  await expect(
+    saveSlot(d, 0, (p) => writeFile(p, "invalid"), { kernel: "legacy" } as any),
+  ).rejects.toThrow("Invalid state identity");
   await saveSlot(d, 0, (p) => writeFile(p, "gwemu"), current);
-  expect(await readFile(await loadSlot(d, 0), "utf8")).toBe("legacy");
   expect(await readFile(await loadSlot(d, 0, current), "utf8")).toBe("gwemu");
-  const manifest = JSON.parse(
-    await readFile(join(d, "states-gwemu/slot-0.json"), "utf8"),
-  );
-  expect(manifest).toMatchObject({ version: 2, ...current });
   expect(
-    JSON.parse(await readFile(join(d, "states/slot-0.json"), "utf8")).version,
-  ).toBe(1);
+    JSON.parse(await readFile(join(d, "states-gwemu/slot-0.json"), "utf8")),
+  ).toMatchObject({ version: 2, ...current });
 });
 test("old build remains visible, rejects load, and can be explicitly overwritten", async () => {
   const d = await root();
@@ -75,12 +72,8 @@ test("wrong kernel cannot be loaded or treated as a valid timestamp", async () =
   });
   expect((await stateSlotTimes(d, current))[1]).toBeNull();
 });
-test("gwemu never falls back to legacy and recovery is retained only in its namespace", async () => {
+test("failed recovery is retained in the gwemu namespace", async () => {
   const d = await root();
-  await saveSlot(d, 2, (p) => writeFile(p, "legacy"));
-  await expect(loadSlot(d, 2, current)).rejects.toMatchObject({
-    code: "state.empty",
-  });
   let recovery = "";
   await expect(
     restoreWithRollback(
@@ -98,9 +91,6 @@ test("gwemu never falls back to legacy and recovery is retained only in its name
   ).rejects.toThrow("recover");
   expect(dirname(recovery)).toBe(join(d, "states-gwemu"));
   expect(await readFile(recovery, "utf8")).toBe("recover");
-  expect(
-    (await readdir(join(d, "states"))).some((p) => p.startsWith("rollback-")),
-  ).toBe(false);
 });
 test("successful recovery clears only its temporary rollback file", async () => {
   const d = await root();

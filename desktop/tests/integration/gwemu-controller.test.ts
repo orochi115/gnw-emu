@@ -14,7 +14,8 @@ import { createDisplayReceiver } from "../../src/display/receiver";
 import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
-  process.env.GWEMU_DESKTOP_BINARY ?? "../build/gwemu-manager-ram/qemu-system-arm",
+  process.env.GWEMU_DESKTOP_BINARY ??
+    "../build/gwemu/qemu-system-arm",
 );
 test.skipIf(!existsSync(binary))(
   "gwemu controller isolates data, preserves active ROM on unsupported input and stops cleanly",
@@ -74,7 +75,6 @@ test.skipIf(!existsSync(binary))(
       deviceUid: "310047000b51333138343134",
     });
     const controller = new SessionController({
-      kernel: "gwemu",
       qemu: binary,
       userData: join(root, "data"),
       logger: createLogManager({

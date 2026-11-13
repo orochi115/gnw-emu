@@ -9,7 +9,7 @@ import os
 
 import pytest
 
-from harness.gnw import ROOT
+from harness.assets import ROOT
 
 GWEMU = Path(os.environ.get('GWEMU_BINARY', ROOT / 'build' / 'gwemu' / 'qemu-system-arm')).resolve()
 BASELINE_SIZE = 0x30c3a8 + 1300

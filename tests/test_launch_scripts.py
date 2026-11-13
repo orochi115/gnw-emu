@@ -17,7 +17,7 @@ def launch_tree(tmp_path):
     repo = workspace / 'emulator app'
     assets = workspace / 'prepared assets'
     dump = workspace / 'dump firmware'
-    for directory in (repo / 'scripts', repo / 'profiles', repo / 'desktop/dist-cli', repo / 'desktop/out/main', repo / 'build', assets, dump):
+    for directory in (repo / 'scripts', repo / 'profiles', repo / 'desktop/dist-cli', repo / 'desktop/out/main', repo / 'build/gwemu', assets, dump):
         directory.mkdir(parents=True, exist_ok=True)
     for script in ROOT.joinpath('scripts').glob('*.sh'):
         shutil.copy2(script, repo / 'scripts' / script.name)
@@ -25,8 +25,8 @@ def launch_tree(tmp_path):
     (repo / 'desktop/node_modules').symlink_to(ROOT / 'desktop/node_modules', target_is_directory=True)
     (repo / 'desktop/package.json').write_text('{"type":"module"}')
     (repo / 'desktop/out/main/index.js').write_text('// already built')
-    (repo / 'build/qemu-system-arm').write_text('#!/bin/sh\nexit 0\n')
-    (repo / 'build/qemu-system-arm').chmod(0o755)
+    (repo / 'build/gwemu/qemu-system-arm').write_text('#!/bin/sh\nexit 0\n')
+    (repo / 'build/gwemu/qemu-system-arm').chmod(0o755)
     for name in ('bank1.bin', 'bank2.bin', 'ext.bin'):
         (dump / name).write_bytes(bytes(256 * 1024 if name=='bank1.bin' else 1024))
     firmware = workspace / 'firmware'
@@ -67,6 +67,8 @@ def test_one_command_launch_preserves_flags_and_source_images(launch_tree, tmp_p
     assert launched[3:] == flags
     profile = json.loads(pathlib.Path(launched[2]).read_text())
     assert profile['formatVersion']==1
+    if script != 'run.sh':
+        assert str(tmp_path / 'isolated saves' / 'kernels/gwemu/sessions' / profile['id']) in result.stdout
     assert 'deviceUid' not in profile
     if script.startswith('run_sd'):
         assert profile['sdWiring']=='spi1'
@@ -80,7 +82,7 @@ def test_dump_reuses_identity_and_fresh_preserves_previous_session(launch_tree, 
     first=subprocess.run(command,env=env,capture_output=True,text=True)
     assert first.returncode==0,first.stdout+first.stderr
     profile=pathlib.Path(json.loads(capture.read_text())[2]); old=json.loads(profile.read_text())['id']
-    save=repo/'UserData/sessions'/old/'sentinel';save.parent.mkdir(parents=True);save.write_text('keep')
+    save=repo/'UserData/kernels/gwemu/sessions'/old/'sentinel';save.parent.mkdir(parents=True);save.write_text('keep')
     assert subprocess.run(command,env=env,capture_output=True).returncode==0
     assert json.loads(profile.read_text())['id']==old
     assert subprocess.run(command,env={**env,'FRESH':'1'},capture_output=True).returncode==0
@@ -95,3 +97,22 @@ def test_fresh_sd_never_rebuilds_an_explicit_source_card(launch_tree, script, ca
     result = subprocess.run([str(repo/'scripts'/script),'--automation'], env={**env,'FRESH':'1','SDCARD':str(source)},capture_output=True,text=True)
     assert result.returncode == 0, result.stdout+result.stderr
     assert source.read_bytes() == before
+
+
+def test_build_entrypoint_selects_gwemu_and_preserves_legacy_build(tmp_path):
+    repo = tmp_path / "repo with spaces"
+    (repo / "scripts").mkdir(parents=True)
+    (repo / "build").mkdir()
+    legacy = repo / "build/qemu-system-arm"
+    legacy.write_bytes(b"historical legacy build")
+    shutil.copy2(ROOT / "scripts/build.sh", repo / "scripts/build.sh")
+    capture = repo / "selected-build"
+    driver = repo / "scripts/build_gwemu.sh"
+    driver.write_text('#!/bin/sh\nprintf "%s" "$GWEMU_BUILD_DIR" > "$CAPTURE"\n')
+    canonical = repo / "build/gwemu"
+    result = subprocess.run([str(repo / "scripts/build.sh")], env={**os.environ,
+        "GWEMU_BUILD_DIR": str(canonical), "CAPTURE": str(capture)},
+        text=True, capture_output=True, timeout=10)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert capture.read_text() == str(canonical)
+    assert legacy.read_bytes() == b"historical legacy build"

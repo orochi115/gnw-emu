@@ -110,7 +110,7 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
           };
         }),
       )
-      .toEqual({ width: 320, height: 240 });
+      .toEqual({ width: 640, height: 480 });
     expect(
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].isAlwaysOnTop(),
@@ -129,7 +129,7 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
           return Math.round(r.width * devicePixelRatio);
         }),
       )
-      .toBe(160);
+      .toBe(320);
     await expect
       .poll(() => page.evaluate(() => window.desktop.windowState()))
       .toMatchObject({ clockScale: 0.5, preferredClockMode: true });
@@ -169,6 +169,8 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
     expect(
       saved.controls.bindings.find((b: any) => b.id === binding.id).inputs,
     ).toEqual([{ kind: "keyboard", code: "KeyK" }]);
+    await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+    await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
     await page.keyboard.down("k");
     await expect
       .poll(() => page.evaluate(() => window.desktop.inputState()))
@@ -179,6 +181,186 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
       .toMatchObject({ desiredMask: 0, appliedMask: 0 });
   } finally {
     await app.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("default package starts idle, exposes manager, and persists USB-only supply with staged state identity", async () => {
+  test.skip(
+    process.env.GNW_PACKAGE_TEST !== "1",
+    "Explicit native directory package smoke test",
+  );
+  test.setTimeout(90000);
+  const root = await mkdtemp(join(tmpdir(), "gnw-package-session-"));
+  const id = randomUUID();
+  const profile = join(root, "mario.gnw.json");
+  await writeFile(
+    profile,
+    JSON.stringify({
+      formatVersion: 1,
+      id,
+      model: "mario",
+      internalFlash: resolve("../../firmware/internal_flash_backup_mario.bin"),
+      externalFlash: resolve("../../firmware/flash_backup_mario.bin"),
+    }),
+  );
+  const binary =
+    process.env.GNW_PACKAGE_BINARY ??
+    resolve("release/mac-arm64/gnw-emu.app/Contents/MacOS/gnw-emu");
+  const resources = resolve(binary, "../../Resources/qemu");
+  const manifest = JSON.parse(
+    await readFile(join(resources, "gnw-package-manifest.json"), "utf8"),
+  );
+  const { createHash } = await import("node:crypto");
+  const hash = async (path: string) =>
+    createHash("sha256")
+      .update(await readFile(path))
+      .digest("hex");
+  expect(await hash(join(resources, "qemu-system-arm"))).toBe(
+    manifest.stagedSha256,
+  );
+  expect(await hash(join(resources, "gnw-build-manifest.json"))).toBe(
+    manifest.sourceManifestSha256,
+  );
+  for (const [name, sha] of Object.entries(manifest.libraries))
+    expect(await hash(join(resources, name)), name).toBe(sha);
+  let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
+  let endpoint: any;
+  const rpc = async (method: string, params: any = {}) => {
+    const reply: any = await (
+      await fetch(endpoint.url, {
+        method: "POST",
+        headers: { authorization: `Bearer ${endpoint.token}` },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: AbortSignal.timeout(5000),
+      })
+    ).json();
+    expect(reply.error, JSON.stringify(reply)).toBeUndefined();
+    return reply.result;
+  };
+  const menu = async (id: string) => {
+    if (id.startsWith("state.")) {
+      await app!.evaluate(({ Menu }, itemId) => {
+        const item = Menu.getApplicationMenu()!.getMenuItemById(itemId)!;
+        if (!item.enabled) throw new Error("State menu item disabled");
+        item.click();
+      }, id);
+      await expect.poll(async () => (await rpc("app.getState")).stateOperation).toBeUndefined();
+      return;
+    }
+    const result = await rpc("ui.menu", { id });
+    let operation: any;
+    await expect
+      .poll(
+        async () => {
+          operation = await rpc("automation.getOperation", {
+            operationId: result.operationId,
+          });
+          return operation.status;
+        },
+        { timeout: 20000 },
+      )
+      .not.toBe("pending");
+    expect(operation.error, JSON.stringify(operation)).toBeUndefined();
+  };
+  const start = async (withProfile: boolean) => {
+    app = await electron.launch({
+      executablePath: binary,
+      args: [
+        "--automation",
+        "--test-dialogs",
+        `--user-data-dir=${root}`,
+        ...(withProfile ? [profile] : []),
+      ],
+      env: Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key, value]) => key !== "GNW_KERNEL" && value !== undefined,
+        ),
+      ) as Record<string, string>,
+    });
+    await app.firstWindow();
+    await expect
+      .poll(async () => {
+        try {
+          endpoint = JSON.parse(
+            await readFile(join(root, "automation.json"), "utf8"),
+          );
+          return true;
+        } catch {
+          return false;
+        }
+      })
+      .toBe(true);
+  };
+  try {
+    await start(false);
+    expect((await rpc("app.getState")).status).toBe("idle");
+    expect((await rpc("app.getDiagnostics")).qemuPid).toBeUndefined();
+    await rpc("automation.queueDialogResponse", {
+      kind: "open",
+      path: profile,
+    });
+    await menu("file.open");
+    await expect
+      .poll(async () => (await rpc("app.getState")).status)
+      .toBe("running");
+    const initialId = (await rpc("app.getState")).runtimeSessionId;
+    const python = resolve("../build/gnwmanager-python/bin/python");
+    const { promisify } = await import("node:util");
+    const { execFile } = await import("node:child_process");
+    const result = await promisify(execFile)(
+      python,
+      ["-m", "gnwmanager", "--session", initialId, "info"],
+      {
+        cwd: resolve("../externals/gnwmanager"),
+        timeout: 30000,
+      },
+    );
+    expect(result.stdout).toMatch(/Detected Stock Firmware:\s+MARIO/);
+    await menu("device.usb");
+    await menu("device.batteryPresent");
+    await expect
+      .poll(async () => (await rpc("app.getState")).devicePower)
+      .toMatchObject({
+        powered: true,
+        usbPower: true,
+        batteryPresent: false,
+      });
+    await menu("state.save");
+    const session = join(root, "kernels/gwemu/sessions", id);
+    let slot: any;
+    await expect.poll(async () => {
+      try { slot = JSON.parse(await readFile(join(session, "states-gwemu/slot-0.json"), "utf8")); return true; }
+      catch { return false; }
+    }).toBe(true);
+    expect(slot).toMatchObject({
+      kernel: "gwemu",
+      version: 2,
+      buildSha256: manifest.stagedSha256,
+    });
+    await app!.close();
+    app = undefined;
+    expect(
+      JSON.parse(await readFile(join(session, "session.json"), "utf8")),
+    ).toMatchObject({
+      usbPower: true,
+      batteryPresent: false,
+    });
+    await start(true);
+    await expect
+      .poll(async () => (await rpc("app.getState")).status)
+      .toBe("running");
+    const reopened = await rpc("app.getState");
+    expect(reopened.runtimeSessionId).not.toBe(initialId);
+    expect(reopened.devicePower).toMatchObject({
+      powered: true,
+      usbPower: true,
+      batteryPresent: false,
+    });
+    await menu("state.load");
+    expect((await rpc("app.getState")).saveUncertain).not.toBe(true);
+  } finally {
+    if (app) await app.close();
     await rm(root, { recursive: true, force: true });
   }
 });

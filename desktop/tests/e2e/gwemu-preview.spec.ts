@@ -8,7 +8,7 @@ import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
   !existsSync(
-    resolve("../build/gwemu-session-manager-release/qemu-system-arm"),
+    resolve("../build/gwemu/qemu-system-arm"),
   ),
   "Build the fixed gwemu desktop kernel first",
 );

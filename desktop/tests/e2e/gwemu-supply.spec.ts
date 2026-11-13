@@ -1,16 +1,14 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
 import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
-  !existsSync(
-    resolve("../build/gwemu-session-manager-release/qemu-system-arm"),
-  ),
-  "Build gwemu-session-manager-release first",
+  !existsSync(resolve("../build/gwemu/qemu-system-arm")),
+  "Build canonical gwemu first",
 );
 test("desktop supply loss, off reopen, explicit resume and cold startup", async () => {
   test.setTimeout(120000);
@@ -29,6 +27,8 @@ test("desktop supply loss, off reopen, explicit resume and cold startup", async 
     deviceUid: "310047000b51333138343134",
   });
   let app: Awaited<ReturnType<typeof electron.launch>> | undefined;
+  const debugEvents: any[] = [];
+  let debugState: (() => Promise<any>) | undefined;
   const launch = async () => {
     app = await electron.launch({
       args: [
@@ -67,6 +67,15 @@ test("desktop supply loss, off reopen, explicit resume and cold startup", async 
       return result.result;
     };
     const action = async (method: string, params: any) => {
+      const mainWindow = await app!.browserWindow(page);
+      await app!.evaluate(({ app }) => app.focus({ steal: true }));
+      await mainWindow.evaluate((w) => w.focus());
+      await expect
+        .poll(() => page.evaluate(() => document.hasFocus()))
+        .toBe(true);
+      await expect
+        .poll(() => mainWindow.evaluate((w) => w.isFocused()))
+        .toBe(true);
       const started = await rpc(method, params);
       let result: any;
       await expect
@@ -88,7 +97,24 @@ test("desktop supply loss, off reopen, explicit resume and cold startup", async 
       value: "running",
       timeoutMs: 15000,
     });
-    const menu = (id: string) => action("ui.menu", { id });
+    debugState = async () => ({
+      state: await rpc("app.getState"),
+      diagnostics: await rpc("app.getDiagnostics"),
+      ui: await rpc("ui.inspect"),
+    });
+    const menu = async (id: string) => {
+      if (id === "device.pause")
+        debugEvents.push({
+          event: "before-pause",
+          snapshot: await debugState!(),
+        });
+      await action("ui.menu", { id });
+      if (id === "device.pause")
+        debugEvents.push({
+          event: "after-pause",
+          snapshot: await debugState!(),
+        });
+    };
     const execution = (value: string) =>
       expect
         .poll(async () => (await rpc("app.getState")).execution)
@@ -211,6 +237,20 @@ test("desktop supply loss, off reopen, explicit resume and cold startup", async 
       usbPower: true,
     });
     expect(existsSync(join(root, "sessions"))).toBe(false);
+  } catch (error) {
+    await writeFile(
+      resolve("../out/gwemu-completion/supply-debug.json"),
+      JSON.stringify(
+        {
+          error: String(error),
+          events: debugEvents,
+          snapshot: await debugState?.(),
+        },
+        null,
+        2,
+      ),
+    );
+    throw error;
   } finally {
     await app?.close();
     expect(await Promise.all([hash(internal), hash(external)])).toEqual(

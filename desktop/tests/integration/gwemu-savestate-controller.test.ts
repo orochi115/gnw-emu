@@ -17,7 +17,7 @@ import { defaultControls } from "../../src/shared/controls";
 
 const binary = resolve(
   process.env.GWEMU_DESKTOP_BINARY ??
-    "../build/gwemu-manager-ram/qemu-system-arm",
+    "../build/gwemu/qemu-system-arm",
 );
 async function fixture(qtest = false) {
   const root = await mkdtemp(join(tmpdir(), "gnw-state-controller-"));

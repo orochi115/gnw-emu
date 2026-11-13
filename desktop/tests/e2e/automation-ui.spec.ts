@@ -101,8 +101,8 @@ test("RPC operates real form, saves, loads pixels, preserves game on invalid ROM
     ).toEqual([target]);
     await rpc("ui.waitFor", { condition: "ui.lastPresented", value: "2" });
     const diagnostics = await rpc("app.getDiagnostics");
-    expect(diagnostics.width).toBe(320);
-    expect(diagnostics.height).toBe(240);
+    expect(diagnostics.width).toBe(640);
+    expect(diagnostics.height).toBe(480);
     expect(Number(diagnostics.frames)).toBeGreaterThan(0);
     await expect
       .poll(

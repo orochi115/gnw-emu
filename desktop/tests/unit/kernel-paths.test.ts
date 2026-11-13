@@ -1,79 +1,51 @@
 import { expect, test } from "vitest";
-import {
-  mkdtempSync,
-  mkdirSync,
-  rmSync,
-  symlinkSync,
-  existsSync,
-} from "node:fs";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { applicationPaths } from "../../src/core/paths";
-
-test("gwemu requires an explicit isolated development directory and its own binary", () => {
-  const root = mkdtempSync(join(tmpdir(), "gnw-kernel-paths-"));
-  const base = {
-    packaged: false,
-    resources: join(root, "resources"),
-    project: root,
-    osUserData: join(root, "os"),
+const base = {
+  packaged: false,
+  resources: "/app/resources",
+  project: "/app/project",
+  osUserData: "/app/os",
+};
+test("development defaults to gwemu and normal product data", () => {
+  expect(applicationPaths(base)).toEqual({
     kernel: "gwemu",
-  };
-  try {
-    expect(() => applicationPaths(base)).toThrow(/isolated/i);
-    expect(() =>
-      applicationPaths({ ...base, override: join(root, "UserData", "child") }),
-    ).toThrow(/isolated/i);
-    expect(() =>
-      applicationPaths({
-        ...base,
-        override: join(root, "UserData", "..preview"),
-      }),
-    ).toThrow(/isolated/i);
-    expect(() =>
-      applicationPaths({
-        ...base,
-        packaged: true,
-        override: join(root, "preview"),
-      }),
-    ).toThrow(/development/i);
-    expect(() =>
-      applicationPaths({
-        ...base,
-        kernel: "unknown",
-        override: join(root, "preview"),
-      }),
-    ).toThrow(/kernel/i);
-    const paths = applicationPaths({
-      ...base,
-      override: join(root, "preview"),
-    });
-    expect(paths.kernel).toBe("gwemu");
-    expect(paths.qemu).toBe(
-      join(root, "build", "gwemu-session-manager-release", "qemu-system-arm"),
-    );
-    expect(existsSync(paths.userData)).toBe(false);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+    userData: join(base.project, "UserData"),
+    qemu: join(
+      base.project,
+      "build",
+      "gwemu",
+      process.platform === "win32" ? "qemu-system-arm.exe" : "qemu-system-arm",
+    ),
+  });
 });
-
-test("an alias of protected data is refused even for a nonexistent descendant", () => {
-  const root = mkdtempSync(join(tmpdir(), "gnw-kernel-alias-"));
-  try {
-    mkdirSync(join(root, "UserData"));
-    symlinkSync(join(root, "UserData"), join(root, "alias"));
-    const options = {
-      packaged: false,
-      resources: root,
-      project: root,
-      osUserData: root,
+test("packaged gwemu uses staged native binary and OS product data", () => {
+  expect(
+    applicationPaths({ ...base, packaged: true, kernel: "gwemu" }),
+  ).toEqual({
+    kernel: "gwemu",
+    userData: join(base.osUserData, "UserData"),
+    qemu: join(
+      base.resources,
+      "qemu",
+      process.platform === "win32" ? "qemu-system-arm.exe" : "qemu-system-arm",
+    ),
+  });
+});
+test("explicit data overrides are accepted without preview isolation", () => {
+  expect(
+    applicationPaths({
+      ...base,
       kernel: "gwemu",
-      override: join(root, "alias", "new"),
-    };
-    expect(() => applicationPaths(options)).toThrow(/isolated/i);
-    expect(existsSync(join(root, "alias", "new"))).toBe(false);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
+      override: join(base.project, "UserData", "child"),
+    }).userData,
+  ).toBe(join(base.project, "UserData", "child"));
+});
+test("retired legacy and unknown selection fail clearly", () => {
+  expect(() => applicationPaths({ ...base, kernel: "legacy" })).toThrow(
+    /legacy.*retired/i,
+  );
+  expect(() => applicationPaths({ ...base, kernel: "unknown" })).toThrow(
+    /kernel/i,
+  );
 });

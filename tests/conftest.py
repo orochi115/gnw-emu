@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from harness.gnw import FIRMWARE, QEMU  # noqa: E402
+from harness.assets import FIRMWARE  # noqa: E402
 
 GOLDEN = Path(__file__).with_name("golden.json")
 
@@ -17,18 +17,6 @@ GOLDEN = Path(__file__).with_name("golden.json")
 def have_firmware(model):
     return (FIRMWARE / f"internal_flash_backup_{model}.bin").exists() and \
            (FIRMWARE / f"flash_backup_{model}.bin").exists()
-
-
-def pytest_collection_modifyitems(config, items):
-    if not QEMU.exists():
-        skip = pytest.mark.skip(reason="build/qemu-system-arm missing, run scripts/build.sh")
-        for item in items:
-            # Manager acceptance owns its independent gwemu prerequisite. An
-            # opted-in synthetic probe must fail if it is missing, even on a
-            # machine that has never built the legacy emulator.
-            if item.path.name.startswith("test_gwemu_manager"):
-                continue
-            item.add_marker(skip)
 
 
 @pytest.fixture

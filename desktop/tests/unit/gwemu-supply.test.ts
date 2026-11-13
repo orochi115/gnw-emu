@@ -7,7 +7,7 @@ import { prepareSession, saveSession } from "../../src/core/session-store";
 import { createProfile } from "../../src/core/profile-store";
 import { KernelBackend } from "../../src/core/kernel-backend";
 
-test("gwemu presence defaults for old metadata and roundtrips separately from legacy", async () => {
+test("new gwemu session defaults and presence persistence require actual power snapshot", async () => {
   const root = await mkdtemp(join(tmpdir(), "gnw-supply-schema-"));
   try {
     await writeFile(join(root, "internal.bin"), Buffer.alloc(128));
@@ -17,13 +17,7 @@ test("gwemu presence defaults for old metadata and roundtrips separately from le
       internalFlash: join(root, "internal.bin"),
       externalFlash: join(root, "external.bin"),
     });
-    const legacy = await prepareSession(profile, join(root, "legacy"));
-    await saveSession(legacy, { battery: 0, usbPower: false });
-    const legacyJson = JSON.parse(
-      await readFile(join(legacy.directory, "session.json"), "utf8"),
-    );
-    expect(legacyJson).not.toHaveProperty("batteryPresent");
-    const gwemu = await prepareSession(profile, join(root, "gwemu"), "gwemu");
+    const gwemu = await prepareSession(profile, join(root, "gwemu"));
     expect(gwemu.batteryPresent).toBe(true);
     await saveSession(
       gwemu,
@@ -41,14 +35,6 @@ test("gwemu presence defaults for old metadata and roundtrips separately from le
     expect(await readFile(join(gwemu.directory, "session.json"))).toEqual(
       saved,
     );
-    await writeFile(
-      join(gwemu.directory, "session.json"),
-      JSON.stringify(legacyJson),
-    );
-    expect(
-      (await prepareSession(profile, join(root, "gwemu"), "gwemu"))
-        .batteryPresent,
-    ).toBe(true);
   } finally {
     await rm(root, { recursive: true, force: true });
   }

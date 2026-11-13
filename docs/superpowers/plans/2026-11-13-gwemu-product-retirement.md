@@ -21,25 +21,25 @@
 ## Task 3：product默认与执行代码统一
 
 Files：`desktop/src/core/paths.ts,kernel-backend.ts,session-controller.ts,session-store.ts,gwemu-command.ts`；新共用`qemu-arguments.ts`只escape；main/菜单/settings/locales/CLI使用处与相关tests。
-- [ ] RED paths默认gwemu、packagedgwemu可用、UserData默认不再preview拒绝、legacyselection明确错误，`kernelEnvironment`继续过滤GNW/GWEMU环境；profile/model/SD/UID/source isolation保持。
-- [ ] KernelKind仅gwemu执行；preflight/arguments/backendbuttons/audio/device/stop没有legacy分支；新状态只生成 gwemu identity，保留现有的内核/build 不兼容校验，不新增旧目录查找。修正load初始化等旧branch，无效realtime菜单/设置操作退出，旧storedboolean仍可parse保存且无运行快进语义。
-- [ ] 删除维护中的qemu-command执行模块；gwemu escape移到无legacy依赖utility。现行tests从两kernel比较迁到solegwemu，旧纯legacy测试退出维护保留历史snapshot，不通过保留legacyRuntime代码让旧tests继续绿。
-- [ ] `npm run typecheck && npm run test`实际全面单元，integration使用明确canonicalnative且requiredzero-skips；规范/质量review后localcommit。
+- [x] RED paths默认gwemu、packagedgwemu可用、UserData默认不再preview拒绝、legacyselection明确错误，`kernelEnvironment`继续过滤GNW/GWEMU环境；profile/model/SD/UID/source isolation保持。
+- [x] KernelKind仅gwemu执行；preflight/arguments/backendbuttons/audio/device/stop没有legacy分支；新状态只生成 gwemu identity，保留现有的内核/build 不兼容校验，不新增旧目录查找。修正load初始化等旧branch，无效realtime菜单/设置操作退出，旧storedboolean仍可parse保存且无运行快进语义。
+- [x] 删除维护中的qemu-command执行模块；gwemu escape移到无legacy依赖utility。现行tests从两kernel比较迁到solegwemu，旧纯legacy测试退出维护保留历史snapshot，不通过保留legacyRuntime代码让旧tests继续绿。
+- [x] `npm run typecheck && npm run test`实际全面单元，integration使用明确canonicalnative且requiredzero-skips；规范/质量review后localcommit。
 
 ## Task 4：build/launchers/CLI/staging
 
 Files：`scripts/build.sh,build_gwemu.sh,launch_common.sh,run.sh,run_backup.sh,run_sd.sh`；`desktop/tools/cli.ts,stage-qemu.mjs,ui-cli.ts`、package/electronbuilderconfig；tests`test_launch_scripts.py`/desktoplaunchers/packaged。
-- [ ] RED默认build只canonicalgwemu不写旧build、session-dir打印gwemunamespace、cli probe使用defaultgwemu；launcher明确参数override与freshprofile兼容，旧backupDir作为用户历史asset位置保留而非执行依赖。
-- [ ] stage校验source cleanmanifest/revision/hash/capabilities；同一configure/toolchain/identity复制manifest到resources。relocation/sign之后产生stagingmanifest，包含sourceSHA/stagedSHA/libshashes；runtime identity取真正binaryhash。未验证自定义source拒绝，ROM/SD不打包。
-- [ ] 从build:cli删compare-kernels工具执行，历史工具移出维护index后保留本地file/ignore；linux/windows打包代码明确现有platformlimits，不宣称本机未测系统通过。
-- [ ] `npm run build && npm run package:dir`，目录包isolatedsmoke；先在sandbox运行，GUI权限实际失败再工具请求escalation。tests确认不覆盖原build/qemu-system-arm/16603仍活。review/localcommit。
+- [x] RED默认build只canonicalgwemu不写旧build、session-dir打印gwemunamespace、cli probe使用defaultgwemu；launcher明确参数override与freshprofile兼容，旧backupDir作为用户历史asset位置保留而非执行依赖。
+- [x] stage校验source cleanmanifest/revision/hash/capabilities；同一configure/toolchain/identity复制manifest到resources。relocation/sign之后产生stagingmanifest，包含sourceSHA/stagedSHA/libshashes；runtime identity取真正binaryhash。未验证自定义source拒绝，ROM/SD不打包。
+- [x] 从build:cli删compare-kernels工具执行，历史工具移出维护index后保留本地file/ignore；linux/windows打包代码明确现有platformlimits，不宣称本机未测系统通过。
+- [x] `npm run build && npm run package:dir`，目录包isolatedsmoke；先在sandbox运行，GUI权限实际失败再工具请求escalation。tests确认不覆盖原build/qemu-system-arm/16603仍活。review/localcommit。
 
 ## Task 5：solekernel完整软件冻结验收
 
-- [ ] 显式canonicalnative的供电/RTC/UID/input/frame/audio/CoreAudio/savestatefullrollback/SD两接线/manager完整commands+sessionlease+backup4actual回归。只重复受新native或product入口影响的验收，不任意扩充无关测试。实际OFW Mario/Zelda、flashRetroGo与SD两接线各copiedprofile。
-- [ ] 真实Electron default无需--kernel：无ROM0native、启动各profile显示/输入/mute/power、warm/coldreset、managerlist/acquire/CLI操作后回应用、slotidentity、换ROM/close/reopenpersist、ownedcleanup。验证新 session 从 baseline 创建和后续 gwemu 写入持久化，不扫描或导入旧 session。
-- [ ] 实际directorypackageisolatedsmoke验证相同能力与privateRPC，stagedbinaryhash/manifestmatches。不运行实际用户目录。软件gamepad按既有测试，physicalpad/hardware仅标waived。
-- [ ] 原十hash、旁managerclean、原16603活、native/managerclean来源与已授权remoteSHA验证；全要求表记录passed/waived/remaining和验证命令/数量/限制。按用户最新有限审查规则核对原要求后才 Task6，不要求重复全量 APPROVED。
+- [x] 显式canonicalnative的供电/RTC/UID/input/frame/audio/CoreAudio/savestatefullrollback/SD两接线/manager完整commands+sessionlease+backup4actual回归。只重复受新native或product入口影响的验收，不任意扩充无关测试。实际OFW Mario/Zelda、flashRetroGo与SD两接线各copiedprofile。
+- [x] 真实Electron default无需--kernel：无ROM0native、启动各profile显示/输入/mute/power、warm/coldreset、managerlist/acquire/CLI操作后回应用、slotidentity、换ROM/close/reopenpersist、ownedcleanup。验证新 session 从 baseline 创建和后续 gwemu 写入持久化，不扫描或导入旧 session。
+- [x] 实际directorypackageisolatedsmoke验证相同能力与privateRPC，stagedbinaryhash/manifestmatches。不运行实际用户目录。软件gamepad按既有测试，physicalpad/hardware仅标waived。
+- [x] 原十hash、旁managerclean、原16603活、native/managerclean来源与已授权remoteSHA验证；全要求表记录passed/waived/remaining和验证命令/数量/限制。按用户最新有限审查规则核对原要求后才 Task6，不要求重复全量 APPROVED。
 
 ## Task 6：最终历史tag与退役
 
@@ -51,3 +51,7 @@ Files：`.gitmodules,.gitignore,README.md`、新`docs/research/2026-11-13-gwemu-
 - [ ] read-only审核当前maintenancefiles查`externals/qemu,build/qemu-system-arm,qemu-gnw,gnw_full_backup.py,compare-kernels`无执行引用；允许historyreports和旧dataassetpath说明。新checkout按维护submodules实际build/tests不会依赖旧worktree。
 - [ ] 再相关build/unit/package/manager+backup最小freeze及10源hash/16603/ownedcleanup；两个forkGitHub archive后核archived=true；native/manager仍unarchived。任何archive失败留明确未完成项。
 - [ ] 父finallocalcommit保留gitlinks exactremoteSHA；不pushparent。原始spec逐条finalreport完整passed/waived，所有requiredwork无remaining后才`update_goal complete`。不得以本task接近预算或某批通过关闭全部goal。
+
+## Task 3–5 验收记录（2026-11-13）
+
+实际软件冻结已完成，详见 `docs/research/2026-11-13-gwemu-product-acceptance.md` 和 `out/gwemu-completion/product-final-source.json`。复用有效结果，只重跑原失败及直接回归；现存失败日志不删除。四 launcher、三原桌面失败用例、canonical manager-server 均直接通过；目录包旧比较 bundle 已排除并审核哈希。实机/实体手柄豁免，父提交只本地。Task 6 仍需最终历史 tag、维护依赖退休与远程 archive。

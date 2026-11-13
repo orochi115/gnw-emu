@@ -1,17 +1,36 @@
 /** Stage the native executable outside asar. macOS dependencies are relocatable;
  * Linux uses $ORIGIN/lib. Windows accepts its native build's DLL directory. */
-import { copyFile, mkdir, readdir, chmod, realpath } from "node:fs/promises";
+import {
+  copyFile,
+  mkdir,
+  readdir,
+  chmod,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { join, resolve, basename } from "node:path";
+import { join, resolve, basename, dirname } from "node:path";
+import { validateNativeSource, sha256 } from "./native-stage-manifest.mjs";
 const source = resolve(
   process.env.GNW_QEMU_BINARY ??
-    "../build/" +
+    "../build/gwemu/" +
       (process.platform === "win32"
         ? "qemu-system-arm.exe"
         : "qemu-system-arm"),
 );
-const directory = resolve("resources/qemu");
+const sourceManifestPath = resolve(
+  process.env.GWEMU_BUILD_MANIFEST ??
+    join(dirname(source), "gnw-build-manifest.json"),
+);
+const provenance = await validateNativeSource(source, sourceManifestPath);
+const expectedName =
+  process.platform === "win32" ? "qemu-system-arm.exe" : "qemu-system-arm";
+if (basename(source) !== expectedName)
+  throw new Error("Cannot stage gwemu: unexpected executable name");
+const directory = resolve(process.env.GNW_STAGE_DIR ?? "resources/qemu");
+await rm(directory, { recursive: true, force: true });
 await mkdir(join(directory, "lib"), { recursive: true });
 const output = join(directory, basename(source));
 await copyFile(source, output);
@@ -91,7 +110,38 @@ if (process.platform === "win32") {
     if (name.toLowerCase().endsWith(".dll"))
       await copyFile(join(dllDirectory, name), join(directory, name));
 } else await stage(output, true);
-// QEMU does not need firmware ROMs for GNW, and no user images are packaged.
+await copyFile(sourceManifestPath, join(directory, "gnw-build-manifest.json"));
+const libraries = {};
+for (const name of await readdir(join(directory, "lib")))
+  libraries[`lib/${name}`] = await sha256(join(directory, "lib", name));
+if (process.platform === "win32") {
+  for (const name of await readdir(directory))
+    if (name.toLowerCase().endsWith(".dll"))
+      libraries[name] = await sha256(join(directory, name));
+}
+await writeFile(
+  join(directory, "gnw-package-manifest.json"),
+  JSON.stringify(
+    {
+      formatVersion: 1,
+      kernel: "gwemu",
+      platform: process.platform,
+      architecture: process.arch,
+      revision: provenance.revision,
+      sourceSha256: provenance.sourceSha256,
+      sourceManifestSha256: provenance.sourceManifestSha256,
+      stagedSha256: await sha256(output),
+      executable: basename(output),
+      libraries,
+      configureArgs: provenance.sourceManifest.configureArgs,
+      tools: provenance.sourceManifest.tools,
+      capabilities: provenance.capabilities,
+    },
+    null,
+    2,
+  ) + "\n",
+);
+// The GNW machine needs no bundled firmware ROMs or user images.
 if (!existsSync(output)) throw new Error("Missing staged QEMU");
 process.stderr.write(
   `Staged ${basename(source)} and ${copied.size} libraries\n`,

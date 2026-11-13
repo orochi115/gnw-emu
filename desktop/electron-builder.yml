@@ -5,7 +5,8 @@ directories:
   output: release
 files:
   - out/**
-  - dist-cli/**
+  - dist-cli/cli.js
+  - dist-cli/ui-cli.js
   - package.json
 extraResources:
   - from: resources/qemu

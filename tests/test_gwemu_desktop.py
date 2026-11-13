@@ -13,7 +13,7 @@ import wave
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-GWEMU = Path(os.environ.get("GWEMU_BINARY", ROOT / "build/gwemu-fork/qemu-system-arm"))
+GWEMU = Path(os.environ.get("GWEMU_BINARY", ROOT / "build/gwemu/qemu-system-arm"))
 pytestmark = pytest.mark.skipif(not GWEMU.exists(), reason="build gwemu first")
 HEADER = struct.Struct("<4sHHIIQQIIIIIIQ")
 

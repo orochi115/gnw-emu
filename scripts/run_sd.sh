@@ -19,7 +19,7 @@
 #   FRESH=1 creates a new JSON identity; previous saves are retained.
 #
 # The script writes out/profiles/sd-<backup name>-<wiring>.gnw.json and runs it.
-# Saves live in UserData/sessions/<profile id>/. The SD card is copied
+# Saves live in UserData/kernels/gwemu/sessions/<profile id>/. The SD card is copied
 # there on first launch; the source image is left unchanged.
 #
 # Keys: arrows = D-pad, X = A, Z = B, G = GAME, T = TIME, P = PAUSE,

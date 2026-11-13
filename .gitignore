@@ -20,3 +20,12 @@ build/
 /.venv
 
 !/desktop/build/
+
+# Retired comparison tools: retain local history, exclude from maintained checkout.
+/desktop/tools/compare-kernels.ts
+/desktop/tools/kernel-comparison.ts
+/desktop/tests/integration/kernel-comparison.test.ts
+
+# Retired legacy execution: preserve historical local files.
+/desktop/src/core/qemu-command.ts
+/desktop/tests/unit/qemu-command.test.ts

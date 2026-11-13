@@ -24,7 +24,7 @@ import { createLogManager } from "../../src/observability/logger";
 
 const binary = resolve(
   process.env.GWEMU_DESKTOP_BINARY ??
-    "../build/gwemu-session-manager-release/qemu-system-arm",
+    "../build/gwemu/qemu-system-arm",
 );
 const complete = {
   success: true,

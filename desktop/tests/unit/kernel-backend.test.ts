@@ -177,17 +177,6 @@ test("host release invalidates an older in-flight input completion", async () =>
   expect(calls[2]).toEqual(calls[0]);
 });
 
-test("legacy does not send the unsupported native host-release command", async () => {
-  const calls: any[] = [];
-  const backend = new KernelBackend("legacy", {
-    command: async (...args: any[]) => {
-      calls.push(args);
-    },
-  } as any);
-  await expect(backend.releaseHostInput()).rejects.toThrow("requires gwemu");
-  expect(calls).toEqual([]);
-});
-
 test("power snapshot freezes guest time and rejects malformed readings", async () => {
   const calls: any[] = [];
   let battery: any = 42;
@@ -209,21 +198,6 @@ test("power snapshot freezes guest time and rejects malformed readings", async (
   await expect(backend.snapshotPower()).rejects.toThrow();
   battery = "42";
   await expect(backend.snapshotPower()).rejects.toThrow();
-});
-
-test("legacy input and mute keep their existing QOM contract", async () => {
-  const calls: any[] = [];
-  const backend = new KernelBackend("legacy", {
-    command: async (...args: any[]) => {
-      calls.push(args);
-    },
-  } as any);
-  await backend.buttons(123);
-  await backend.setMuted(true);
-  expect(calls).toEqual([
-    ["qom-set", { path: "/machine", property: "buttons", value: 123 }],
-    ["qom-set", { path: "/machine", property: "audio-muted", value: true }],
-  ]);
 });
 
 test("gwemu preflight rejects unsupported source capacity before invoking a binary", async () => {

@@ -14,9 +14,7 @@ import { join, resolve } from "node:path";
 import { createProfile } from "../../src/core/profile-store";
 import { loadSettings, updateSettings } from "../../src/core/settings-store";
 
-const binary = resolve(
-  "../build/gwemu-session-manager-release/qemu-system-arm",
-);
+const binary = resolve("../build/gwemu/qemu-system-arm");
 test.skip(!existsSync(binary), "Build the fixed gwemu desktop kernel first");
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const hash = async (p: string) =>
@@ -68,14 +66,10 @@ async function acceptance(
   const pids = new Set<number>();
   let app: ElectronApplication | undefined;
   let failurePage: Page | undefined;
+  let debugState: (() => Promise<any>) | undefined;
   try {
     const manifest = JSON.parse(
-      await readFile(
-        resolve(
-          "../build/gwemu-session-manager-release/gnw-build-manifest.json",
-        ),
-        "utf8",
-      ),
+      await readFile(resolve("../build/gwemu/gnw-build-manifest.json"), "utf8"),
     );
     expect(manifest.sourceDirty).toBe(false);
     evidence.binarySha256 = await hash(binary);
@@ -159,6 +153,11 @@ async function acceptance(
       expect(result.error, JSON.stringify(result)).toBeUndefined();
     };
     const state = () => rpc("app.getState");
+    debugState = async () => ({
+      state: await state(),
+      diagnostics: await rpc("app.getDiagnostics"),
+      ui: await rpc("ui.inspect"),
+    });
     const identify = async () => {
       const d = await rpc("app.getDiagnostics");
       expect(d.qemuPid).toBeGreaterThan(0);
@@ -185,6 +184,13 @@ async function acceptance(
       await expect
         .poll(() => mainWindow.evaluate((w) => w.isFocused()))
         .toBe(true);
+      await expect
+        .poll(() =>
+          page.evaluate(() =>
+            window.desktop.windowState().then((s) => s.focused),
+          ),
+        )
+        .toBe(true);
     };
     await focus();
     evidence.physicalGamepads = await page.evaluate(() =>
@@ -206,6 +212,7 @@ async function acceptance(
     const reads = () =>
       page.evaluate(() => (window as any).__padReads as number);
     const snapshot = async (pads: Pad[], consume = true) => {
+      if (consume) await focus();
       const before = await reads();
       await page.evaluate((pads) => {
         (window as any).__pads = pads;
@@ -255,6 +262,7 @@ async function acceptance(
     evidence.passed = true;
   } catch (error) {
     evidence.failure = String(error);
+    if (debugState) evidence.failureState = await debugState().catch(String);
     try {
       await failurePage?.screenshot({
         path: join(output, "failure.png"),

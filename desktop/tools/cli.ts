@@ -43,6 +43,8 @@ try {
       join(
         process.env.GNW_USER_DATA ??
           resolve(import.meta.dirname, "../../UserData"),
+        "kernels",
+        "gwemu",
         "sessions",
         profile.id,
       ) + "\n",
@@ -64,7 +66,7 @@ try {
     });
     const controller = new SessionController({
       userData: isolated,
-      qemu: resolve(import.meta.dirname, "../../build/qemu-system-arm"),
+      qemu: resolve(import.meta.dirname, "../../build/gwemu/qemu-system-arm"),
       logger: createLogManager({ appInstanceId: "probe" }).child("probe"),
       createDisplay: () => createDisplayReceiver(() => {}),
     });

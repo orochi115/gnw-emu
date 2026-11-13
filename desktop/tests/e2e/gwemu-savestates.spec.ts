@@ -7,9 +7,9 @@ import { createProfile } from "../../src/core/profile-store";
 
 test.skip(
   !existsSync(
-    resolve("../build/gwemu-session-manager-release/qemu-system-arm"),
+    resolve("../build/gwemu/qemu-system-arm"),
   ),
-  "Build gwemu-session-manager-release first",
+  "Build canonical gwemu first",
 );
 test("gwemu hotkeys and menu slots restore repeatedly, paused and off, and survive isolated relaunch", async ({}, testInfo) => {
   test.setTimeout(90000);

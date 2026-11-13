@@ -5,7 +5,6 @@ import { constants } from "node:fs";
 import {
   type Profile,
   type SessionState,
-  sessionSchema,
   gwemuSessionSchema,
   gwemuPowerSnapshotSchema,
 } from "./schemas";
@@ -21,11 +20,11 @@ export interface Session extends SessionState {
 export async function prepareSession(
   profile: Profile,
   userData: string,
-  kernel: "legacy" | "gwemu" = "legacy",
+  kernel: "gwemu" = "gwemu",
 ): Promise<Session> {
   const directory = join(userData, "sessions", profile.id);
   const file = join(directory, "session.json");
-  const schema = kernel === "gwemu" ? gwemuSessionSchema : sessionSchema;
+  const schema = gwemuSessionSchema;
   let state: SessionState & { batteryPresent?: boolean };
   try {
     state = schema.parse(await readJson(file));
@@ -66,7 +65,7 @@ export async function prepareSession(
 export async function saveSession(
   session: Session,
   snapshot: { battery: number; usbPower: boolean; batteryPresent?: boolean },
-  kernel: "legacy" | "gwemu" = "legacy",
+  kernel: "gwemu" = "gwemu",
 ) {
   const {
     formatVersion,
@@ -76,9 +75,8 @@ export async function saveSession(
     batteryLifeMinutes,
     chargeTimeMinutes,
   } = session;
-  const power =
-    kernel === "gwemu" ? gwemuPowerSnapshotSchema.parse(snapshot) : snapshot;
-  const schema = kernel === "gwemu" ? gwemuSessionSchema : sessionSchema;
+  const power = gwemuPowerSnapshotSchema.parse(snapshot);
+  const schema = gwemuSessionSchema;
   const state = schema.parse({
     formatVersion,
     rtc,

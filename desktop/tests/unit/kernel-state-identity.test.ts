@@ -35,9 +35,6 @@ test("runtime identity hashes actual executable and detects replacement before s
     expect(identity.buildSha256).toBe(
       createHash("sha256").update("first executable").digest("hex"),
     );
-    expect(
-      await (backend as any).captureKernelIdentity("legacy", "/does-not-exist"),
-    ).toEqual({ kernel: "legacy" });
   } finally {
     await rm(d, { recursive: true, force: true });
   }

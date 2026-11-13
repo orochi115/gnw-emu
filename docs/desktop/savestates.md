@@ -14,17 +14,17 @@ gwemu 读取后只在操作前正在运行、恢复点有供电且未开始关�
 
 ## 文件与失败恢复
 
-默认 legacy 存档位于 `UserData/sessions/<ROM UUID>/states/`。隔离 gwemu 开发入口使用 `UserData/kernels/gwemu/sessions/<ROM UUID>/states-gwemu/`，不会读取或改写 legacy 存档：
+当前默认 gwemu 存档位于 `UserData/kernels/gwemu/sessions/<ROM UUID>/states-gwemu/`。不导入已生成的 legacy UserData，也不扫描或改写旧 slots；旧文件保留原处：
 
 - `slot-0.json` 至 `slot-9.json`：引用当前槽位的版本文件夹，包含保存时间。
 - `<版本 UUID>/state.bin`：完整 QEMU VMState 流及 GNW 格式/机型/flash 尺寸头部。
 - `rollback-<UUID>.bin`：读档前临时恢复点；操作成功或回滚成功后删除。
 
-legacy 槽位 manifest 保持 v1；gwemu 使用 v2，包含内核标识和实际可执行文件的 SHA-256。同一 ROM 的旧构建槽位仍显示保存时间，但读取时拒绝不兼容构建。用户显式保存成功后才替换该 gwemu 槽位；两种内核的状态文件互不兼容。
+gwemu 槽位 manifest 使用 v2，包含内核标识和实际可执行文件的 SHA-256。同一 ROM 的旧构建槽位仍显示保存时间，但读取时拒绝不兼容构建。用户显式保存成功后才替换该 gwemu 槽位；旧 legacy 即时状态无法在 gwemu 中复用。
 
 保存先写一个新版本，完成并同步文件后原子更新槽位引用，然后清理旧版本。失败不会替换原槽位。读取失败会恢复读档前的运行状态及 flash；如果恢复点也无法读取，停止执行、禁用继续和设备修改，并保留恢复点供排查。无法读回设备状态也会进入持久的不确定状态。关闭仍清理进程、显示和 lease，并报告保存不确定，不提交成功元数据。重新加载 ROM 可重新启动模拟器。
 
-断电或强制结束进程可能留下未引用的版本目录。即时存档格式依赖当前 QEMU 与外设模型版本，暂不保证跨版本兼容；使用同一 session、同一构建读取。legacy RTC 沿用原有契约；gwemu 的 host RTC 先恢复保存时的日历和秒内相位，再按宿主时间推进，fixed RTC 随虚拟时间恢复。恢复保留校时暂存、shadow lock 和闹钟剩余间隔；未模拟真实 VBAT 能量来源。
+断电或强制结束进程可能留下未引用的版本目录。即时存档格式依赖当前 QEMU 与外设模型版本，暂不保证跨版本兼容；使用同一 session、同一构建读取。gwemu 的 host RTC 先恢复保存时的日历和秒内相位，再按宿主时间推进，fixed RTC 随虚拟时间恢复。恢复保留校时暂存、shadow lock 和闹钟剩余间隔；未模拟真实 VBAT 能量来源。
 
 ## 实现和验证
 
@@ -32,7 +32,7 @@ QMP `qom-set /machine save-state` / `load-state` 接收绝对文件路径，调�
 
 内部 flash 通过可迁移 RAMBlock 保存；外部 flash 保存原始数据，解密 XIP 视图在加载完成后重建并使旧翻译代码失效。外设定时器、FIFO、未完成的 flash 编程、HASH 输入和 JPEG 解析缓冲区均随状态保存。宿主音量、显示连接、文件路径不随存档回退；读档时清空音频输出队列、同步显示尺寸，并重置实时节奏计时器。
 
-legacy 已验证原厂 Mario/Zelda 同进程重复读档及重启后的恢复、64 MiB Retro-Go 恢复、flash 实际编程回退、未完成 OSPI 写入/HASH、画面尺寸切换、损坏文件回滚、SD 两种接线拒绝、超过容量拒绝，以及桌面真实菜单/快捷键/toast。gwemu 原生对应验收、桌面竞态补充审查、最终实现复审及七组 Electron 回归已通过，见 [gwemu 存档报告](../research/2026-11-12-gwemu-savestate.md)。未逐一验证所有移植游戏。
+以下 legacy 验收及测量属于迁移前历史；当前 gwemu 证据见链接报告。legacy 当时已验证原厂 Mario/Zelda 同进程重复读档及重启后的恢复、64 MiB Retro-Go 恢复、flash 实际编程回退、未完成 OSPI 写入/HASH、画面尺寸切换、损坏文件回滚、SD 两种接线拒绝、超过容量拒绝，以及桌面真实菜单/快捷键/toast。gwemu 原生对应验收、桌面竞态补充审查、最终实现复审及七组 Electron 回归已通过，见 [gwemu 存档报告](../research/2026-11-12-gwemu-savestate.md)。未逐一验证所有移植游戏。
 
 legacy 本机一次测量（Apple Silicon，暂停中的 QEMU，原厂启动 1.5 秒；临时 session）：
 

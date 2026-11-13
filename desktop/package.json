@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build && npm run build:cli",
-    "build:cli": "esbuild tools/cli.ts tools/ui-cli.ts tools/compare-kernels.ts --bundle --platform=node --format=esm --outdir=dist-cli --packages=external",
+    "build:cli": "esbuild tools/cli.ts tools/ui-cli.ts --bundle --platform=node --format=esm --outdir=dist-cli --packages=external",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",

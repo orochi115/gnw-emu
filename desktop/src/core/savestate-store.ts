@@ -3,12 +3,11 @@ import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { writeJson } from "./atomic-file";
 import { UserError } from "../shared/user-error";
-export type StateIdentity =
-  | { readonly kernel: "legacy" }
-  | { readonly kernel: "gwemu"; readonly buildSha256: string };
-const legacy: StateIdentity = { kernel: "legacy" };
+export type StateIdentity = {
+  readonly kernel: "gwemu";
+  readonly buildSha256: string;
+};
 function namespace(identity: StateIdentity) {
-  if (identity.kernel === "legacy") return "states";
   if (
     identity.kernel !== "gwemu" ||
     !/^[a-f0-9]{64}$/.test(identity.buildSha256)
@@ -31,20 +30,18 @@ async function lookupSlot(
       await readFile(slotPath(directory, slot, identity), "utf8"),
     );
     if (
-      manifest.version !== (identity.kernel === "legacy" ? 1 : 2) ||
+      manifest.version !== 2 ||
       typeof manifest.id !== "string" ||
       !/^[0-9a-f-]{36}$/.test(manifest.id)
     )
       throw new Error("Invalid state manifest");
-    if (identity.kernel === "gwemu") {
-      if (manifest.kernel !== "gwemu")
-        throw new UserError("state.incompatible", { slot });
-      if (
-        typeof manifest.buildSha256 !== "string" ||
-        !/^[a-f0-9]{64}$/.test(manifest.buildSha256)
-      )
-        throw new Error("Invalid state manifest");
-    }
+    if (manifest.kernel !== "gwemu")
+      throw new UserError("state.incompatible", { slot });
+    if (
+      typeof manifest.buildSha256 !== "string" ||
+      !/^[a-f0-9]{64}$/.test(manifest.buildSha256)
+    )
+      throw new Error("Invalid state manifest");
     const path = join(directory, namespace(identity), manifest.id, "state.bin");
     if (!(await stat(path)).isFile()) throw new Error("Invalid state file");
     return { path, manifest };
@@ -57,13 +54,10 @@ async function lookupSlot(
 export async function loadSlot(
   directory: string,
   slot: number,
-  identity: StateIdentity = legacy,
+  identity: StateIdentity,
 ): Promise<string> {
   const { path, manifest } = await lookupSlot(directory, slot, identity);
-  if (
-    identity.kernel === "gwemu" &&
-    manifest.buildSha256 !== identity.buildSha256
-  )
+  if (manifest.buildSha256 !== identity.buildSha256)
     throw new UserError("state.incompatible", { slot });
   return path;
 }
@@ -71,7 +65,7 @@ export async function saveSlot(
   directory: string,
   slot: number,
   save: (path: string) => Promise<unknown>,
-  identity: StateIdentity = legacy,
+  identity: StateIdentity,
 ) {
   const manifest = slotPath(directory, slot, identity);
   const id = randomUUID();
@@ -94,8 +88,8 @@ export async function saveSlot(
       await file.close();
     }
     await writeJson(manifest, {
-      version: identity.kernel === "legacy" ? 1 : 2,
-      ...(identity.kernel === "gwemu" ? identity : {}),
+      version: 2,
+      ...identity,
       id,
       savedAt: new Date().toISOString(),
     });
@@ -122,7 +116,7 @@ export async function restoreWithRollback(
   path: string,
   save: (path: string) => Promise<unknown>,
   load: (path: string) => Promise<unknown>,
-  identity: StateIdentity = legacy,
+  identity: StateIdentity,
 ) {
   const rollback = join(
     directory,
@@ -151,7 +145,7 @@ export async function restoreWithRollback(
 
 export async function stateSlotTimes(
   directory: string,
-  identity: StateIdentity = legacy,
+  identity: StateIdentity,
 ): Promise<(string | null)[]> {
   return Promise.all(
     Array.from({ length: 10 }, async (_, slot) => {

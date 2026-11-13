@@ -20,23 +20,17 @@ def digest(path):
 
 
 def frozen_sources():
-    result = {}
-    for name in ("cli-source-v2.json", "client-source-v4.json"):
-        frozen = json.loads((OUT / name).read_text())
-        for relative, expected in frozen["files"].items():
-            path = ROOT / "externals/gnwmanager" / relative
-            assert digest(path) == expected, str(path)
-            result[str(path)] = expected
-    for relative, expected in json.loads((OUT / "failed-release-source.json").read_text())["files"].items():
-        path = ROOT / relative
-        assert digest(path) == expected, str(path)
-        result[str(path)] = expected
-    return result
+    # Snapshot current maintained production sources. Task3 legitimately changed
+    # the controller, so historical Task6 hashes are not the current acceptance.
+    paths = [*ROOT.joinpath("desktop/src").rglob("*.ts"),
+             *ROOT.joinpath("desktop/src").rglob("*.tsx"),
+             *ROOT.joinpath("externals/gnwmanager/gnwmanager").rglob("*.py")]
+    return {str(path): digest(path) for path in sorted(paths)}
 
 
 def test_real_electron_public_manager_workflows():
     before = frozen_sources()
-    report = OUT / "manager-workflow-playwright.json"
+    report = OUT / "product-final-manager-playwright.json"
     env = {**os.environ, "PLAYWRIGHT_JSON_OUTPUT_NAME": str(report)}
     # A fresh build must be made before invoking this bridge; it does not mutate
     # production source or build historical/native firmware artifacts itself.
@@ -45,7 +39,7 @@ def test_real_electron_public_manager_workflows():
         cwd=ROOT / "desktop", env=env, text=True, stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT, timeout=900,
     )
-    (OUT / "manager-workflow-final.log").write_text(result.stdout)
+    (OUT / "product-final-manager.log").write_text(result.stdout)
     assert frozen_sources() == before
     assert result.returncode == 0, result.stdout
     data = json.loads(report.read_text())
@@ -53,7 +47,7 @@ def test_real_electron_public_manager_workflows():
     assert data["stats"]["unexpected"] == 0, data["stats"]
     assert data["stats"]["flaky"] == 0, data["stats"]
     assert data["stats"]["skipped"] == 0, data["stats"]
-    for path in (OUT / "manager-workflow").glob("*.json"):
+    for path in (OUT / "product-final-manager").glob("*.json"):
         evidence = json.loads(path.read_text())
         if "commands" not in evidence:
             continue

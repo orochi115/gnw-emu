@@ -8,7 +8,6 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import type { Profile } from "./schemas";
 import {
-  exitStateSchema,
   gwemuPowerSchema,
   gwemuPowerSnapshotSchema,
   type GwemuPowerSnapshot,
@@ -19,11 +18,9 @@ import {
 } from "./gwemu-capabilities";
 import type { AppState } from "../shared/contracts";
 import { saveSession, type Session } from "./session-store";
-import { readJson } from "./atomic-file";
 import { gwemuArguments, validateGwemuConfiguration } from "./gwemu-command";
-import { qemuArguments } from "./qemu-command";
 import { UserError } from "../shared/user-error";
-export type KernelKind = "legacy" | "gwemu";
+export type KernelKind = "gwemu";
 const keys = [
   "left",
   "up",
@@ -46,13 +43,9 @@ function keyEvent(bit: number, down: boolean) {
 }
 
 export function kernelEnvironment(kind: KernelKind) {
-  return kind === "legacy"
-    ? process.env
-    : Object.fromEntries(
-        Object.entries(process.env).filter(
-          ([key]) => !/^(GNW_|GWEMU_)/.test(key),
-        ),
-      );
+  return Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !/^(GNW_|GWEMU_)/.test(key)),
+  );
 }
 async function imageSizes(images: {
   internalFlash: string;
@@ -72,7 +65,6 @@ export async function captureKernelIdentity(
   kind: KernelKind,
   binary: string,
 ): Promise<StateIdentity> {
-  if (kind === "legacy") return { kernel: "legacy" };
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(binary)) hash.update(chunk);
   return { kernel: "gwemu", buildSha256: hash.digest("hex") };
@@ -81,7 +73,6 @@ export async function verifyKernelIdentity(
   binary: string,
   identity: StateIdentity,
 ) {
-  if (identity.kernel === "legacy") return;
   const actual = await captureKernelIdentity("gwemu", binary).catch(() => {
     throw new UserError("error.kernelBuild");
   });
@@ -93,7 +84,6 @@ export async function preflightKernel(
   profile: Profile,
   binary: string,
 ) {
-  if (kind === "legacy") return { kernel: "legacy" } as const;
   validateGwemuConfiguration(profile, await imageSizes(profile));
   const identity = await captureKernelIdentity(kind, binary);
   const checks = await Promise.all(
@@ -144,15 +134,13 @@ export async function kernelArguments(
     gdbSocket?: string;
   },
 ) {
-  return kind === "legacy"
-    ? qemuArguments(profile, session, settings, endpoints)
-    : gwemuArguments(
-        profile,
-        session,
-        endpoints,
-        await imageSizes(session),
-        settings,
-      );
+  return gwemuArguments(
+    profile,
+    session,
+    endpoints,
+    await imageSizes(session),
+    settings,
+  );
 }
 
 export async function finishKernelSession(
@@ -162,11 +150,6 @@ export async function finishKernelSession(
   exitCode: number | null,
   power?: GwemuPowerSnapshot,
 ) {
-  if (kind === "legacy") {
-    const state = exitStateSchema.parse(await readJson(stateFile));
-    await saveSession(session, state);
-    return;
-  }
   if (exitCode !== 0 || !power) throw new UserError("error.saveUncertain");
   // The gwemu images are shared file mappings. Flush after the child has exited,
   // including its RDP/unlock sidecars, before committing session metadata.
@@ -194,12 +177,6 @@ export class KernelBackend {
     private qmp: QmpClient,
   ) {}
   async buttons(mask: number, timeout?: number) {
-    if (this.kind === "legacy")
-      return this.qmp.command("qom-set", {
-        path: "/machine",
-        property: "buttons",
-        value: mask,
-      });
     const epoch = this.inputEpoch;
     const events = [];
     if (this.releasePending) {
@@ -234,8 +211,6 @@ export class KernelBackend {
     this.releasePending = false;
   }
   async releaseHostInput(timeout?: number) {
-    if (this.kind !== "gwemu")
-      throw new Error("Host input release requires gwemu");
     const args = { "command-line": "gnw-release-host-input" };
     const reply =
       timeout === undefined
@@ -250,7 +225,6 @@ export class KernelBackend {
     this.resetHostInput();
   }
   async resetInput() {
-    if (this.kind === "legacy") return this.buttons(0);
     await this.qmp.command("input-send-event", {
       events: keys.map((_key, bit) => keyEvent(bit, false)),
     });
@@ -259,7 +233,7 @@ export class KernelBackend {
   }
   setMuted(muted: boolean) {
     return this.qmp.command("qom-set", {
-      path: this.kind === "legacy" ? "/machine" : "/machine/soc/sai1",
+      path: "/machine/soc/sai1",
       property: "audio-muted",
       value: muted,
     });

@@ -13,7 +13,10 @@ test("power adjustments are serialized and stop waits for an accepted action", a
   const root = await mkdtemp(join(tmpdir(), "gnw-power-order-"));
   const controller = new SessionController({
     userData: join(root, "data"),
-    qemu: resolve("../build/qemu-system-arm"),
+    qemu: resolve(
+      process.env.GWEMU_DESKTOP_BINARY ??
+        "../build/gwemu/qemu-system-arm",
+    ),
     logger: createLogManager({
       appInstanceId: "power-order",
       destination: new Writable({
@@ -32,7 +35,7 @@ test("power adjustments are serialized and stop waits for an accepted action", a
     entered = r;
   });
   const realCommand = QmpClient.prototype.command;
-  let intercept = true;
+  let intercept = false;
   const spy = vi
     .spyOn(QmpClient.prototype, "command")
     .mockImplementation(async function (this: QmpClient, name, args, timeout) {
@@ -51,6 +54,7 @@ test("power adjustments are serialized and stop waits for an accepted action", a
       externalFlash: resolve("../../firmware/flash_backup_zelda.bin"),
     });
     await controller.load(profile.path);
+    intercept = true;
     const first = controller.deviceAction("device.batteryDown");
     first.catch(() => {});
     await started;
@@ -73,7 +77,15 @@ test("power adjustments are serialized and stop waits for an accepted action", a
     await work;
     const saved = JSON.parse(
       await readFile(
-        join(root, "data", "sessions", profile.id, "session.json"),
+        join(
+          root,
+          "data",
+          "kernels",
+          "gwemu",
+          "sessions",
+          profile.id,
+          "session.json",
+        ),
         "utf8",
       ),
     );

@@ -67,7 +67,7 @@ for (const script of [
         .toBe("running");
       const diagnostics = await rpc("app.getDiagnostics");
       qemuPid = diagnostics.qemuPid;
-      expect(diagnostics.width).toBe(320);
+      expect(diagnostics.width).toBe(640);
       await expect
         .poll(
           async () =>
@@ -96,11 +96,11 @@ for (const script of [
       } finally {
         clearTimeout(timer);
       }
-      const sessions = await readdir(join(root, "sessions"));
+      const sessions = await readdir(join(root, "kernels", "gwemu", "sessions"));
       expect(sessions).toHaveLength(1);
       const saved = JSON.parse(
         await readFile(
-          join(root, "sessions", sessions[0], "session.json"),
+          join(root, "kernels", "gwemu", "sessions", sessions[0], "session.json"),
           "utf8",
         ),
       );

@@ -1,6 +1,6 @@
 import type { Profile } from "./schemas";
 import type { Session } from "./session-store";
-import { qemuEscape } from "./qemu-command";
+import { qemuEscape } from "./qemu-arguments";
 import { join } from "node:path";
 
 // Capacity-matched Macronix entries from the pinned upstream gnw_h7b0_nor.h.

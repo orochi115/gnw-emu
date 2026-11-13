@@ -2,7 +2,7 @@
 # Sourced only after ROOT is resolved by a launcher. Never changes cwd.
 prepare_desktop() {
     command -v node >/dev/null 2>&1 || { echo "Node.js is required (use Node 24 or later)." >&2; exit 1; }
-    [ -x "$ROOT/build/qemu-system-arm" ] || "$ROOT/scripts/build.sh"
+    [ -x "$ROOT/build/gwemu/qemu-system-arm" ] || "$ROOT/scripts/build.sh"
     if [ ! -d "$ROOT/desktop/node_modules" ]; then
         (cd "$ROOT/desktop" && npm ci)
     fi

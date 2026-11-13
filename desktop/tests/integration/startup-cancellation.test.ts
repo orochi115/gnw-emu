@@ -1,7 +1,7 @@
 import { test, expect, vi } from "vitest";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { Writable } from "node:stream";
 import * as kernel from "../../src/core/kernel-backend";
 import { SessionController } from "../../src/core/session-controller";
@@ -22,7 +22,10 @@ test("stop waits for an interrupted startup to release its resources and prevent
       return [];
     });
   const controller = new SessionController({
-    qemu: "/usr/bin/false",
+    qemu: resolve(
+      process.env.GWEMU_DESKTOP_BINARY ??
+        "../build/gwemu/qemu-system-arm",
+    ),
     userData: join(root, "data"),
     logger: createLogManager({
       appInstanceId: "cancel",
@@ -60,7 +63,7 @@ test("stop waits for an interrupted startup to release its resources and prevent
     // Resources are truly reusable after cancellation.
     const { acquireLease } = await import("../../src/core/session-lease");
     const lease = await acquireLease(
-      join(root, "data", "leases", profile.id),
+      join(root, "data", "kernels", "gwemu", "leases", profile.id),
       "after-cancel",
     );
     await lease.release();

@@ -87,3 +87,7 @@ gwemu 的 RDP 和冷启动实现可减少补课量，但不视为所有真实 ST
 ## 2026-11-13 完成范围更新
 
 用户要求持续推进到结束，并明确跳过实机验证（没有SD改装实机），实体手柄验证由用户之后进行。以上三阶段实现、模拟器/软件回归、旧格式兼容、来源与数据保护、旧依赖退休仍需完成；实机/物理手柄验收不再阻塞本次收尾，但报告不得宣称这些验证通过。旧镜像、备份、session和states保留，父仓库继续只做本地提交；公开gwemu与gnwmanager发布沿用已有授权。
+
+## 2026-11-13 用户数据范围修订
+
+用户明确已经生成的 UserData 不需要兼容。取消旧 session 自动导入、migration 元数据/通知、旧 namespace slot 查找，以及仅为导入服务的 native guard/publication 和对应测试。新 gwemu session 从 profile baseline 创建并正常保存/加载；旧 UserData、session、slots 保留原处，不导入、不覆盖、不删除。原 ROM/SD/.gnw.json 工作流、源镜像保护和 manager 旧备份归档格式支持继续保留。此修订覆盖上文对旧 session 兼容的任何推定，不扩大其他验收或豁免范围。

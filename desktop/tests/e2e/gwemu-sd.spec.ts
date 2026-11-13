@@ -1,6 +1,6 @@
 import { test, expect, _electron as electron } from "@playwright/test";
 import { existsSync, createReadStream } from "node:fs";
-import { mkdtemp, readFile, rm, mkdir } from "node:fs/promises";
+import { mkdtemp, readFile, rm, mkdir, writeFile } from "node:fs/promises";
 import { join, resolve, dirname } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
@@ -10,9 +10,8 @@ const localProfile = resolve(
   "../out/profiles/sd-full_20261104_1021-spi1.gnw.json",
 );
 test.skip(
-  !existsSync(
-    resolve("../build/gwemu-session-manager-release/qemu-system-arm"),
-  ) || !existsSync(localProfile),
+  !existsSync(resolve("../build/gwemu/qemu-system-arm")) ||
+    !existsSync(localProfile),
   "Local SD firmware and fixed gwemu build required",
 );
 
@@ -48,6 +47,7 @@ test("software SPI SD profile runs in an isolated real desktop and closes cleanl
     env: { ...process.env, GNW_KERNEL: "gwemu" },
   });
   let closed = false;
+  let debugState: (() => Promise<any>) | undefined;
   try {
     const page = await app.firstWindow();
     let endpoint: any;
@@ -86,12 +86,26 @@ test("software SPI SD profile runs in an isolated real desktop and closes cleanl
         })
         .not.toBe("pending");
     };
+    debugState = async () => ({
+      state: await rpc("app.getState"),
+      diagnostics: await rpc("app.getDiagnostics"),
+      ui: await rpc("ui.inspect"),
+    });
     await rpc("ui.waitFor", {
       condition: "app.status",
       value: "running",
       timeoutMs: 20000,
     });
     await page.waitForTimeout(500);
+    const mainWindow = await app.browserWindow(page);
+    await app.evaluate(({ app }) => app.focus({ steal: true }));
+    await mainWindow.evaluate((w) => w.focus());
+    await expect
+      .poll(() => page.evaluate(() => document.hasFocus()))
+      .toBe(true);
+    await expect
+      .poll(() => mainWindow.evaluate((w) => w.isFocused()))
+      .toBe(true);
     await key("Left", true);
     await key("G", true);
     await expect
@@ -162,6 +176,16 @@ test("software SPI SD profile runs in an isolated real desktop and closes cleanl
     ).toBe(true);
     expect(existsSync(join(root, "sessions"))).toBe(false);
     expect(await Promise.all(Object.values(images).map(hash))).toEqual(hashes);
+  } catch (error) {
+    await writeFile(
+      resolve("../out/gwemu-completion/sd-debug.json"),
+      JSON.stringify(
+        { error: String(error), snapshot: await debugState?.() },
+        null,
+        2,
+      ),
+    );
+    throw error;
   } finally {
     if (!closed) await app.close();
     await rm(root, { recursive: true, force: true });

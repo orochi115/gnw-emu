@@ -175,27 +175,26 @@ async function nativeFixture(options: Partial<ManagerServerOptions> = {}) {
   const { vi } = await import("vitest");
   const kernel = await import("../../src/core/kernel-backend");
   const { createInterface } = await import("node:readline");
-  const binary = resolve(
-    "../build/gwemu-session-manager-release/qemu-system-arm",
-  );
+  const binary = resolve("../build/gwemu/qemu-system-arm");
   expect(existsSync(binary), "required native is missing").toBe(true);
   if (!artifactVerified) {
     const { createHash } = await import("node:crypto");
     const manifest = JSON.parse(
       await readFile(
         resolve(
-          "../build/gwemu-session-manager-release/gnw-build-manifest.json",
+          "../build/gwemu/gnw-build-manifest.json",
         ),
         "utf8",
       ),
     );
     expect(manifest.sourceDirty).toBe(false);
     expect(manifest.revision).toBe("a38484468d947ce6447fcc7dec47ebeef041f853");
+    expect(manifest.artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(
       createHash("sha256")
         .update(await readFile(binary))
         .digest("hex"),
-    ).toBe("a6ae9db084e1268fad8d5a4cc4bea3ba139dfe927a6b1d4d555197004515798e");
+    ).toBe(manifest.artifact.sha256);
     artifactVerified = true;
   }
   const root = await mkdtemp("/tmp/gnw-ms-native-");
