@@ -180,15 +180,10 @@ async function nativeFixture(options: Partial<ManagerServerOptions> = {}) {
   if (!artifactVerified) {
     const { createHash } = await import("node:crypto");
     const manifest = JSON.parse(
-      await readFile(
-        resolve(
-          "../build/gwemu/gnw-build-manifest.json",
-        ),
-        "utf8",
-      ),
+      await readFile(resolve("../build/gwemu/gnw-build-manifest.json"), "utf8"),
     );
     expect(manifest.sourceDirty).toBe(false);
-    expect(manifest.revision).toBe("a38484468d947ce6447fcc7dec47ebeef041f853");
+    expect(manifest.revision).toBe("57b2b378e2001f20a241ecbaf9ce7c8f22aae9a3");
     expect(manifest.artifact.sha256).toMatch(/^[a-f0-9]{64}$/);
     expect(
       createHash("sha256")
@@ -803,6 +798,7 @@ test("owner disconnect during successful release cannot restore application exec
       })
     ).result;
     let entered!: () => void, proceed!: () => void;
+    let ownerSignal: AbortSignal | undefined;
     const started = new Promise<void>((r) => (entered = r)),
       gate = new Promise<void>((r) => (proceed = r));
     const original = f.controller.endManager.bind(f.controller);
@@ -810,6 +806,7 @@ test("owner disconnect during successful release cannot restore application exec
       .spyOn(f.controller, "endManager")
       .mockImplementation(async (owner, result) => {
         if (result.success) {
+          ownerSignal = owner.signal;
           entered();
           await gate;
         }
@@ -819,10 +816,16 @@ test("owner disconnect during successful release cannot restore application exec
       .call("release", { sessionId, leaseId, completion })
       .catch(() => undefined);
     await deadline(started, 2000, "release-entered");
-    p.close();
-    await new Promise<void>((r) => setImmediate(r));
-    await new Promise<void>((r) => setImmediate(r));
-    proceed();
+    try {
+      p.close();
+      // Observe server-side revocation through the real transport, rather than
+      // assuming a client close propagates within two event-loop iterations.
+      await vi.waitFor(() => expect(ownerSignal?.aborted).toBe(true), {
+        timeout: 2000,
+      });
+    } finally {
+      proceed();
+    }
     await released;
     await vi.waitFor(
       () => expect(f.controller.state.execution).toBe("unknown"),

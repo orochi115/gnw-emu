@@ -69,3 +69,8 @@ gwemu 输出 640×480（320×240 LCD 的 2 倍 surface）。窗口几何按 LCD 
 - 完整旧 pixel-presets/restart 测试：Zelda 显示、第一轮退出/重开及恢复尺寸检查通过到第二次退出，随后应用退出超时；等待 native running 并延长等待的诊断仍复现。Mario 在该轮有 Electron firstWindow 启动超时。原退出测试逻辑已恢复，不以更换退出入口或忽略退出码让其变绿。这两项不计通过，保留本地 trace/log，属于本轮记录的独立限制；没有因此修改产品退出生命周期。
 - 核对工作区 wrapper：优先目录 gnw-emu-electron-ui 已不存在，默认实际使用本轮 gnw-emu；显式 GNW_EMU_DIR 仍由用户环境决定。已有 macOS app 包未更新。
 - 生产修改只涉及 renderer 的 LCD 布局和共用尺寸常量；native、manager、真实 UserData、历史 legacy 与原 ROM 不改动。
+
+
+### 后续退出修复与打包收尾
+
+上面的退出/启动限制是 LCD 提交时的历史记录。后续确认 BrowserWindow 与 Node IPC 监听 FD 组合触发 Electron C++ 退出崩溃，Electron 40 也复现；改附属 listener 与认证 loopback 转发，普通 idle/Mario/Zelda 各3次共9次正常退出和重开通过。两款 pixel-presets/restart 和 desktop-clock 完整测试随后通过，未更换退出入口或忽略退出码。现行 macOS app 已重新打包，当前验收与实际 hash 见[迁移完成报告](2026-11-13-gwemu-migration-completion.md)。这些问题无需恢复 legacy 运行分支。

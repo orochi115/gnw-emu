@@ -13,3 +13,8 @@
 | 风格、抽象与假设性健壮性建议 | 不符合新阻塞标准。现有报告保留，后续同类意见只报告；不改源、不加测试 | 否，延期原因是用户明确限定原目标 |
 
 验证复用：S1最终桌面104/zero skips、Python141focused及330all/1既有stock asset skip；恢复后5原问题直接回归与完整来源审计。实机、实体手柄是用户豁免，未记通过。所有软件原目标验收仍必需，Task6和产品退休不能因审查规则改变而省略。
+
+
+## Electron 退出修复限定审查
+
+本轮仅审查 listener 转发和相关测试。独立审查发现 P2：认证 inactivity timeout 可被 trickling peer 延长。实际 TCP 回归先失败，再改固定截止并确认14项 listener 单元通过。其余 inspected listener diff 未报告具体 Important/Critical。29项真实 manager server 集成与普通9次退出/重开、完整13桌面 manager 场景通过；后续完整LCD/包回归和本地合并记录见完成报告。按用户有限审查规则不恢复开放式 APPROVED 循环。

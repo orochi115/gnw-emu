@@ -796,7 +796,9 @@ for (const model of ["zelda", "mario"]) {
       await live.app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].setContentSize(333, 231),
       );
-      const finalScale = (await live.rpc("ui.inspect")).canvas.pixelScale;
+      const finalCanvas = (await live.rpc("ui.inspect")).canvas;
+      const finalScale =
+        (finalCanvas.displayWidth * finalCanvas.devicePixelRatio) / 320;
       await quit();
       const finalSettings = JSON.parse(
         await readFile(join(root, "settings.json"), "utf8"),
@@ -1074,6 +1076,44 @@ test("desktop clock preserves session and canvas, fits artwork, restores bounds 
     await expect.poll(() => hostProcess.exitCode).toBe(0);
   } finally {
     if (hostProcess.exitCode === null) await app.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("browser mouse and keyboard share ownership and release independently", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-browser-input-"));
+  const { app, page, rpc } = await launch(root, "zelda");
+  try {
+    await rpc("ui.waitFor", {
+      condition: "app.status",
+      value: "running",
+      timeoutMs: 15000,
+    });
+    await rpc("ui.waitFor", {
+      condition: "ui.lastPresented",
+      value: "2",
+      timeoutMs: 15000,
+    });
+    const box = (await page
+      .locator('[data-ui="chassis.button.a"]')
+      .boundingBox())!;
+    const mask = (value: number) =>
+      expect
+        .poll(async () => (await rpc("app.getDiagnostics")).input)
+        .toMatchObject({ desiredMask: value, appliedMask: value });
+    for (let cycle = 0; cycle < 2; cycle++) {
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+      await page.mouse.down();
+      await mask(16);
+      await page.keyboard.down("ArrowLeft");
+      await mask(17);
+      await page.mouse.up();
+      await mask(1);
+      await page.keyboard.up("ArrowLeft");
+      await mask(0);
+    }
+  } finally {
+    await app.close();
     await rm(root, { recursive: true, force: true });
   }
 });

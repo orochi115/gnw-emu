@@ -24,7 +24,7 @@
 
 ## 验证与产物
 
-干净源码在独立 `build/gwemu-device-parity` 构建，manifest 的 `sourceDirty=false`、源码 revision、实际 binary SHA-256 均核对。binary SHA-256：`f41b093d72a03f0354e8e3c88b827e59a398eeccf0b9765f48f18a8cfa4ebdbd`。`build/gwemu` 指向此产物，开发启动脚本使用它；本轮未重新打包已有 macOS app。
+干净源码在独立 `build/gwemu-device-parity` 构建，manifest 的 `sourceDirty=false`、源码 revision、实际 binary SHA-256 均核对。binary SHA-256：`f41b093d72a03f0354e8e3c88b827e59a398eeccf0b9765f48f18a8cfa4ebdbd`。`build/gwemu` 指向此产物，开发启动脚本使用它；后续退出修复已用此 native 重新打包 macOS app，实际来源与包哈希见[完成报告](2026-11-13-gwemu-migration-completion.md)。
 
 - 干净产物 240 项直接 native 回归通过，含本轮 33 项 device parity，以及 stock OSPI/CRYP、RTC、USB/电池供电、manager SPI、存档与桌面传输。
 - 固件和 SD 均挂载副本；每个成功/失败用例 finally 均复核原文件 SHA-256；实际 Mario session 的 bank1/flash 对照探针也复核哈希不变。

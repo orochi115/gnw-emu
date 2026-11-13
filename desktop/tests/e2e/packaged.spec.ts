@@ -110,7 +110,7 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
           };
         }),
       )
-      .toEqual({ width: 640, height: 480 });
+      .toEqual({ width: 320, height: 240 });
     expect(
       await app.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()[0].isAlwaysOnTop(),
@@ -129,10 +129,19 @@ test("directory package includes relocatable QEMU and explicit automation", asyn
           return Math.round(r.width * devicePixelRatio);
         }),
       )
-      .toBe(320);
+      .toBe(160);
     await expect
       .poll(() => page.evaluate(() => window.desktop.windowState()))
       .toMatchObject({ clockScale: 0.5, preferredClockMode: true });
+    // The renderer receives geometry before the settings transaction finishes.
+    // Wait for the public menu readiness gate before issuing another action.
+    await expect
+      .poll(() =>
+        app.evaluate(({ Menu }) =>
+          Menu.getApplicationMenu()!.getMenuItemById("view.clock")!.enabled,
+        ),
+      )
+      .toBe(true);
     await page.evaluate(() => window.desktop.windowAction("normal"));
     await expect(page.locator("main")).toHaveClass("normal-window");
     await expect(page.locator("canvas")).toHaveAttribute(

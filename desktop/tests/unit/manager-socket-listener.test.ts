@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { expect, test, vi } from "vitest";
 import {
   mkdtemp,
@@ -17,6 +18,7 @@ import { listenOwnedManagerSocket } from "../../src/core/manager-socket-listener
 
 const observed = vi.hoisted(() => ({
   children: [] as ChildProcess[],
+  configuration: undefined as { port: number; token: string } | undefined,
   slow: false,
   missingExecutable: false,
   replaceSource: false as false | "file" | "socket",
@@ -37,6 +39,17 @@ vi.mock("node:child_process", async (importOriginal) => {
       if (observed.missingExecutable)
         args[0] = "/nonexistent-gnw-socket-binder";
       const child = actual.spawn(...args);
+      const send = child.send.bind(child);
+      child.send = ((...values: Parameters<ChildProcess["send"]>) => {
+        const message = values[0];
+        if (
+          typeof message === "object" &&
+          message !== null &&
+          "token" in message
+        )
+          observed.configuration = message as { port: number; token: string };
+        return send(...values);
+      }) as ChildProcess["send"];
       if (observed.replaceSource || observed.beforeDelivery) {
         const on = child.on.bind(child);
         child.on = ((event: string, listener: (...args: unknown[]) => void) => {
@@ -75,6 +88,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 
 async function setup() {
   observed.children = [];
+  observed.configuration = undefined;
   observed.slow = false;
   observed.missingExecutable = false;
   observed.replaceSource = false;
@@ -103,16 +117,16 @@ async function setup() {
   };
 }
 
-test("actual FD-only listener reaps bootstrap before publication, serves, and preserves replacement", async () => {
+test("actual relay listener keeps its helper while serving and reaps it on close without removing replacement", async () => {
   const f = await setup();
   let server: Awaited<ReturnType<typeof listenOwnedManagerSocket>> | undefined;
   try {
     server = await listenOwnedManagerSocket(f.directory, f.endpoint, (socket) =>
-      socket.end("FD-only listener"),
+      socket.end("relay listener"),
     );
     expect(observed.children).toHaveLength(1);
-    expect(observed.children[0].exitCode).toBe(0);
-    expect(() => process.kill(observed.children[0].pid!, 0)).toThrow();
+    expect(observed.children[0].exitCode).toBe(null);
+    expect(() => process.kill(observed.children[0].pid!, 0)).not.toThrow();
     expect(await readdir(f.root)).toEqual([basename(f.endpoint.path)]);
     expect((await lstat(f.endpoint.path)).mode & 0o7777).toBe(0o600);
     const socket = createConnection(f.endpoint.path);
@@ -126,7 +140,7 @@ test("actual FD-only listener reaps bootstrap before publication, serves, and pr
           1000,
           "fd-listener-reply",
         ),
-      ).toBe("FD-only listener");
+      ).toBe("relay listener");
     } finally {
       socket.destroy();
     }
@@ -143,7 +157,7 @@ test("actual FD-only listener reaps bootstrap before publication, serves, and pr
   }
 });
 
-test("abort during actual FD handoff reaps helper and prevents a delayed link", async () => {
+test("abort during actual listener publication reaps helper and prevents a delayed link", async () => {
   const f = await setup(),
     abort = new AbortController();
   let proceed!: () => void, entered!: () => void;
@@ -182,7 +196,7 @@ test("abort during actual FD handoff reaps helper and prevents a delayed link", 
   }
 });
 
-test("unexpected helper death after FD ready cancels pending publication immediately", async () => {
+test("unexpected helper death after listener ready cancels pending publication immediately", async () => {
   const f = await setup();
   let proceed!: () => void, entered!: () => void;
   const gate = new Promise<void>((r) => (proceed = r)),
@@ -347,3 +361,181 @@ test.each(["file", "socket"] as const)(
     }
   },
 );
+
+test("relay rejects wrong credentials and expires silent TCP peers before delivering any bytes", async () => {
+  const f = await setup();
+  let accepted = 0;
+  const server = await listenOwnedManagerSocket(
+    f.directory,
+    f.endpoint,
+    (s) => {
+      accepted++;
+      s.destroy();
+    },
+  );
+  try {
+    const address = server.address();
+    expect(address).toMatchObject({ address: "127.0.0.1" });
+    const port = (address as { port: number }).port;
+    for (const credentials of ["x".repeat(64), undefined]) {
+      const socket = createConnection({ port, host: "127.0.0.1" });
+      const closed = new Promise<void>((r) => socket.once("close", () => r()));
+      socket.on("error", () => {});
+      if (credentials) socket.write(credentials + "unauthorized payload");
+      try {
+        await deadline(closed, 1800, "unauthenticated-peer-closed");
+      } finally {
+        socket.destroy();
+      }
+    }
+    expect(accepted).toBe(0);
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await f.endpoint.close();
+    await f.cleanup();
+  }
+});
+
+test("fragmented authentication preserves coalesced payload and the relay transfers a large request through EOF", async () => {
+  const f = await setup();
+  let accepted = 0;
+  const server = await listenOwnedManagerSocket(
+    f.directory,
+    f.endpoint,
+    (socket) => {
+      accepted++;
+      socket.pipe(socket);
+    },
+  );
+  try {
+    const configuration = observed.configuration!;
+    const client = createConnection({
+      port: configuration.port,
+      host: "127.0.0.1",
+    });
+    const chunks: Buffer[] = [];
+    client.on("data", (chunk) => chunks.push(chunk));
+    const end = new Promise<void>((r, j) => {
+      client.once("end", r);
+      client.once("error", j);
+    });
+    const payload = randomBytes(1024 * 1024);
+    try {
+      client.write(configuration.token.slice(0, 13));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(accepted).toBe(0);
+      client.end(
+        Buffer.concat([Buffer.from(configuration.token.slice(13)), payload]),
+      );
+      await deadline(end, 2000, "fragmented-auth-echo");
+      expect(Buffer.concat(chunks).equals(payload)).toBe(true);
+      expect(accepted).toBe(1);
+    } finally {
+      client.destroy();
+    }
+    // The public Unix endpoint must also retain bytes and a client's half-close.
+    const unix = createConnection(f.endpoint.path);
+    const reply: Buffer[] = [];
+    unix.on("data", (chunk) => reply.push(chunk));
+    const done = new Promise<void>((r, j) => {
+      unix.once("end", r);
+      unix.once("error", j);
+    });
+    try {
+      unix.end(payload);
+      await deadline(done, 2000, "unix-relay-echo");
+      expect(Buffer.concat(reply).length).toBe(payload.length);
+      expect(Buffer.concat(reply).equals(payload)).toBe(true);
+      expect(accepted).toBe(2);
+    } finally {
+      unix.destroy();
+    }
+  } finally {
+    await new Promise<void>((r) => server.close(() => r()));
+    await f.endpoint.close();
+    await f.cleanup();
+  }
+});
+
+test("closing with a pending TCP handshake reaps the helper and runtime helper death withdraws its endpoint", async () => {
+  const f = await setup();
+  let server: Server | undefined;
+  try {
+    server = await listenOwnedManagerSocket(f.directory, f.endpoint, (s) =>
+      s.destroy(),
+    );
+    const client = createConnection({
+      host: "127.0.0.1",
+      port: observed.configuration!.port,
+    });
+    const closed = new Promise<void>((r) => client.once("close", () => r()));
+    client.on("error", () => {});
+    try {
+      await new Promise<void>((r, j) => {
+        client.once("connect", r);
+        client.once("error", j);
+      });
+      await deadline(
+        new Promise<void>((r) => server!.close(() => r())),
+        1000,
+        "relay-close",
+      );
+      await deadline(closed, 500, "pending-peer-close");
+    } finally {
+      client.destroy();
+    }
+    expect(observed.children[0].exitCode).toBe(0);
+    await f.endpoint.close();
+    const next = await f.directory.socket("lease");
+    server = await listenOwnedManagerSocket(f.directory, next, (s) =>
+      s.destroy(),
+    );
+    const stopped = new Promise<void>((r) => server!.once("close", () => r()));
+    observed.children.at(-1)!.kill("SIGKILL");
+    await deadline(stopped, 1000, "dead-helper-listener-close");
+    await deadline(
+      (async () => {
+        while ((await lstat(next.path).catch(() => undefined)) !== undefined)
+          await new Promise((r) => setTimeout(r, 5));
+      })(),
+      1000,
+      "dead-helper-endpoint-withdrawn",
+    );
+    await next.close();
+  } finally {
+    if (server?.listening)
+      await new Promise<void>((r) => server!.close(() => r()));
+    await f.endpoint.close();
+    await f.cleanup();
+  }
+});
+
+test("a trickling unauthenticated peer cannot extend the fixed authentication deadline", async () => {
+  const f = await setup();
+  let accepted = 0;
+  const server = await listenOwnedManagerSocket(
+    f.directory,
+    f.endpoint,
+    (s) => {
+      accepted++;
+      s.destroy();
+    },
+  );
+  const peer = createConnection({
+    host: "127.0.0.1",
+    port: observed.configuration!.port,
+  });
+  peer.on("error", () => {});
+  const closed = new Promise<void>((r) => peer.once("close", () => r()));
+  const trickle = setInterval(() => peer.write("a"), 100);
+  try {
+    await deadline(closed, 1600, "fixed-authentication-deadline");
+    expect(accepted).toBe(0);
+  } finally {
+    clearInterval(trickle);
+    peer.destroy();
+    await new Promise<void>((r) => server.close(() => r()));
+    await f.endpoint.close();
+    await f.cleanup();
+  }
+});
