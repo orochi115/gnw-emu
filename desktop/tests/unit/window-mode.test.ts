@@ -1,19 +1,106 @@
 import { EventEmitter } from "node:events";
-import { expect, test, vi } from "vitest";
-const display = vi.hoisted(() => ({ density: 2 }));
+import { beforeEach, expect, test, vi } from "vitest";
+const display = vi.hoisted(() => ({
+  density: 2,
+  workArea: { x: 0, y: 0, width: 1600, height: 1000 },
+}));
 vi.mock("electron", async () => {
   const { EventEmitter } = await import("node:events");
   return {
     screen: Object.assign(new EventEmitter(), {
       getDisplayMatching: () => ({
         scaleFactor: display.density,
-        workArea: { x: 0, y: 0, width: 1600, height: 1000 },
+        workArea: display.workArea,
       }),
     }),
   };
 });
 import { screen } from "electron";
 import { WindowMode } from "../../src/main/window-mode";
+
+beforeEach(() => {
+  display.density = 2;
+  display.workArea = { x: 0, y: 0, width: 1600, height: 1000 };
+});
+
+test.each([undefined, 64])(
+  "startup fits default or saved scale %s inside a Windows work area at density 1.5",
+  async (normalScale) => {
+    display.density = 1.5;
+    display.workArea = { x: 0, y: 0, width: 1707, height: 1018 };
+    const host = resizingHost({ x: 1200, y: 800, width: 960, height: 640 });
+    const patches: any[] = [];
+    const mode = new WindowMode(
+      host as any,
+      () => {},
+      () => {},
+      () => true,
+      { normalScale },
+      (patch) => patches.push(patch),
+    );
+    try {
+      // Match main-process startup: empty view, then starting/running profile.
+      mode.setGameAvailable(false);
+      await mode.fit(undefined, true);
+      mode.setGameAvailable(true);
+      await mode.fit("zelda", true);
+      const bounds = host.getBounds();
+      expect(mode.state.pixelScale).toBe(3);
+      expect(mode.state.normalScale).toBe(3);
+      expect(patches).toContainEqual({ normalScale: 3 });
+      expect(bounds.width).toBeLessThanOrEqual(display.workArea.width);
+      expect(bounds.height).toBeLessThanOrEqual(display.workArea.height);
+      expect(bounds.x).toBeGreaterThanOrEqual(display.workArea.x);
+      expect(bounds.y).toBeGreaterThanOrEqual(display.workArea.y);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(1707);
+      expect(bounds.y + bounds.height).toBeLessThanOrEqual(1018);
+      expect(mode.canSetScale(3)).toBe(true);
+      expect(mode.canSetScale(4)).toBe(false);
+    } finally {
+      host.emit("closed");
+    }
+  },
+);
+
+test("startup fitting includes the titlebar on a height-limited display", async () => {
+  display.density = 1;
+  display.workArea = { x: -1920, y: 50, width: 1920, height: 500 };
+  const host = resizingHost({ x: -1000, y: 450, width: 960, height: 640 });
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  try {
+    await mode.fit("zelda", true);
+    expect(mode.state.pixelScale).toBe(1);
+    const bounds = host.getBounds();
+    expect(bounds.height).toBeLessThanOrEqual(500);
+    expect(bounds.y).toBeGreaterThanOrEqual(50);
+    expect(bounds.y + bounds.height).toBeLessThanOrEqual(550);
+  } finally {
+    host.emit("closed");
+  }
+});
+
+test("startup preserves a saved fractional scale that already fits", async () => {
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    { normalScale: 1.25 },
+  );
+  try {
+    await mode.fit("zelda", true);
+    expect(mode.state.pixelScale).toBe(1.25);
+    expect(mode.state.normalScale).toBe(1.25);
+  } finally {
+    host.emit("closed");
+  }
+});
 
 test("clock docking survives scale/frame changes, persists and releases on manual drag", async () => {
   display.density = 2;

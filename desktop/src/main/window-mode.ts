@@ -140,7 +140,11 @@ export class WindowMode {
       this.gameAvailable &&
       !this.expanded
     )
-      this.applyScale(this.rememberedScale);
+      this.applyScale(
+        this.restoredScale(this.rememberedScale),
+        undefined,
+        true,
+      );
     else this.changed();
   }
   private finishExpandedEntry() {
@@ -303,7 +307,7 @@ export class WindowMode {
       !this.modal &&
       !this.expanded
     )
-      this.applyScale(this.normalScale);
+      this.applyScale(this.restoredScale(this.normalScale), undefined, true);
   }
   setModal(open: boolean, minimum?: { width: number; height: number }) {
     if (this.modal === open) return;
@@ -342,10 +346,11 @@ export class WindowMode {
     }
   }
   async fit(model: "mario" | "zelda" | undefined, showChassis: boolean) {
-    const factor =
+    let factor =
       this.model && this.gameAvailable
         ? this.state.pixelScale
         : this.rememberedScale;
+    const restoring = this.model !== model;
     const expanded = this.expanded;
     this.model = model;
     this.frame = showChassis;
@@ -374,8 +379,9 @@ export class WindowMode {
         this.applyingBounds = false;
       }
     }
+    if (restoring) factor = this.restoredScale(factor);
     this.rememberScale(factor);
-    this.applyScale(factor);
+    this.applyScale(factor, undefined, restoring);
   }
   private refreshDensity = () => {
     if (
@@ -407,7 +413,27 @@ export class WindowMode {
       this.changed();
     }
   };
-  /** Only restore placement clamps to a monitor; frame changes keep the center. */
+  /** Fit restored normal windows without altering an already fitting preference. */
+  private restoredScale(factor: number, anchor = this.window.getBounds()) {
+    if (this.clock) return factor;
+    const display = screen.getDisplayMatching(anchor);
+    const unit = clockGeometry(this.model, this.frame, display.scaleFactor);
+    const limit = Math.min(
+      Math.floor(display.workArea.width) / unit.layoutWidth,
+      Math.floor(display.workArea.height - TITLEBAR_HEIGHT) / unit.layoutHeight,
+    );
+    if (factor <= limit) return factor;
+    // Prefer integer LCD pixels, then half scale, with a fractional fallback.
+    const fitted =
+      limit >= 1
+        ? Math.floor(limit)
+        : limit >= 0.5
+          ? 0.5
+          : Math.max(0.05, Math.floor(limit * 1e6) / 1e6);
+    this.rememberScale(fitted);
+    return fitted;
+  }
+  /** Restores keep the whole window visible; frame changes keep its center. */
   private applyScale(
     factor: number,
     anchor = this.window.getBounds(),
@@ -438,7 +464,11 @@ export class WindowMode {
         Math.min(
           y,
           (area.y ?? 0) +
-            Math.max(0, area.height - (this.clock ? height : TITLEBAR_HEIGHT)),
+            Math.max(
+              0,
+              area.height -
+                (restorePlacement || this.clock ? height : TITLEBAR_HEIGHT),
+            ),
         ),
       );
     }
@@ -553,7 +583,11 @@ export class WindowMode {
         this.window.unmaximize();
         this.window.setAspectRatio(0);
         this.window.setAlwaysOnTop(this.saved?.onTop ?? false);
-        this.applyScale(this.normalScale, this.saved?.bounds);
+        this.applyScale(
+          this.restoredScale(this.normalScale, this.saved?.bounds),
+          this.saved?.bounds,
+          true,
+        );
         if (this.saved?.maximized) this.window.maximize();
         this.saved = undefined;
         if (!this.gameAvailable) this.usableMinimum();

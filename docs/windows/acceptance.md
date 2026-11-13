@@ -42,6 +42,14 @@ manager 实际构建另复现原生 GCC 依赖文件参数无法读取 MSYS `/d/
 
 新增主窗口 `.gnw.json` 拖放打开，复用可信 IPC、加载保护和最近记录。真实 Windows CDP 文件拖放测试在旧版本上失败（保持 idle），修复后的开发版通过（中文/空格文件名）。更新的目录包使用自带 `profiles/zelda.gnw.json` 通过拖放验收：Zelda 画面、运行中重新加载、无效配置/`.bin`/多文件拒绝、制作对话框期间禁止换 ROM、最近记录、页面不导航和来源文件哈希均验证。两次验收各 1 passed；本机配置/最近记录/菜单回归 13 passed，TypeScript 检查及独立代码审查通过。目录包 native 和全部 39 个 DLL 的哈希再次核验通过。
 
+## 后续修复：启动倍率
+
+启动、加载游戏和恢复普通窗口时，过大的默认/已保存倍率会降到当前显示器工作区能容纳的最大整数倍率；计算包含 DPI、机身边框和标题栏，调整后的倍率会保存。能正常容纳的已有倍率保持不变，恢复窗口时确保整个窗口位于工作区内。
+
+Session 1 使用官方 Zelda 固件和隔离 UserData 验证四种情况：全新设置的默认 4× 降为 3×、重启保持 3×、旧设置 64× 降为 3×、已有 1.25× 保持不变。150% DPI、1707×1019 工作区下，3× 窗口为 1464×906，边框/按键菜单可用，4× 因超出工作区禁用。证据为 `out/windows-startup-scale-result.json` 及同名前缀的截图。Windows 窗口单元测试 16 项通过，本机完整单元测试 221 项通过，双方 TypeScript 检查和构建通过。
+
+Windows 设置文件为 `%APPDATA%\gnw-emu-desktop\UserData\settings.json`；如需重置设置，完全退出后重命名此文件即可，保留 UserData 中的存档。
+
 ## 限制
 
 旧 macOS 产品验收套件固定了原提交、路径和本机资产，不作为 Windows 通过依据。POSIX socket/inode/shebang 专有 fixture 在 Windows 排除；以 Windows 专有 ACL/认证/会话及实际桌面验证覆盖平台行为。未验证实体设备、实体手柄、扬声器听感或所有 Retro-Go 核心。
