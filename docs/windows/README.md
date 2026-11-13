@@ -70,7 +70,13 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\make-sd-image.ps1 -Outp
 
 可加 `-Assets D:\media` 打包资源。包装脚本要求新输出路径；镜像中的文件由 mtools 读写，无需挂载或管理员权限。
 
-本次修改和两个子模块提交保存在已部署仓库及工作目录中的 Git bundles 中，尚未推送到远端仓库。复制到另一台机器时需一并保留子模块仓库或先导入对应 bundles，随后再执行 bootstrap；仅从原上游地址重新 clone 无法取得这些本地移植提交。
+移植源码使用主仓库 `feat/windows-native` 分支；修改过的 gwemu 和 gnwmanager 子模块使用各自 fork 的 `gnw-emu` 分支，具体提交由主仓库固定。可从 GitHub 获取完整源码：
+
+```powershell
+git -c core.autocrlf=false clone --branch feat/windows-native --recurse-submodules https://github.com/orochi115/gnw-emu.git
+```
+
+随后在项目目录运行 bootstrap。本次部署也保留了源码 Git bundles，便于离线传输。
 
 完整源码 bundles 位于 `D:\LLM_Work\Game_Watch`。在包含这三个文件的目录中，可重建新的源码目录：
 
