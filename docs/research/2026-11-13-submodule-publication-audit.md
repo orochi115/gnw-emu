@@ -28,3 +28,15 @@
 本次没有改动 `.gitmodules`、gitlinks 或子仓库源码。父仓库发布目标为 `orochi115/gnw-emu:master`，包含已验收的退出修复 `ac02ff6` 和本次核验文档；推送使用 `--recurse-submodules=check` 检查提交可达性，不强推，不批量发布无关分支或 tags。保留本机未跟踪的用户 `.superpowers/`，它不进入提交。
 
 软件验收与已记录限制见[迁移完成报告](2026-11-13-gwemu-migration-completion.md)。本次仅有 Git 本机配置与文档变化，复用已有有效的构建、退出、manager、macOS 包和 native 验收，不重复设备测试。本机详细核验输出在忽略的 `out/submodule-publish-*.json`，不发布运行 trace 或用户数据。
+
+## gwemu fork 网络迁移
+
+用户随后明确授权释放旧 QEMU 占用的 fork 网络名额，让现行 gwemu 成为真正的上游 fork，以便跟踪更新和将来贡献 PR。旧 `orochi115/qemu` 通过 GitHub Settings 的 **Leave fork network** 脱离；GitHub 后台完成后，API 核实 `fork=false`、`parent=null`、`archived=true`。仓库 ID 仍为 `1446808590`，全部914个分支/标签引用与迁移前快照一致，包括已发布的 legacy 最终标签。
+
+原独立 gwemu 改名保留为 [`orochi115/gwemu-independent-backup`](https://github.com/orochi115/gwemu-independent-backup)，仓库 ID `1454747613` 与唯一的 `gnw-emu` 分支提交均保留。然后通过 `gh repo fork slash-proc/gwemu --fork-name gwemu --clone=false` 建立新的 [`orochi115/gwemu`](https://github.com/orochi115/gwemu)，仓库 ID 为 `1456552384`。API 核实其 `fork=true`、直接 `parent=slash-proc/gwemu`、网络根 `source=qemu/qemu`；slash-proc 本身是 QEMU fork，因此网络根仍是 QEMU。
+
+将原 `gnw-emu` 分支推入新 fork，并设为默认分支，提交仍为 `57b2b378e2001f20a241ecbaf9ce7c8f22aae9a3`。现行 `.gitmodules`、本机 submodule URL、checkout 的 origin 和父 gitlink 均核实匹配；17个一级 submodule 的 HEAD 全部匹配父 gitlinks。公开 shallow/blob-filtered clone 验证新仓库的分支提交可以获取。本轮仅调整 GitHub 仓库关系、描述、默认分支和本机远端 refs，设备源码与构建产物无变化，未重复软件回归。
+
+本机 `upstream` 继续指向 `https://github.com/slash-proc/gwemu.git`，并已获取 `upstream/gnw-h7b0` → `3bfce5fd26a402660a8526b3a7ffc92048c3966a`。本机 ancestry 检查和 GitHub [跨 fork 比较](https://github.com/slash-proc/gwemu/compare/gnw-h7b0...orochi115:gnw-emu)均确认：集成分支领先15个提交、落后0个。未来向 slash-proc 贡献时，PR 的目标分支为 `gnw-h7b0`；本轮未提交 PR。
+
+迁移前后的完整仓库元数据、远端 refs 快照保存在本机临时目录 `gnw-fork-migration-m3erhtv8`，新 fork 克隆核验目录为 `gwemu-real-fork-vptqf293`。仓库内只记录核验结论，不提交这些临时证据或用户数据。
