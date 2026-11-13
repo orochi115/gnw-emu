@@ -310,6 +310,15 @@ export async function startManagerSessionServer(options: ManagerServerOptions) {
         operation: request.params.operation,
         deadlineMs: expiresAt,
         signal: abort.signal,
+        // Controller cancellation must not retire its UI owner before the
+        // proxy's queued bytes and native single-client channel have settled.
+        // Defer dispatch so synchronous abort during finishLease cannot reenter
+        // it before the one cleanup promise has been installed.
+        onCancel: () => {
+          queueMicrotask(
+            () => void finishLease(current, failed).catch(() => {}),
+          );
+        },
       };
       const current: Lease = {
         id: randomUUID(),

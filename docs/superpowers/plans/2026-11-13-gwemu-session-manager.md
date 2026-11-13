@@ -1,6 +1,8 @@
 # gwemu 当前会话管理实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development。每个实现任务先规范审查，再质量审查；已有持续执行授权，不需重新选择执行方式。
+> **用户最新执行规则（覆盖本计划和技能中的旧审查循环，2026-11-13）：** 按原定目标验收并复用有效证据，不新增完成门槛。只有具备具体触发、代码证据、实际严重后果、且违反既定需求的 Critical/Important 问题可以阻塞。其余意见仅记录最终报告，不修改、不加测试、不阻塞。修复后只复查原问题及直接回归，不重复开放式全量审查求 APPROVED。重大范围变更交用户决策；实机/实体手柄豁免及既有发布/保护授权不变。
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development。按用户最新规则安排实现与有限问题复核；已有持续执行授权，不需重新选择执行方式。
 
 **Goal:** manager 默认发现桌面正在运行的 gwemu 会话，独占且有时限地执行完整设备管理，并安全交接外部 GDB。
 **Architecture:** Electron 拥有 native 子进程与唯一 QMP。私有 Unix RPC 授予绑定连接和 runtime UUID 的 lease，lease Unix proxy 独占转发 native GDB；Python 心跳独立运行，所有设备命令使用同一 lease。离线命令不发现设备，明确的物理 backend 保留。
@@ -81,12 +83,12 @@ Files：`externals/gwemu/hw/misc/gnw_h7b0_gpio.c`、`include/hw/misc/gnw_h7b0_gp
 
 ## Task 5：CLI auto路由、完整命令、GDB交接
 
-- [ ] CLI tests先RED：defaultauto/sessions、--session多session显式选择、noUI错误不fallback、offlineverify/fetch和坏restore不发现不开backend；显式物理/GDB参数旧行为。
-- [ ] main共享lease覆盖多命令`--`与shell；backend_factory保持懒加载，先archive/confirm后acquire；backup捕获原始banks/extras前不resume/reset/mailbox。backend动作及managerupload在发送对应GDB动作之前同步mark，再记录completionflags（rawbackend write也记录），不要仅靠commandname推测。
-- [ ] device-state/power/press只调用machinecontrol；screenshot走现有managerGDB路径。unlock现有physical提示维持；session下把powercycle步骤映射cold-start，native gnw-cold-cycle已在guest虚拟时间750ms后发POWER，先观察实际blue-screen/payload完成，不能无条件再发第二个POWER。lock/reprotect也要cold-latch新RDP并读回确认有效后再报成功。重连同一proxy，不结束lease。覆盖manager.close/open过程中心跳持续。
-- [ ] gdbserver关闭自身GDBclient，给外部debugger同leaseUnixproxy（GDB `target remote /path/socket`）；gdb调用配置的ARM GDB argv，不shell。若支持现有port参数，仅显式lease-owned127.0.0.1桥接，serverlistener和client同lease期限，绝不公布native端点或自动TCPfallback。退出bridge/child后release，SIGINT/SIGTERM清理。
-- [ ] 测试真实外部GDB（先核可用ARM GDB路径）、read/write/step/breakpoint，第二client拒绝，退出后UI应用恢复；绝对截止导致断连并unknown。未安装GDB需解决可用工具，不能把mock当验收。
-- [ ] 全managertests、desktoptypecheck/unit与相关integration，规范/质量review，然后才managercommit与授权fork发布核SHA。
+- [x] CLI tests先RED：defaultauto/sessions、--session多session显式选择、noUI错误不fallback、offlineverify/fetch和坏restore不发现不开backend；显式物理/GDB参数旧行为。
+- [x] main共享lease覆盖多命令`--`与shell；backend_factory保持懒加载，先archive/confirm后acquire；backup捕获原始banks/extras前不resume/reset/mailbox。backend动作及managerupload在发送对应GDB动作之前同步mark，再记录completionflags（rawbackend write也记录），不要仅靠commandname推测。
+- [x] device-state/power/press只调用machinecontrol；screenshot走现有managerGDB路径。unlock现有physical提示维持；session下把powercycle步骤映射cold-start，native gnw-cold-cycle已在guest虚拟时间750ms后发POWER，先观察实际blue-screen/payload完成，不能无条件再发第二个POWER。lock/reprotect也要cold-latch新RDP并读回确认有效后再报成功。重连同一proxy，不结束lease。覆盖manager.close/open过程中心跳持续。
+- [x] gdbserver关闭自身GDBclient，给外部debugger同leaseUnixproxy（GDB `target remote /path/socket`）；gdb调用配置的ARM GDB argv，不shell。若支持现有port参数，仅显式lease-owned127.0.0.1桥接，serverlistener和client同lease期限，绝不公布native端点或自动TCPfallback。退出bridge/child后release，SIGINT/SIGTERM清理。
+- [x] 测试真实外部GDB（先核可用ARM GDB路径）、read/write/step/breakpoint，第二client拒绝，退出后UI应用恢复；绝对截止导致断连并unknown。未安装GDB需解决可用工具，不能把mock当验收。
+- [x] 全managertests、desktoptypecheck/unit与相关integration，按用户最新规则关闭原严重问题及直接回归，然后managercommit与授权fork发布核SHA。
 
 ## Task 6：真实Electron+完整manager工作流
 

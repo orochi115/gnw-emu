@@ -9,7 +9,12 @@ import {
   unlink,
   chmod,
 } from "node:fs/promises";
-import { createConnection, createServer, type Server } from "node:net";
+import {
+  createConnection,
+  createServer,
+  type Server,
+  type Socket,
+} from "node:net";
 import { join } from "node:path";
 import { Writable } from "node:stream";
 import { SessionController, deadline } from "../../src/core/session-controller";
@@ -382,6 +387,348 @@ const completion = {
   memoryWritten: false,
   executionChanged: false,
 };
+
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((done) => (resolve = done));
+  return { promise, resolve };
+}
+
+// Delay real transport bytes, never synthesize an RSP response. A queued
+// continue can cross an early QMP stop, before the old native channel retires.
+async function releaseRelay(
+  path: string,
+  native: string,
+  queuedContinue: boolean,
+  events: string[],
+) {
+  const queued = deferred(),
+    closedPeer = deferred(),
+    flush = deferred(),
+    retired = deferred(),
+    barrier = deferred(),
+    proceed = deferred();
+  const sockets = new Set<Socket>();
+  let connections = 0;
+  const server = createServer((peer) => {
+    const index = ++connections;
+    peer.on("error", () => {});
+    peer.pause();
+    sockets.add(peer);
+    void (async () => {
+      if (index > 1) await retired.promise;
+      if (peer.destroyed) return;
+      const upstream = createConnection({ path: native });
+      sockets.add(upstream);
+      upstream.on("error", () => peer.destroy());
+      let pending: Buffer | undefined;
+      const acknowledged = deferred();
+      let continuing = false;
+      peer.on("data", (data) => {
+        const start =
+          queuedContinue && index === 1 ? data.indexOf(packet("c")) : -1;
+        if (start < 0) upstream.write(data);
+        else {
+          if (start) upstream.write(data.subarray(0, start));
+          pending = data.subarray(start);
+          queued.resolve();
+        }
+      });
+      upstream.on("data", (data) => {
+        if (continuing && data.includes(43)) acknowledged.resolve();
+        if (index > 1) {
+          barrier.resolve();
+          void proceed.promise.then(() => {
+            events.push("barrier-forwarded");
+            if (!peer.destroyed) peer.write(data);
+          });
+        } else if (!peer.destroyed) peer.write(data);
+      });
+      upstream.on("close", () => {
+        peer.destroy();
+        if (index === 1) retired.resolve();
+      });
+      peer.on("close", () => {
+        closedPeer.resolve();
+        void (async () => {
+          if (pending) {
+            await flush.promise;
+            continuing = true;
+            upstream.write(pending);
+            await deadline(acknowledged.promise, 1000, "queued-continue-ack");
+            events.push("queued-continue-acked");
+          }
+          upstream.destroy();
+        })().catch(() => upstream.destroy());
+      });
+      upstream.once("connect", () => peer.resume());
+    })().catch(() => peer.destroy());
+  });
+  await deadline(
+    new Promise<void>((resolve, reject) => {
+      server.once("error", reject);
+      server.listen(path, resolve);
+    }),
+    1000,
+    "release-relay-listen",
+  );
+  await chmod(path, 0o600);
+  return {
+    queued,
+    closedPeer,
+    flush,
+    barrier,
+    proceed,
+    async close() {
+      flush.resolve();
+      proceed.resolve();
+      retired.resolve();
+      for (const socket of sockets) socket.destroy();
+      await deadline(
+        new Promise<void>((resolve) => server.close(() => resolve())),
+        1000,
+        "release-relay-close",
+      );
+    },
+  };
+}
+
+test.each([false, true])(
+  "failed release retains UI ownership until real native retirement (queued continue: %s)",
+  async (queuedContinue) => {
+    const f = await nativeFixture();
+    const events: string[] = [];
+    let relay: Awaited<ReturnType<typeof releaseRelay>> | undefined;
+    let g: Awaited<ReturnType<typeof rsp>> | undefined;
+    let admission: ReturnType<typeof vi.spyOn> | undefined;
+    const { QmpClient } = await import("../../src/core/qmp-client");
+    const originalCommand = QmpClient.prototype.command;
+    let qmp: InstanceType<typeof QmpClient> | undefined;
+    const commands = vi
+      .spyOn(QmpClient.prototype, "command")
+      .mockImplementation(function (
+        this: InstanceType<typeof QmpClient>,
+        ...args
+      ) {
+        qmp = this;
+        events.push(args[0]);
+        return originalCommand.apply(this, args);
+      });
+    try {
+      await f.controller.load(f.profile.path);
+      const original = f.controller.beginManager.bind(f.controller);
+      admission = vi
+        .spyOn(f.controller, "beginManager")
+        .mockImplementation(async (...args) => {
+          const acquired = await original(...args);
+          const path = join(f.root, "retirement.sock");
+          relay = await releaseRelay(
+            path,
+            acquired.gdbEndpoint,
+            queuedContinue,
+            events,
+          );
+          return { ...acquired, gdbEndpoint: path };
+        });
+      const a = await acquire(f);
+      g = await rsp(a.gdbEndpoint);
+      expect(await g.command("m08000000,8")).toBe("0000012009000008");
+      if (queuedContinue) {
+        g.socket.write(packet("c"));
+        await deadline(relay!.queued.promise, 1000, "continue-queued");
+      }
+      const released = a.p.call("release", {
+        sessionId: a.sessionId,
+        leaseId: a.leaseId,
+        completion: { ...completion, success: false },
+      });
+      released.catch(() => {});
+      await deadline(relay!.closedPeer.promise, 1000, "proxy-retired");
+      relay!.flush.resolve();
+      await deadline(relay!.barrier.promise, 1000, "real-barrier-reply-held");
+      // Give any premature controller retirement a deterministic opportunity to
+      // finish while the real native barrier's reply remains withheld.
+      await new Promise<void>((resolve) => setTimeout(resolve, 60));
+      expect(f.controller.state.deviceOperation).toBe(true);
+      await expect(f.controller.load(f.profile.path)).rejects.toMatchObject({
+        code: "error.busy",
+      });
+      await expect(f.controller.setMuted(true)).rejects.toMatchObject({
+        code: "error.busy",
+      });
+      f.controller.key("ArrowLeft", true);
+      await f.controller.instantState("save");
+      expect(f.controller.inputState().desiredMask).toBe(0);
+      expect(f.controller.state.stateOperation).toBeUndefined();
+      if (queuedContinue)
+        expect(await qmp!.command("query-status")).toMatchObject({
+          running: true,
+        });
+      relay!.proceed.resolve();
+      expect(await released).toMatchObject({
+        ok: true,
+        result: { session: { sessionId: a.sessionId, execution: "unknown" } },
+      });
+      expect(events.lastIndexOf("stop")).toBeGreaterThan(
+        events.lastIndexOf("barrier-forwarded"),
+      );
+      expect(await qmp!.command("query-status")).toMatchObject({
+        running: false,
+      });
+      const counter = await f.hardware("readl 0x2000010c");
+      await new Promise<void>((resolve) => setTimeout(resolve, 30));
+      expect(await f.hardware("readl 0x2000010c")).toBe(counter);
+      await expect(lstat(a.gdbEndpoint)).rejects.toMatchObject({
+        code: "ENOENT",
+      });
+    } finally {
+      relay?.flush.resolve();
+      relay?.proceed.resolve();
+      await g?.close();
+      admission?.mockRestore();
+      commands.mockRestore();
+      try {
+        await f.cleanup();
+      } finally {
+        await relay?.close();
+      }
+    }
+  },
+);
+
+test.each(["stop", "expiry", "disconnect"] as const)(
+  "%s during the real native release barrier cannot drop ownership or restore execution",
+  async (kind) => {
+    const clock = manualClock();
+    const f = await nativeFixture({ clock });
+    const events: string[] = [];
+    let relay: Awaited<ReturnType<typeof releaseRelay>> | undefined;
+    let g: Awaited<ReturnType<typeof rsp>> | undefined;
+    let admission: ReturnType<typeof vi.spyOn> | undefined;
+    const { QmpClient } = await import("../../src/core/qmp-client");
+    const originalCommand = QmpClient.prototype.command;
+    let qmp: InstanceType<typeof QmpClient> | undefined;
+    const commands = vi
+      .spyOn(QmpClient.prototype, "command")
+      .mockImplementation(function (
+        this: InstanceType<typeof QmpClient>,
+        ...args
+      ) {
+        qmp = this;
+        events.push(args[0]);
+        return originalCommand.apply(this, args);
+      });
+    try {
+      await f.controller.load(f.profile.path);
+      const original = f.controller.beginManager.bind(f.controller);
+      admission = vi
+        .spyOn(f.controller, "beginManager")
+        .mockImplementation(async (...args) => {
+          const acquired = await original(...args);
+          const path = join(f.root, "retirement.sock");
+          relay = await releaseRelay(path, acquired.gdbEndpoint, false, events);
+          return { ...acquired, gdbEndpoint: path };
+        });
+      const a = await acquire(f, "manage", 20000);
+      g = await rsp(a.gdbEndpoint);
+      expect(await g.command("m08000000,8")).toBe("0000012009000008");
+      const releasing = a.p
+        .call("release", {
+          sessionId: a.sessionId,
+          leaseId: a.leaseId,
+          completion: { ...completion, success: kind === "expiry" },
+        })
+        .catch(() => undefined);
+      await deadline(
+        relay!.barrier.promise,
+        1000,
+        "real-release-barrier-entered",
+      );
+      const boundary = events.length;
+      if (kind === "stop") {
+        // The transport gate remains blocked: UI stop must revoke and reap
+        // the real native without waiting for a test-controlled reply.
+        await expect(
+          deadline(f.controller.stop(), 3000, "stop-during-release"),
+        ).rejects.toMatchObject({ code: "error.saveUncertain" });
+        expect(a.p.socket.destroyed).toBe(true);
+        await releasing;
+        relay!.proceed.resolve();
+        await relay!.close();
+        relay = undefined;
+        admission.mockRestore();
+        admission = undefined;
+        await vi.waitFor(
+          async () =>
+            expect(
+              (await readdir(join(f.root, "private"))).filter((name) =>
+                name.startsWith("l-"),
+              ),
+            ).toEqual([]),
+          { timeout: 1000 },
+        );
+        await f.controller.load(f.profile.path);
+        const newer = await acquire(f);
+        expect(newer.sessionId).not.toBe(a.sessionId);
+        expect(
+          await newer.p.call("release", {
+            sessionId: newer.sessionId,
+            leaseId: newer.leaseId,
+            completion,
+          }),
+        ).toMatchObject({
+          ok: true,
+          result: {
+            session: { sessionId: newer.sessionId, execution: "running" },
+          },
+        });
+      } else {
+        if (kind === "expiry") clock.advance(20000);
+        else a.p.close();
+        await new Promise<void>((resolve) => setImmediate(resolve));
+        expect(f.controller.state.deviceOperation).toBe(true);
+        await expect(f.controller.load(f.profile.path)).rejects.toMatchObject({
+          code: "error.busy",
+        });
+        relay!.proceed.resolve();
+        const result = await releasing;
+        if (kind === "expiry")
+          expect(result).toMatchObject({
+            ok: false,
+            error: { code: "LEASE_EXPIRED" },
+          });
+        await vi.waitFor(
+          () => expect(f.controller.state.execution).toBe("unknown"),
+          { timeout: 1000 },
+        );
+        expect(events.slice(boundary)).not.toContain("cont");
+        expect(await qmp!.command("query-status")).toMatchObject({
+          running: false,
+        });
+        await vi.waitFor(
+          async () =>
+            expect(
+              (await readdir(join(f.root, "private"))).filter((name) =>
+                name.startsWith("l-"),
+              ),
+            ).toEqual([]),
+          { timeout: 1000 },
+        );
+      }
+    } finally {
+      relay?.proceed.resolve();
+      await g?.close();
+      admission?.mockRestore();
+      commands.mockRestore();
+      try {
+        await f.cleanup();
+      } finally {
+        await relay?.close();
+      }
+    }
+  },
+);
+
 test("actual native lease is bound to RPC connection and one GDB proxy, release invalidates it", async () => {
   const f = await nativeFixture();
   let gdb: Awaited<ReturnType<typeof rsp>> | undefined;

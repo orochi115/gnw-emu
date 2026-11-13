@@ -51,6 +51,8 @@ export interface ManagerOwner {
   readonly operation: ManagerOperation;
   readonly deadlineMs: number;
   readonly signal: AbortSignal;
+  /** Transport owners retire the native GDB channel before calling endManager. */
+  readonly onCancel?: () => void;
 }
 export interface ManagerAcquisition {
   sessionId: string;
@@ -677,10 +679,12 @@ export class SessionController extends EventEmitter {
       timer: undefined as unknown as NodeJS.Timeout,
       onAbort: () => {
         context.abort.abort();
-        void this.endManager(owner, {
-          ...context.mutations,
-          success: false,
-        }).catch(() => {});
+        if (owner.onCancel) owner.onCancel();
+        else
+          void this.endManager(owner, {
+            ...context.mutations,
+            success: false,
+          }).catch(() => {});
       },
     };
     // Owner and input gate are synchronous, before admission's first await.
@@ -711,10 +715,12 @@ export class SessionController extends EventEmitter {
         };
       })
       .catch(async (error) => {
-        await this.endManager(owner, {
-          ...context.mutations,
-          success: false,
-        }).catch(() => {});
+        if (owner.onCancel) context.onAbort();
+        else
+          await this.endManager(owner, {
+            ...context.mutations,
+            success: false,
+          }).catch(() => {});
         throw error;
       });
   }
@@ -769,10 +775,7 @@ export class SessionController extends EventEmitter {
           !["NO_POWER", "TARGET_UNSAFE"].includes(error.code)
         ) {
           context.failed = true;
-          void this.endManager(owner, {
-            ...context.mutations,
-            success: false,
-          }).catch(() => {});
+          context.onAbort();
         }
         throw error;
       })
@@ -991,6 +994,16 @@ export class SessionController extends EventEmitter {
           context.failed ||
           !context.admitted
         ) {
+          const stopped = await this.managerFinishAwait(
+            context,
+            context.runtime.qmp.command("query-status", undefined, 1000),
+            true,
+          );
+          if ((stopped as { running?: boolean }).running !== false)
+            throw new ManagerProtocolError(
+              "TARGET_UNSAFE",
+              "Managed target did not stop during release",
+            );
           this.uncertainState(context.runtime);
         } else {
           const changed =

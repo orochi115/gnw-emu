@@ -1,6 +1,8 @@
 # gwemu 唯一内核与历史依赖退役实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development。逐任务TDD和规范/质量两级审查；user已授权完成原路线，父提交仅本地。
+> **用户最新执行规则（覆盖本计划和技能中的旧审查循环，2026-11-13）：** 按原定目标验收并复用有效证据，不新增完成门槛。只有具备具体触发、代码证据、实际严重后果、且违反既定需求的 Critical/Important 问题可以阻塞。其余意见仅记录最终报告，不修改、不加测试、不阻塞。修复后只复查原问题及直接回归，不重复开放式全量审查求 APPROVED。重大范围变更交用户决策；实机/实体手柄豁免及既有发布/保护授权不变。
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development。逐任务按既定目标实现和验证，问题复核遵守用户最新规则；user已授权完成原路线，父提交仅本地。
 
 **Goal:** 将所有产品入口切成唯一gwemu，保存旧session数据并退出两个旧fork维护。
 **Architecture:** 导入使用旧UIlease+实际native文件锁，复制savedFlash/SD到新namespace，保留全部旧文件。canonical headless gwemu提供guest初始化前的小型lock guard内的原子不覆盖目录publication，不依赖系统Python或Node addon；产品/CLI/build/package引用同一产物及manifest。
