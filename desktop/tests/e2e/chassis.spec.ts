@@ -136,11 +136,17 @@ async function pixelPattern(app: ElectronApplication, page: Page, factor = 1) {
     const canvas = document.querySelector("canvas")!,
       context = canvas.getContext("2d")!;
     const original = context.putImageData.bind(context);
+    // One LCD pixel may occupy multiple pixels in the transport surface.
+    const sourceBlockX = block * (canvas.width / 320);
+    const sourceBlockY = block * (canvas.height / 240);
     const pixels = new Uint8ClampedArray(canvas.width * canvas.height * 4);
     for (let y = 0; y < canvas.height; y++)
       for (let x = 0; x < canvas.width; x++) {
         const i = (y * canvas.width + x) * 4,
-          v = (Math.floor(x / block) + Math.floor(y / block)) % 2 ? 255 : 0;
+          v =
+            (Math.floor(x / sourceBlockX) + Math.floor(y / sourceBlockY)) % 2
+              ? 255
+              : 0;
         pixels[i] = pixels[i + 1] = pixels[i + 2] = v;
         pixels[i + 3] = 255;
       }
@@ -508,6 +514,59 @@ test("chassis preference survives restart and failed writes restore the checkbox
 });
 
 for (const model of ["zelda", "mario"]) {
+  test(`${model} transport resolution preserves physical LCD size with and without chassis`, async () => {
+    const root = await mkdtemp(join(tmpdir(), "gnw-lcd-size-"));
+    const { app, page, rpc, action } = await launch(root, model);
+    try {
+      await rpc("ui.waitFor", {
+        condition: "app.status",
+        value: "running",
+        timeoutMs: 15000,
+      });
+      await rpc("ui.waitFor", { condition: "ui.lastPresented", value: "2" });
+      const session = (await rpc("app.getState")).runtimeSessionId;
+      expect(
+        await page.locator("canvas").evaluate((c: HTMLCanvasElement) => ({
+          width: c.width,
+          height: c.height,
+        })),
+      ).toEqual({ width: 640, height: 480 });
+      const size = () =>
+        page.locator("canvas").evaluate((c) => {
+          const r = c.getBoundingClientRect(),
+            d = window.devicePixelRatio;
+          return { width: r.width * d, height: r.height * d };
+        });
+      await expect.poll(size).toEqual({ width: 1280, height: 960 });
+      for (const factor of [0.5, 1, 2, 3]) {
+        await action("ui.menu", {
+          id: `view.scale.${factor === 0.5 ? "half" : factor}`,
+        });
+        await expect
+          .poll(size)
+          .toEqual({ width: 320 * factor, height: 240 * factor });
+        await aligned(page);
+        await pixelPattern(app, page, factor);
+        await action("ui.menu", { id: "view.chassis" });
+        await expect(page.locator('[data-ui="chassis"]')).toHaveCount(0);
+        await expect
+          .poll(size)
+          .toEqual({ width: 320 * factor, height: 240 * factor });
+        await pixelPattern(app, page, factor);
+        await action("ui.menu", { id: "view.chassis" });
+        await expect
+          .poll(size)
+          .toEqual({ width: 320 * factor, height: 240 * factor });
+      }
+      expect((await rpc("app.getState")).runtimeSessionId).toBe(session);
+    } finally {
+      await app.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+}
+
+for (const model of ["zelda", "mario"]) {
   test(`${model} pixel presets preserve LCD through frame toggles and restart clock preferences`, async () => {
     test.setTimeout(60000);
     const root = await mkdtemp(join(tmpdir(), "gnw-scales-"));
@@ -543,7 +602,15 @@ for (const model of ["zelda", "mario"]) {
         value: "2",
       });
       const session = await live.rpc("app.getState");
+      // Exercise the gwemu 2× transport surface, not only an empty 320×240 canvas.
+      expect(
+        await live.page.locator("canvas").evaluate((c: HTMLCanvasElement) => ({
+          width: c.width,
+          height: c.height,
+        })),
+      ).toEqual({ width: 640, height: 480 });
       await preset(2);
+      await aligned(live.page);
       expect(
         (await live.rpc("ui.inspect")).menus.find(
           (i: any) => i.id === "view.scale.2",
@@ -613,7 +680,12 @@ for (const model of ["zelda", "mario"]) {
       await expect.poll(size).toEqual({ width: 200, height: 150 });
       expect(
         (await live.rpc("ui.inspect")).menus
-          .filter((i: any) => i.type === "radio" && i.checked)
+          .filter(
+            (i: any) =>
+              i.id?.startsWith("view.scale.") &&
+              i.type === "radio" &&
+              i.checked,
+          )
           .map((i: any) => i.id),
       ).toEqual(["view.scale.custom"]);
       await live.action("ui.menu", { id: "view.chassis" });

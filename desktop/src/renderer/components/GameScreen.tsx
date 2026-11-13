@@ -1,3 +1,4 @@
+import { LCD_WIDTH, LCD_HEIGHT } from "../../shared/clock-geometry";
 import { t } from "../../shared/locale";
 import { useEffect, useRef } from "react";
 import { skins, skinImage, type Skin } from "./chassis-assets";
@@ -39,8 +40,6 @@ export function GameScreen({
     let pending: any;
     let currentId: string | undefined;
     let receivedAt = 0;
-    let sourceWidth = 320;
-    let sourceHeight = 240;
     const resize = () => {
       if (!container.current || !canvas.current) return;
       const box = container.current.getBoundingClientRect();
@@ -55,10 +54,11 @@ export function GameScreen({
       c.style.maxWidth = actual ? "none" : "";
       c.style.maxHeight = actual ? "none" : "";
       c.dataset.devicePixelRatio = String(density);
-      // Blink layout quantizes fractional CSS sizes; source-size + transform avoids it.
+      // Layout uses hardware LCD pixels, independently of the transport resolution.
+      // Blink quantizes fractional CSS sizes; LCD-size + transform avoids it.
       const sizeCanvas = (scale: number) => {
-        c.style.width = `${sourceWidth * (actual ? 1 : scale)}px`;
-        c.style.height = `${sourceHeight * (actual ? 1 : scale)}px`;
+        c.style.width = `${LCD_WIDTH * (actual ? 1 : scale)}px`;
+        c.style.height = `${LCD_HEIGHT * (actual ? 1 : scale)}px`;
       };
       const placeCanvas = (x: number, y: number) => {
         const rect = layout.current!.getBoundingClientRect();
@@ -69,7 +69,7 @@ export function GameScreen({
         const availableWidth = Math.max(1, box.width),
           availableHeight = Math.max(1, box.height);
         const scale = actual
-          ? (sourceWidth * factor) / (chassis.screen.width * density)
+          ? (LCD_WIDTH * factor) / (chassis.screen.width * density)
           : Math.min(
               availableWidth / chassis.size.width,
               availableHeight / chassis.size.height,
@@ -79,25 +79,23 @@ export function GameScreen({
         const aperture = chassis.screen;
         const lcdScale = actual
           ? factor / density
-          : Math.min(
-              aperture.width / sourceWidth,
-              aperture.height / sourceHeight,
-            ) * scale;
+          : Math.min(aperture.width / LCD_WIDTH, aperture.height / LCD_HEIGHT) *
+            scale;
         c.style.position = "absolute";
         sizeCanvas(lcdScale);
         placeCanvas(
           (aperture.x + aperture.width / 2) * scale -
-            (sourceWidth * lcdScale) / 2,
+            (LCD_WIDTH * lcdScale) / 2,
           (aperture.y + aperture.height / 2) * scale -
-            (sourceHeight * lcdScale) / 2,
+            (LCD_HEIGHT * lcdScale) / 2,
         );
         if (actual && frameImage.current) {
           // Photo alpha filtering must not tint the first/last LCD pixel rows.
           const r = layout.current.getBoundingClientRect();
           const x = parseFloat(c.style.left),
             y = parseFloat(c.style.top),
-            w = (sourceWidth * factor) / density,
-            h = (sourceHeight * factor) / density;
+            w = (LCD_WIDTH * factor) / density,
+            h = (LCD_HEIGHT * factor) / density;
           frameImage.current.style.clipPath = `path(evenodd, "M0 0 H${r.width} V${r.height} H0 Z M${x} ${y} h${w} v${h} h${-w} Z")`;
         }
 
@@ -111,17 +109,17 @@ export function GameScreen({
       if (actual) {
         sizeCanvas(factor / density);
         placeCanvas(
-          (box.width - (sourceWidth * factor) / density) / 2,
-          (box.height - (sourceHeight * factor) / density) / 2,
+          (box.width - (LCD_WIDTH * factor) / density) / 2,
+          (box.height - (LCD_HEIGHT * factor) / density) / 2,
         );
         return;
       }
       canvas.current.style.left = "";
       canvas.current.style.top = "";
-      const fit = Math.min(box.width / sourceWidth, box.height / sourceHeight);
+      const fit = Math.min(box.width / LCD_WIDTH, box.height / LCD_HEIGHT);
       const scale = fit;
-      canvas.current.style.width = `${sourceWidth * scale}px`;
-      canvas.current.style.height = `${sourceHeight * scale}px`;
+      canvas.current.style.width = `${LCD_WIDTH * scale}px`;
+      canvas.current.style.height = `${LCD_HEIGHT * scale}px`;
     };
     resizeRef.current = resize;
     let resolution: MediaQueryList;
@@ -142,8 +140,8 @@ export function GameScreen({
       const frame = pending;
       pending = undefined;
       const c = canvas.current;
-      sourceWidth = frame.width;
-      sourceHeight = frame.height;
+      const sourceWidth = frame.width;
+      const sourceHeight = frame.height;
       if (c.width !== sourceWidth || c.height !== sourceHeight) {
         c.width = sourceWidth;
         c.height = sourceHeight;
@@ -225,8 +223,8 @@ export function GameScreen({
       >
         <canvas
           ref={canvas}
-          width={320}
-          height={240}
+          width={LCD_WIDTH}
+          height={LCD_HEIGHT}
           aria-label={t("app.game")}
           data-ui="game.canvas"
           tabIndex={-1}

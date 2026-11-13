@@ -2,6 +2,8 @@ import mario from "../renderer/assets/chassis/mario/skin.json";
 import zelda from "../renderer/assets/chassis/zelda/skin.json";
 
 const skins = { mario, zelda };
+export const LCD_WIDTH = 320;
+export const LCD_HEIGHT = 240;
 /** Bounds are logical pixels; the LCD is 320×240 output pixels at any density. */
 export function clockGeometry(
   model: "mario" | "zelda" | undefined,
@@ -11,10 +13,10 @@ export function clockGeometry(
 ) {
   const skin = model && frame ? skins[model] : undefined;
   const photoScale = skin
-    ? (320 * factor) / (skin.screen.width * density)
+    ? (LCD_WIDTH * factor) / (skin.screen.width * density)
     : factor / density;
-  const layoutWidth = (skin?.size.width ?? 320) * photoScale;
-  const layoutHeight = (skin?.size.height ?? 240) * photoScale;
+  const layoutWidth = (skin?.size.width ?? LCD_WIDTH) * photoScale;
+  const layoutHeight = (skin?.size.height ?? LCD_HEIGHT) * photoScale;
   return {
     width: Math.ceil(layoutWidth),
     height: Math.ceil(layoutHeight),
