@@ -10,9 +10,6 @@
 	path = externals/gnwmanager
 	url = https://github.com/orochi115/gnwmanager.git
 	branch = gnw-emu
-[submodule "externals/stm32h7xx-hal-driver"]
-	path = externals/stm32h7xx-hal-driver
-	url = https://github.com/STMicroelectronics/stm32h7xx-hal-driver.git
 [submodule "externals/cores/fceumm-retro-go-sd"]
 	path = externals/cores/fceumm-retro-go-sd
 	url = https://github.com/sylverb/fceumm-retro-go-sd.git

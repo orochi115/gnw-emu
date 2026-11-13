@@ -35,6 +35,7 @@ build/
 /externals/qemu/
 /externals/game-and-watch-backup/
 /externals/game-and-watch-retro-go/
+/externals/stm32h7xx-hal-driver/
 /qemu-gnw/
 /scripts/qemu-savestate-hook.py
 /harness/gnw.py

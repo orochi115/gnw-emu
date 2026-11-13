@@ -62,7 +62,9 @@ FRESH=1 ./run_sd_update_emu.sh   # 新身份回到升级前，保留旧存档（
 | `retro-go-sd` | orochi115/game-and-watch-retro-go-sd `gnw-emu` 分支（基于 sylverb external_cores） |
 | `game-and-watch-patch` | orochi115 fork `gnw-emu` 分支：给原厂固件打 `--sd-bootloader` 补丁 |
 | `cores/*-retro-go-sd`、`cores/game-and-watch-bootloader` | sylverb 上游，固定在 release tag |
-| `gnwmanager`、`stm32h7xx-hal-driver` | 备份/刷机工具与 HAL 参考；传统 Retro-Go 源码已退役 |
+| `gnwmanager` | 备份/刷机工具；构建使用仓库自带的 `Drivers/STM32H7xx_HAL_Driver` |
+
+传统 Retro-Go 源码与顶层 `stm32h7xx-hal-driver` 参考子模块已退役；本地历史目录保留并忽略，新检出不再拉取。
 
 ```sh
 git submodule update --init externals/gwemu       # 其他子模块由各脚本按需初始化
