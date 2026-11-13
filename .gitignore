@@ -29,3 +29,22 @@ build/
 # Retired legacy execution: preserve historical local files.
 /desktop/src/core/qemu-command.ts
 /desktop/tests/unit/qemu-command.test.ts
+
+# Retired sources/submodules remain locally; new checkouts use gwemu/gnwmanager.
+/externals/qemu/
+/externals/game-and-watch-backup/
+/qemu-gnw/
+/scripts/qemu-savestate-hook.py
+/harness/gnw.py
+/harness/__main__.py
+/hwtest/emu_run.py
+/desktop/tools/kernel-probe.ts
+/tests/test_gnw.py
+/tests/test_retrogo.py
+/tests/test_backlight.py
+/tests/test_sdcard.py
+/tests/test_savestate.py
+/tests/test_session_lock.py
+/tests/test_display_transport.py
+/tests/test_exit_state.py
+/tests/test_host_audio.py

@@ -24,4 +24,4 @@ QEMU最多一帧发送/等ACK，另保留一个最新待发快照；部分写入
 
 网络ACK只代表完整收包，绘制ACK只代表画面呈现，都不代表游戏输入响应。captureTimeNs来自QEMU，不与renderer的performance.now直接相减；同源接收到绘制耗时单独报告。帧龄/分辨率/队列为诊断信息，不展示成常驻UI。
 
-`qemu-gnw/hw/arm/gnw/gnw_frame_protocol.h` 和 `desktop/src/shared/frame-protocol.ts` 定义同一布局；Python真实QEMU测试验证字节、分包、透明度与背压。未知协议立即停止该显示连接；本阶段不自动重连，统一清理后重新加载创建新运行。
+`externals/gwemu/hw/arm/gnw_h7b0_frame_protocol.h` 和 `desktop/src/shared/frame-protocol.ts` 定义同一布局；Python真实 gwemu 测试验证字节、分包、透明度与背压。未知协议立即停止该显示连接；不自动重连，统一清理后重新加载创建新运行。

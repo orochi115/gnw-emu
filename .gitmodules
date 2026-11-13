@@ -1,8 +1,3 @@
-[submodule "externals/qemu"]
-	path = externals/qemu
-	url = https://github.com/orochi115/qemu.git
-	branch = gnw
-	shallow = true
 [submodule "externals/retro-go-sd"]
 	path = externals/retro-go-sd
 	url = https://github.com/orochi115/game-and-watch-retro-go-sd.git
@@ -11,10 +6,6 @@
 	path = externals/game-and-watch-patch
 	url = https://github.com/orochi115/game-and-watch-patch.git
 	branch = gnw-emu
-[submodule "externals/game-and-watch-backup"]
-	path = externals/game-and-watch-backup
-	url = https://github.com/orochi115/game-and-watch-backup.git
-	branch = full-backup-restore
 [submodule "externals/game-and-watch-retro-go"]
 	path = externals/game-and-watch-retro-go
 	url = https://github.com/orochi115/game-and-watch-retro-go.git

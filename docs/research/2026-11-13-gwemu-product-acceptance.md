@@ -33,4 +33,6 @@ Task 3/4 的有界只读规范/质量检查见 `product-entry-review.txt`，没�
 
 ## 限制与后续历史收尾
 
+历史入口验证再次执行 canonical 构建时，上游 `scripts/gwemu-version.sh` 的日期标头触发重链接，源码/配置未变但哈希变化。最终产物以完成报告为准：native `f6d37ae14c0075f970cea501234a711072ea2cd64cbfb6defa7327573d0b5552`，macOS staged `6a0003f8f5d246a7cbdfed45451152f79dc28ac93e66f907607096fffd2212c4`。新产物实际 185 项 native 回归通过（`final-native-regression.log`），重新 staging/构建/哈希审计及 2 项真实目录包用例通过（`final-package-e2e.log`）。上文哈希保留为 Task 3–5 当时的实证，不冒充最终产物。
+
 上述记录完成产品 Task 3–5，不能单独代表旧依赖退休已完成；最终 tag、维护索引清理和旧 fork 归档见 [历史说明](2026-11-13-gwemu-migration-history.md)及最终逐项迁移报告。实机/实体手柄由用户之后验证。Windows/Linux 目录包未在此次 macOS 环境构建验收；实际 SSH 主机传输仍沿用受控 runner 验证，不宣称真实远端连接通过。没有父仓库远程推送。

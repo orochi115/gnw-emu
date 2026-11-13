@@ -44,14 +44,18 @@ Files：`scripts/build.sh,build_gwemu.sh,launch_common.sh,run.sh,run_backup.sh,r
 ## Task 6：最终历史tag与退役
 
 Files：`.gitmodules,.gitignore,README.md`、新`docs/research/2026-11-13-gwemu-migration-history.md`；index旧`externals/qemu,externals/game-and-watch-backup,qemu-gnw,scripts/qemu-savestate-hook.py`及旧专用tests/harness/tools。
-- [ ] 读refs与remotestatus确认旧QEMU `bf6c2d6...`、backup `c4c807c...`和parent历史完整snapshot可复现；parentfinallegacytag仅本地，docs明确未发布父tag、提供本地checkoutref及公开parent可用历史ref（存在才写，不猜）。旧QEMU symlinktarget必须在history命令完整恢复。
-- [ ] 对旧两个fork创建无覆盖的最终tag（名称如gnw-emu-legacy-final-2026-11-13，先check是否exist+target一致）；push仅旧forktag沿用退休授权，读remote exactSHA。
-- [ ] `.gitmodules`移除两条、git index `git rm --cached`保留本机historicalworktree/build；移除维护中的oldmachine/hook/tests/comparetools同样保留本地ignore。不deinit/rm-rf。保留userbackup位置/文件；当前构建与测试不得需要oldsource。`harness/gnw.py`中被gwemutests需要的sourceassetpaths移到中立helper，删除旧runtime依赖；conftest不再以旧binary存在与否skipgwemu。
-- [ ] README current流程重写：solegwemu build/profile/load/session持久化/manager auto/offlinebackup/debug/power、privateendpoints/新slot身份校验与旧数据不导入说明和豁免实机范围；历史refs单独historydocument，不把历史研究报告当维护依赖删掉。
-- [ ] read-only审核当前maintenancefiles查`externals/qemu,build/qemu-system-arm,qemu-gnw,gnw_full_backup.py,compare-kernels`无执行引用；允许historyreports和旧dataassetpath说明。新checkout按维护submodules实际build/tests不会依赖旧worktree。
-- [ ] 再相关build/unit/package/manager+backup最小freeze及10源hash/16603/ownedcleanup；两个forkGitHub archive后核archived=true；native/manager仍unarchived。任何archive失败留明确未完成项。
-- [ ] 父finallocalcommit保留gitlinks exactremoteSHA；不pushparent。原始spec逐条finalreport完整passed/waived，所有requiredwork无remaining后才`update_goal complete`。不得以本task接近预算或某批通过关闭全部goal。
+- [x] 读refs与remotestatus确认旧QEMU `bf6c2d6...`、backup `c4c807c...`和parent历史完整snapshot可复现；parentfinallegacytag仅本地，docs明确未发布父tag、提供本地checkoutref及公开parent可用历史ref（存在才写，不猜）。旧QEMU symlinktarget必须在history命令完整恢复。
+- [x] 对旧两个fork创建无覆盖的最终tag（名称如gnw-emu-legacy-final-2026-11-13，先check是否exist+target一致）；push仅旧forktag沿用退休授权，读remote exactSHA。
+- [x] `.gitmodules`移除两条、git index `git rm --cached`保留本机historicalworktree/build；移除维护中的oldmachine/hook/tests/comparetools同样保留本地ignore。不deinit/rm-rf。保留userbackup位置/文件；当前构建与测试不得需要oldsource。`harness/gnw.py`中被gwemutests需要的sourceassetpaths移到中立helper，删除旧runtime依赖；conftest不再以旧binary存在与否skipgwemu。
+- [x] README current流程重写：solegwemu build/profile/load/session持久化/manager auto/offlinebackup/debug/power、privateendpoints/新slot身份校验与旧数据不导入说明和豁免实机范围；历史refs单独historydocument，不把历史研究报告当维护依赖删掉。
+- [x] read-only审核当前maintenancefiles查`externals/qemu,build/qemu-system-arm,qemu-gnw,gnw_full_backup.py,compare-kernels`无执行引用；允许historyreports和旧dataassetpath说明。新checkout按维护submodules实际build/tests不会依赖旧worktree。
+- [x] 再相关build/unit/package/manager+backup最小freeze及10源hash/16603/ownedcleanup；两个forkGitHub archive后核archived=true；native/manager仍unarchived。任何archive失败留明确未完成项。
+- [x] 父finallocalcommit保留gitlinks exactremoteSHA；不pushparent。原始spec逐条finalreport完整passed/waived，所有requiredwork无remaining后才`update_goal complete`。不得以本task接近预算或某批通过关闭全部goal。
 
 ## Task 3–5 验收记录（2026-11-13）
 
-实际软件冻结已完成，详见 `docs/research/2026-11-13-gwemu-product-acceptance.md` 和 `out/gwemu-completion/product-final-source.json`。复用有效结果，只重跑原失败及直接回归；现存失败日志不删除。四 launcher、三原桌面失败用例、canonical manager-server 均直接通过；目录包旧比较 bundle 已排除并审核哈希。实机/实体手柄豁免，父提交只本地。Task 6 仍需最终历史 tag、维护依赖退休与远程 archive。
+实际软件冻结已完成，详见 `docs/research/2026-11-13-gwemu-product-acceptance.md` 和 `out/gwemu-completion/product-final-source.json`。复用有效结果，只重跑原失败及直接回归；现存失败日志不删除。四 launcher、三原桌面失败用例、canonical manager-server 均直接通过；目录包旧比较 bundle 已排除并审核哈希。实机/实体手柄豁免，父提交只本地。Task 6 最终历史 tag、维护依赖退休与远程 archive 已完成，见下面最终记录。
+
+## Task 6 最终记录（2026-11-13）
+
+公开旧 fork 最终 tag exact SHA 已核对，两个 archive GET true，gwemu/manager GET false；父历史 tag 仅本地。37 个旧源码文件和两子模块本机副本保留不变；维护 checkout 无旧源码，307 项 collection 无错误，28 个实际 manager/backup 检查有效通过。删除的 legacy skip 钩子专用断言原失败保留，未恢复旧 runtime。最终日期标头重链接产物 185 native/2 package 通过，20 libs 和实际 manifest 匹配，保护审计通过。逐条原要求见 `docs/research/2026-11-13-gwemu-migration-completion.md`，最终 audit 为 `out/gwemu-completion/retirement-final-audit.json`；父提交只本地。

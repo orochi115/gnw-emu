@@ -72,7 +72,7 @@ npm run package:dir
 
 目录包包含 gwemu 和依赖库、原构建 manifest、重定位/签名后真实哈希的 package manifest，不带 ROM、SD 或用户数据。stage 拒绝缺失、dirty、非固定来源或哈希不匹配的 native。开发版与打包版均默认使用 gwemu，`--kernel=legacy` 明确拒绝。
 
-软件证据见 [迁移说明](docs/desktop/gwemu-migration.md)、[真实桌面 manager 工作流](docs/research/2026-11-13-gwemu-session-manager.md)及其链接报告。实机（含 SD 改装机）和实体手柄验证按用户决定豁免，由用户后续进行；模拟器结果不构成实机兼容证明。Windows/Linux 包没有在此次 macOS 工作环境构建验收，不报告通过。
+原设计逐项验收与最终来源见[迁移完成报告](docs/research/2026-11-13-gwemu-migration-completion.md)，具体软件证据见[产品验收](docs/research/2026-11-13-gwemu-product-acceptance.md)和[真实桌面 manager 工作流](docs/research/2026-11-13-gwemu-session-manager.md)。实机（含 SD 改装机）和实体手柄验证按用户决定豁免，由用户后续进行；模拟器结果不构成实机兼容证明。Windows/Linux 包没有在此次 macOS 工作环境构建验收，不报告通过。
 
 ## 目录和历史
 

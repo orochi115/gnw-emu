@@ -1,4 +1,24 @@
-# Retro-Go SD（microSD 改装）支持
+# 当前 Retro-Go SD 工作流（2026-11-13）
+
+当前产品使用固定 gwemu；支持 SPI1 与 OSPI 引脚 GPIO 软件 SPI 两种接线。固件/Core/ROM/卡镜像准备脚本保留；`.gnw.json` 指定 `sdCard` 和 `sdWiring`，镜像复制到独立 gwemu session 后运行，原卡镜像不作为写入目标。SD 模式不支持桌面即时存档；固件自己的 SD 游戏存档仍可使用。
+
+```sh
+git submodule update --init externals/gwemu externals/gnwmanager
+scripts/build.sh
+SD_WIRING=spi1 scripts/run_sd.sh BACKUP_DIR
+SD_WIRING=ospi scripts/run_sd.sh BACKUP_DIR
+scripts/run_sd_update.sh BACKUP_DIR
+```
+
+也可使用工作区根目录的 `run_sd_emu.sh` / `run_sd_update_emu.sh`。`GNW_BACKUP_DIR` 指定已有完整 dump 输入目录，`SDCARD` 指定原始卡镜像；未指定时使用现有准备流程。`FRESH=1` 创建新 profile 身份，不删除原 session，且不会重建明确指定的源卡。更多可选参数见启动脚本。
+
+当前软件验证使用 `tests/test_gwemu_softspi.py`、`tests/test_gwemu_softspi_firmware.py`、`tests/test_gwemu_manager_firmware.py` 及桌面 SD/manager 工作流；固件测试需显式 opt-in 和本机资产，不能把 skip 记为通过。[软件 SPI 报告](research/2026-11-12-gwemu-softspi-sd.md)、[manager RAM 固件报告](research/2026-11-12-gwemu-manager-ram.md)和[产品验收](research/2026-11-13-gwemu-product-acceptance.md)记录实际证据。旧 backup 工具已由 gnwmanager 替代，已有备份文件继续保留。此次迁移跳过实机验证，模拟器通过不证明真实 SD 改装兼容。
+
+下面完整保留旧内核阶段的硬件模型、准备指令及测试记录。其 QEMU 子模块、`gnw_*` 源码和 legacy 专用测试已退出维护，使用[历史快照](research/2026-11-13-gwemu-migration-history.md)复现，不作为当前构建指令。
+
+---
+
+# 历史记录：Retro-Go SD（microSD 改装）支持
 
 [sylverb/game-and-watch-retro-go-sd](https://github.com/sylverb/game-and-watch-retro-go-sd)（2.x，`external_cores` 分支）把模拟器核心、ROM、封面、存档都放在 microSD 卡上，固件只占片内 Flash Bank 2，外挂 SPI Flash 用作 ROM 缓存。gnw-emu 模拟了这套改装需要的硬件，并且跑通了完整流程：挂卡、启动器、加载核心、运行游戏、写存档，以及 bootloader 从 SD 卡升级固件。
 

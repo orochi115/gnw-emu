@@ -28,4 +28,4 @@ fi
 make -C "$SOURCE" -j "$JOBS" "BUILD_DIR=$BUILD" "DEBUG=$MANAGER_DEBUG" "OPT=$MANAGER_OPT" gnwmanager/firmware.bin
 "$VENV/bin/python" "$ROOT/scripts/gnwmanager-build-manifest.py" record "$SOURCE" "$BUILD"
 echo "Opt-in synthetic RAM acceptance:"
-echo "GWEMU_MANAGER_TEST=1 GWEMU_BINARY=build/gwemu-manager-ram/qemu-system-arm GNWMANAGER_MANIFEST=$BUILD/gnwmanager-build-manifest.json GNWMANAGER_PYTHON_ENV=$VENV/bin/python $VENV/bin/python -m pytest -q tests/test_gwemu_manager.py tests/test_gwemu_manager_firmware.py"
+echo "GWEMU_MANAGER_TEST=1 GWEMU_BINARY=build/gwemu/qemu-system-arm GNWMANAGER_MANIFEST=$BUILD/gnwmanager-build-manifest.json GNWMANAGER_PYTHON_ENV=$VENV/bin/python $VENV/bin/python -m pytest -q tests/test_gwemu_manager.py tests/test_gwemu_manager_firmware.py"

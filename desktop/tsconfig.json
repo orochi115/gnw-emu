@@ -16,6 +16,7 @@
   "exclude": [
     "tools/compare-kernels.ts",
     "tools/kernel-comparison.ts",
+    "tools/kernel-probe.ts",
     "tests/integration/kernel-comparison.test.ts",
     "src/core/qemu-command.ts",
     "tests/unit/qemu-command.test.ts"

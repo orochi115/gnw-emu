@@ -11,6 +11,13 @@ sys.path.insert(0, str(ROOT))
 
 from harness.assets import FIRMWARE  # noqa: E402
 
+# Historical files remain on the developer's disk, outside maintained coverage.
+collect_ignore = [
+    "test_gnw.py", "test_retrogo.py", "test_backlight.py", "test_sdcard.py",
+    "test_savestate.py", "test_session_lock.py", "test_display_transport.py",
+    "test_exit_state.py", "test_host_audio.py",
+]
+
 GOLDEN = Path(__file__).with_name("golden.json")
 
 

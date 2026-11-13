@@ -1,5 +1,7 @@
 # hwtest：Cortex-M7 时序测试（真机与模拟器）
 
+这里保留历史时序实验及真机测试程序。旧模拟器 runner 已退出维护，本机文件/结果仍保留；复现旧模拟器必须使用[迁移历史快照](../docs/research/2026-11-13-gwemu-migration-history.md)，不能据此推断当前 gwemu 的时序精度。本次迁移跳过实机测试。
+
 用 DWT_CYCCNT 测 CPU 指令、取指、各块内存、DMA2D/DMA/CRYP、中断进出、各时钟的周期数。结果和评估见 `../docs/cycle-accuracy.md`。
 
 ## 构建
@@ -18,9 +20,9 @@ python3 hwtest/mkbank2.py ../game-and-watch-backup/backups/full_YYYYMMDD_HHMM/ba
 
 | 环境 | 命令 |
 |---|---|
-| 模拟器 | `.venv/bin/python hwtest/emu_run.py --context stock\|retrogo --build ram\|bank2 --out hwtest/results/emu_X.bin` |
+| 历史模拟器（历史快照） | `.venv/bin/python hwtest/emu_run.py --context stock\|retrogo --build ram\|bank2 --out hwtest/results/emu_X.bin` |
 | 真机 A（不写 Flash） | `hwtest/hw_remote.sh ram current\|retrogo NAME [RESET]` |
-| 真机 B（bank2 里的副本） | 先用 gnwmanager 写入 `bank2_with_bench.bin`，再 `hwtest/hw_remote.sh bank2 current\|retrogo NAME [RESET]`，测完 `gnw_full_backup.py restore DIR --only bank2` |
+| 真机 B（bank2 里的副本） | 先用 gnwmanager 写入 `bank2_with_bench.bin`，再 `hwtest/hw_remote.sh bank2 current\|retrogo NAME [RESET]`，测完 `python -m gnwmanager restore-backup DIR --only bank2` |
 | 解码 / 对比 | `python3 hwtest/parse.py X.bin`、`python3 hwtest/parse.py --compare hw.bin emu.bin` |
 
 `hw_remote.sh` 通过 ssh 在接着 ST-Link 的 Windows 机器上运行 OpenOCD（`run_bench.tcl`）。`current` 表示暂停当前正在运行的固件；`retrogo` 表示复位后从 bank2 启动 Retro-Go，4 秒后再暂停。
@@ -57,7 +59,7 @@ python3 hwtest/mkbank2.py ../game-and-watch-backup/backups/full_YYYYMMDD_HHMM/ba
 | `gen_kernels.py` | 生成 `build/kernels.S`（位置无关的计时内核）和 `kernels.h` |
 | `tests.def`、`snap.def` | 测试编号、开头快照的寄存器列表（`parse.py` 也读） |
 | `run_bench.tcl`、`hw_remote.sh` | 真机运行 |
-| `emu_run.py` | 模拟器运行（自带最小 GDB RSP 客户端） |
+| `emu_run.py`（历史快照） | 旧模拟器运行（自带最小 GDB RSP 客户端，已退出维护） |
 | `mkbank2.py` | 生成 B 阶段的 bank2 镜像 |
 | `parse.py` | 解码、换算、对比 |
 | `results/` | `hw_{A,B}_{stock,retrogo}_{1,2,3}`：真机三轮；`emu_*`：模拟器对照。`.bin` 原始结果表，`.json` 解码，`.log` OpenOCD 输出 |

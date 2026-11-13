@@ -137,25 +137,6 @@ def test_cached_manager_objects_require_same_effective_compilation_settings(tmp_
     assert (build / "gnwmanager-build-config.json").read_bytes() == before
 
 
-def test_manager_probes_do_not_depend_on_legacy_binary(monkeypatch, tmp_path):
-    import conftest
-
-    class Item:
-        def __init__(self, filename):
-            self.path = Path(filename)
-            self.marks = []
-
-        def add_marker(self, marker):
-            self.marks.append(marker)
-
-    manager = Item("tests/test_gwemu_manager.py")
-    legacy = Item("tests/test_gnw.py")
-    monkeypatch.setattr(conftest, "QEMU", tmp_path / "missing-legacy")
-    conftest.pytest_collection_modifyitems(None, [manager, legacy])
-    assert not manager.marks, "actual manager probes must fail if gwemu is missing, not skip via legacy"
-    assert len(legacy.marks) == 1
-
-
 @pytest.mark.parametrize("alias_kind", ["symlink", "hardlink"])
 def test_source_alias_cannot_be_mounted_as_an_experimental_image(tmp_path, alias_kind):
     from harness.gnwmanager import ManagerSession

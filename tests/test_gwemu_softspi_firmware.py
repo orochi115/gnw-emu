@@ -10,7 +10,7 @@ import time
 import pytest
 
 from test_gwemu_desktop import ROOT, Native
-from test_sdcard import ELF, NM, symbols
+from harness.sd_assets import ELF, NM, symbols
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("GNW_FIRMWARE_SD_TEST") != "1" or not ELF.exists() or not NM or not all(shutil.which(tool) for tool in ("mtype", "mcopy", "mdel")),
