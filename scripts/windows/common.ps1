@@ -31,8 +31,13 @@ function Quote-Sh([string]$Value) {
     return $quote + $Value.Replace($quote, $escape) + $quote
 }
 function Invoke-Npm([string[]]$Arguments) {
-    & npm.cmd @Arguments
-    if ($LASTEXITCODE) { throw "npm failed (exit $LASTEXITCODE)." }
+    $previousErrors = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        & npm.cmd @Arguments
+        $nativeExit = $LASTEXITCODE
+    } finally { $ErrorActionPreference = $previousErrors }
+    if ($nativeExit) { throw "npm failed (exit $nativeExit)." }
 }
 
 function Resolve-TaskPath([string]$Value) {
