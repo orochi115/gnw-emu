@@ -6,21 +6,17 @@
 
 桌面、CLI、launcher、packaging 和默认构建统一使用 pinned gwemu，移除 legacy 执行分支及 preview-only/isolated-userData限制。开发产物规范路径为 `build/gwemu/qemu-system-arm`，`scripts/build.sh`委托既有可复现 `build_gwemu.sh`；不复用/覆盖原 `build/qemu-system-arm`，原进程可以继续运行。测试通过环境变量显式选择审查过的 canonical产物；native新版构建manifest和实际hash重新记录，不能沿用旧SHA断言。
 
-产品保持 `.gnw.json`、ROM加载时启动native、换ROM新runtime身份、无ROM不启动模拟器。旧 `--kernel=legacy` 明确报错；可保留 `--kernel=gwemu`兼容参数，但不留下双执行实现。`StateIdentity`仍识别legacy以拒绝旧即时存档，不能为了删执行代码删掉历史识别。
+产品保持 `.gnw.json`、ROM加载时启动native、换ROM新runtime身份、无ROM不启动模拟器。旧 `--kernel=legacy` 明确报错；可保留 `--kernel=gwemu`兼容参数，但不留下双执行实现。新即时存档继续校验 gwemu 内核与实际二进制身份；不增加旧目录扫描或旧 slot 兼容逻辑。
 
 设置 `realtime` 在gwemu过去两个值均未产生不同执行模式。最终UI不继续提供无效开关；保存的旧设置保持可读，gwemu使用已经验证的plainTCG/虚拟RTC暂停语义，不新增快进承诺。历史音频/显示/输入/电源/RTC/UID/SD两接线/完整Flash回滚能力保持，软件pad验证继续，实体pad只记录豁免。
 
-## 旧 session 保存内容的迁移
+## 用户数据范围（2026-11-13 用户修订）
 
-gwemu活动session保留 `UserData/kernels/gwemu/sessions/<profileId>`，已有gwemu数据优先且绝不覆盖。若仅旧 `UserData/sessions/<profileId>` 存在，不能从profile baseline重新seed而丢失已保存Flash/SD更改；自动执行一次性复制导入，旧session和旧states目录留在原处。
+用户明确不要求兼容已经生成的 UserData。取消 legacy session 自动复制导入、migration 元数据与通知、旧 namespace slot 查找，以及仅为导入服务的 native `--gnw-session-guard` / 同锁原子 publication 工具和专用测试。原 Task 1/2 仅有准备资料，未实施；这些旧准备不再是执行授权。
 
-复制前先获得旧UI目录lease，防止旧UI继续启动；还必须持有旧 native 的 `qemu.lock` 相同 byte-range advisory lock，不能只看PID/文件存在或做一遍lsof。直接运行的旧native可能没有UIlease，因此两个锁都必须通过。活动旧native包括原PID16603只能让导入明确拒绝，提示用户以后自行关闭；不终止它，不复制活动映射。
+gwemu 活动 session 保留 `UserData/kernels/gwemu/sessions/<profileId>`。首次创建从 `.gnw.json` 配置指定的 ROM/Flash/SD baseline 复制到独立 session，源文件不作为 native 写入目标；后续读取和持久化正常 gwemu session。保留正常电池/USB/RTC、即时存档及 build 身份校验。新 session 不自动继承 legacy 保存的写入内容或状态。
 
-为使macOS/Linux打包版不依赖系统Python或Node原生addon，给native增加小型 `--gnw-session-guard <lockfile>` 模式：guest初始化前用与旧 `qemu_lock_fd(fd,0,1,true)` 相同机制持锁，stdout返回一行有限JSON ready，持有到stdin EOF/终止，关闭fd退出；不启动CPU/设备/网络。guard可在ready后接收唯一COMMIT，将已校验staging用原子no-replace发布为目的目录；publication必须在同一持锁进程内执行，不创建第二个不持source锁的publisher。COMMIT发送前可取消并保证不发布，发送后UI停止阻止guest启动但不能撤回已完成原子提交，有限ack/退出与importId核对明确完成或未知结果。UI仅在加载ROM且需要导入时创建此owned transienthelper，验证同UID普通文件/非symlink、有限startup/退出deadline。native实现单独文件，主程序只做选项分流，不扩展普通QMP为任意文件操作。Windows不能声称POSIX锁验证通过，已有platform能力拒绝路径必须清楚。
-
-双锁持有期间验证旧session元数据与exact image类型/长度/模型/容量、复制bank1/外Flash/可选bank2/SD及可识别持久化sidecar到gwemu namespace下新staging目录，普通文件不接受symlink/hardlink指向baseline；全份SHA确认copy一致。session电池/USB/RTC及寿命设置保留，新batteryPresent采用旧语义存在电池；不复制runs、socket、lease、qemu.lock或旧VMslot。新元数据带migration来源版本及每文件SHA，仅atomicrename暴露完整session。导入失败保留旧数据、新目录不成为有效session；退出双锁helper。再对实际导入镜像做gwemu preflight，不能只验证baseline尺寸。
-
-新session首次创建仍复制baseline；源镜像永不作为native写入目标。旧states保留，旧v1/legacy slot若用户尝试加载应明确提示内核不兼容；文档说明旧保存的Flash数据已迁入，CPU即时状态无法跨内核复用。校验和lease全部测试使用新建fixture，不实际迁移本机用户产品数据。
+已有 legacy UserData、session、slots 及本机历史副本保留原处，不导入、不覆盖、不删除。原 ROM/SD 输入与 `.gnw.json` 工作流保留。gnwmanager 旧备份归档格式支持属于独立既定要求，本次范围修订不取消它。
 
 ## 打包与运行来源
 
@@ -38,6 +34,6 @@ stage脚本默认canonical gwemu，拒绝缺失/dirty/来源不符manifest。mac
 
 ## 验收边界
 
-真实session import双锁竞态、copy失败atomicity、existinggwemu优先、旧slots拒绝、无baseline写入；product全unit/integration与关键Electron/launchers/package；完整manager命令与会话失效、两SD接线、backup恢复、native产物身份；最终逐项originalspec audit。十源hash/旁managerclean/16603存活/无任务遗留child均须最终实证。
+新 gwemu session 与即时存档持久化、源镜像保护；product全unit/integration与关键Electron/launchers/package；完整manager命令与会话失效、两SD接线、backup恢复、native产物身份；最终逐项originalspec audit。十源hash/旁managerclean/16603存活/无任务遗留child均须最终实证。
 
-仍需独立设计审查、详细计划、TDD、规范和质量审查；此文不是实现或完成声明。先完成完整backup与session接口的有序评审，再执行本子项目，禁止提前退休对照环境。
+按既定计划和用户最新有限审查规则执行；不恢复开放式反复 APPROVED 循环，也不新增完成门槛。此文不是实现或完成声明。先完成完整backup与session接口的有序评审，再执行本子项目，禁止提前退休对照环境。

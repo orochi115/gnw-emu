@@ -92,8 +92,8 @@ Files：`externals/gwemu/hw/misc/gnw_h7b0_gpio.c`、`include/hw/misc/gnw_h7b0_gp
 
 ## Task 6：真实Electron+完整manager工作流
 
-- [ ] 新 `desktop/tests/e2e/gwemu-manager.spec.ts` 和父 `tests/test_gwemu_session_manager.py`、记录 `docs/research/2026-11-13-gwemu-session-manager.md`；真实隔离UserData、copies/synthetic、ownedchild与有限workerdeadline。
-- [ ] list/select当前ROM→info/status→backup/verify/HTTPfetch/selectrestore→flash/readback→format/fs读写删→SD两接线→screenshot有效PNG→monitor/debug断点→unlock/reprotect与会话POWER供电流程。破坏性只针对新副本，锁定0xCC不可逆测试不进入实际源副本。
-- [ ] 演练manager途中UI close/nativeexit/leaseclient被终止、UIload/snapshot/input被拒绝、旧身份不会命中新ROM；正常manager退出回应用，运行/暂停/断电初态各测；无ROM不启动native。
-- [ ] 核对10源hash/旁manager/16603，记录所有执行数量zero-skips、实际binary/firmwaremanifest与ownedPIDs清理。实际GUI若sandbox阻止需按权限工具请求escalation。
-- [ ] 最终独立审查通过、父本地提交；进入sole-kernel产品迁移与历史依赖退役计划。此计划结束不能将完整goal标complete。
+- [x] 新 `desktop/tests/e2e/gwemu-manager.spec.ts` 和父 `tests/test_gwemu_session_manager.py`、记录 `docs/research/2026-11-13-gwemu-session-manager.md`；真实隔离UserData、copies/synthetic、ownedchild与有限workerdeadline。
+- [x] list/select当前ROM→info/status→backup/verify/HTTPfetch/selectrestore→flash/readback→format/fs读写删→SD两接线→screenshot有效PNG→monitor/debug断点→unlock/reprotect与会话POWER供电流程。破坏性只针对新副本，锁定0xCC不可逆测试不进入实际源副本。
+- [x] 演练manager途中UI close/nativeexit/leaseclient被终止、UIload/snapshot/input被拒绝、旧身份不会命中新ROM；正常manager退出回应用，运行/暂停/断电初态各测；无ROM不启动native。
+- [x] 核对10源hash/旁manager/16603，记录所有执行数量zero-skips、实际binary/firmwaremanifest与ownedPIDs清理。实际GUI若sandbox阻止需按权限工具请求escalation。
+- [x] Root 按原范围核对有效验收和来源 audit 通过、父本地提交；进入sole-kernel产品迁移与历史依赖退役计划。此计划结束不能将完整goal标complete。
