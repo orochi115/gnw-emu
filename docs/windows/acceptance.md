@@ -8,12 +8,17 @@
 - ARM GNU 10.3.1 (10.3-2021.10)、ARM GNU 15.2.1 (15.2.rel1)。
 - manager 固件编译成功；SHA-256 `bf2c67e6cf352d7e5e0586b13f608431e32c294b12908558e48f63863445d9e9`，与原有固件一致。
 - Retro-Go SD bank2 固件与升级包编译成功（235764 / 1396740 字节）；补齐 xxd 后重新生成升级包，避免遗漏四字节长度字段。
+- Flash-only 固件、FrogFS/LittleFS 和 64 MiB 外部 Flash 镜像完整生成；使用合成 `.gw` 资源仅验证工具链打包流程，不作为该资源的游戏运行验证。
+- Windows mtools 4.0.50 生成 256 MiB SD 镜像；升级包从 FAT32 镜像读回与原文件 SHA-256 一致 `dd9dcc67bc1cb8432bcf8e2de457532f899a3d2e1c4016c9d9d1fdb05785a410`。
 - LCD-Game-Emulator 核心固定 `e4bcf33fa0edb40dfe42fdbf140636084a11df35`，生成 v0.0.3 / 22928 字节核心包。
 - Windows 桌面端 Electron/Vite 构建、TypeScript 检查通过。
 - Windows 适用全套 Vitest 189 passed、0 failed、2 pending，包含实际 native manager；Python Flash 包装 9 passed（含 Windows LittleFS 独立读回验证），Windows transport helper 2 passed。
 - Windows 原生 GDB 认证 4 passed，覆盖错误令牌不暂停 CPU、分段/重连、无令牌兼容和认证超时断开。
 - Mario/Zelda 实际 Electron 测试 2 passed：画面、按键、保存/暂停恢复、manager sessions/info、来源哈希、native 正常退出；Mario 另完成 backup/verify-backup。
-- macOS 20 项直接受影响单元回归、Flash 打包 9 项回归通过。
+- 最终目录包的 Mario/Zelda 验收另有 2 passed，运行时移除 MSYS2/ARM 工具链 PATH；覆盖相同桌面流程及 Mario backup/verify-backup。
+- 目录包 native 在仅含 Windows 系统目录的 PATH 下运行成功，原生 EXE 和全部 39 个 DLL 的 SHA-256 与包 manifest 一致。
+- PowerShell 启动包装实际打开相对路径 Mario 配置并正常退出；全部脚本通过 Windows PowerShell 语法解析。
+- macOS 20 项直接受影响单元回归、Flash 打包 9 项、资源/SD staging 9 项回归通过。
 
 ## 来源与修复
 
@@ -23,6 +28,14 @@ gwemu 新提交修复 Windows configure 的 CMake 路径和 libepoxy 的 EGL fal
 
 manager 实际构建另复现原生 GCC 依赖文件参数无法读取 MSYS `/d/...` 路径，改为相对构建目录；固件哈希确认修复没有改变产物。
 
+## 最终交付
+
+- 桌面程序：`D:\LLM_Work\Game_Watch\gnw-emu\desktop\release\win-unpacked\gnw-emu.exe`，保留整个 `win-unpacked` 目录即可运行。
+- gwemu 提交：`9170bdd56ee536ecdde432e109543aea3a9401e9`；打包 native SHA-256：`f74e6d483db2a3a5f0d597129a433ccde95c4bb901702505d921b2c6faa85d0f`。
+- manager 提交：`07593cea608085b541375b1590c20f075916eeb6`。
+- 原始 ROM 和已有 UserData 保留；测试使用隔离数据，验证来源文件哈希未变化。目录包未配置代码签名证书。
+- Windows 证据位于项目 `out/windows-full-tests.json`、`out/windows-e2e-final.log`、`out/windows-packaged-e2e.log`、`out/windows-acceptance` 和各固件构建日志。
+
 ## 限制
 
-旧 macOS 产品验收套件固定了原提交、路径和本机资产，不作为 Windows 通过依据。POSIX socket/inode/shebang 专有 fixture 在 Windows 排除；以 Windows 专有 ACL/认证/会话及实际桌面验证覆盖平台行为。未验证实体设备、实体手柄、扬声器听感或所有 Retro-Go 核心。最终目录包验证结果在此补充。
+旧 macOS 产品验收套件固定了原提交、路径和本机资产，不作为 Windows 通过依据。POSIX socket/inode/shebang 专有 fixture 在 Windows 排除；以 Windows 专有 ACL/认证/会话及实际桌面验证覆盖平台行为。未验证实体设备、实体手柄、扬声器听感或所有 Retro-Go 核心。

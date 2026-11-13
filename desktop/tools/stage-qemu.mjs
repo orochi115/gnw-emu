@@ -144,5 +144,5 @@ await writeFile(
 // The GNW machine needs no bundled firmware ROMs or user images.
 if (!existsSync(output)) throw new Error("Missing staged QEMU");
 process.stderr.write(
-  `Staged ${basename(source)} and ${copied.size} libraries\n`,
+  `Staged ${basename(source)} and ${Object.keys(libraries).length} libraries\n`,
 );

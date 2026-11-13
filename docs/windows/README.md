@@ -13,7 +13,7 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\run.ps1 -Profile profil
 
 `bootstrap.ps1` 初始化固定子模块，安装 MSYS2/GCC/CMake/Ninja、Python 工具和 Electron 依赖。默认使用清华 MSYS2 镜像，可用 `-Mirror` 修改。`-SkipArm` 只安装桌面端构建依赖；`-CoreToolchain` 额外安装 GCC 15.2。可设置 `GNW_TOOLCHAIN_ROOT` 覆盖同级工具链目录。
 
-已有源码或编译配置改变时，内核构建脚本拒绝混用旧对象；保留旧目录并通过 `GWEMU_BUILD_DIR` 构建到新目录，或将旧 `build\gwemu` 改名后重新构建。`build.ps1` 的桌面端和打包流程使用规范目录 `build\gwemu`。
+已有源码或编译配置改变时，内核构建脚本拒绝混用旧对象；保留旧目录并通过 `GWEMU_BUILD_DIR` 构建到新目录，或将旧 `build\gwemu` 改名后重新构建。`build.ps1` 的桌面端和打包流程支持同一自定义目录。本次部署的 `build\gwemu` 是指向最终干净构建 `build\gwemu-windows-final` 的目录联接，以保留 Meson 记录的绝对路径。
 
 ## 目录包
 
@@ -71,3 +71,14 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\make-sd-image.ps1 -Outp
 可加 `-Assets D:\media` 打包资源。包装脚本要求新输出路径；镜像中的文件由 mtools 读写，无需挂载或管理员权限。
 
 本次修改和两个子模块提交保存在已部署仓库及工作目录中的 Git bundles 中，尚未推送到远端仓库。复制到另一台机器时需一并保留子模块仓库或先导入对应 bundles，随后再执行 bootstrap；仅从原上游地址重新 clone 无法取得这些本地移植提交。
+
+完整源码 bundles 位于 `D:\LLM_Work\Game_Watch`。在包含这三个文件的目录中，可重建新的源码目录：
+
+```powershell
+git -c core.autocrlf=false clone --branch feat/windows-native gnw-emu-windows-source.bundle gnw-emu-copy
+git -c core.autocrlf=false clone --branch gnw-emu gwemu-windows-source.bundle gnw-emu-copy\externals\gwemu
+git -c core.autocrlf=false clone --branch gnw-emu-manager-ram gnwmanager-windows-source.bundle gnw-emu-copy\externals\gnwmanager
+git -C gnw-emu-copy submodule absorbgitdirs externals/gwemu externals/gnwmanager
+```
+
+随后在新目录运行 bootstrap 初始化其余公开的固定依赖，并重新构建；构建目录不能直接搬移到不同路径。
