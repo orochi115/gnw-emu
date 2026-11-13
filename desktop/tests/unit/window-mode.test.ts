@@ -168,9 +168,64 @@ function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
     setAspectRatio: vi.fn(),
     unmaximize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    isMaximizable: (): boolean => true,
+    isFullScreenable: () => true,
+    setMaximizable: vi.fn(),
+    setFullScreenable: vi.fn(),
   });
   return host;
 }
+
+test("clock disables native maximize/fullscreen and restores prior capabilities on exit", async () => {
+  const host = resizingHost();
+  host.isMaximizable = () => false;
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", true);
+  await mode.toggle();
+  expect(host.setMaximizable).toHaveBeenLastCalledWith(false);
+  expect(host.setFullScreenable).toHaveBeenLastCalledWith(false);
+  await mode.toggle();
+  expect(host.setMaximizable).toHaveBeenLastCalledWith(false);
+  expect(host.setFullScreenable).toHaveBeenLastCalledWith(true);
+  host.emit("closed");
+});
+
+test("clock pointer drag ignores clicks, keeps scale, releases docking and snaps on drop", async () => {
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+  );
+  await mode.fit("zelda", true);
+  await mode.toggle();
+  mode.setDock("bottomRight");
+  const before = host.getBounds();
+  mode.drag("start", { x: 500, y: 500 });
+  mode.drag("end", { x: 500, y: 500 });
+  expect(mode.state.clockDock).toBe("bottomRight");
+  mode.drag("start", { x: 500, y: 500 });
+  mode.drag("move", { x: 500 - before.x + 4, y: 420 });
+  mode.drag("end", { x: 500 - before.x + 4, y: 420 });
+  expect(mode.state.clockDock).toBe("left");
+  expect(host.getBounds().x).toBe(12);
+  expect(mode.state.pixelScale).toBe(1);
+  await mode.fit("zelda", false);
+  expect(host.getBounds().x).toBe(12);
+  await mode.toggle();
+  const normal = host.getBounds();
+  mode.drag("start", { x: 500, y: 500 });
+  mode.drag("move", { x: 900, y: 900 });
+  mode.drag("end", { x: 900, y: 900 });
+  expect(host.getBounds()).toEqual(normal);
+  host.emit("closed");
+});
 
 test("frame switching preserves LCD scale and each mode restores its independent factor", async () => {
   display.density = 2;

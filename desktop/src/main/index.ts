@@ -29,14 +29,15 @@ import { SCALE_PRESETS, scaleMenuId } from "../shared/clock-geometry";
 import { WindowMode } from "./window-mode";
 import { menuTemplate, clockMenuTemplate, deviceMenuItems } from "./menu";
 import type { AppState, ViewPreferences } from "../shared/contracts";
-import { app, BrowserWindow, ipcMain, Menu, dialog } from "electron";
-import { isAbsolute, join, resolve } from "node:path";
-import { mkdirSync } from "node:fs";
+import { app, BrowserWindow, ipcMain, Menu, dialog, screen } from "electron";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
 import pino from "pino";
 import { EventEmitter } from "node:events";
 import { applicationPaths } from "../core/paths";
+import { popupWindowsMenu } from "./windows-menu";
 import { SessionController } from "../core/session-controller";
 import { startManagerSessionServer } from "../core/manager-session-server";
 import { createProfile } from "../core/profile-store";
@@ -61,6 +62,13 @@ const paths = applicationPaths({
     ? join(app.getPath("appData"), app.getName())
     : app.getPath("userData"),
   override,
+  portableDirectory:
+    app.isPackaged &&
+    process.platform === "win32" &&
+    (argv.includes("--portable") ||
+      existsSync(join(dirname(process.execPath), "portable.txt")))
+      ? dirname(process.execPath)
+      : undefined,
   kernel: process.env.GNW_KERNEL,
 });
 mkdirSync(join(paths.userData, "electron-host"), { recursive: true });
@@ -70,6 +78,7 @@ let window: BrowserWindow;
 let shuttingDown = false;
 let makerOpen = false;
 let nativeDialog = false;
+let nativeMenuOpen = false;
 let automation: Awaited<ReturnType<typeof startAutomationServer>> | undefined;
 let controller: SessionController;
 let managerService:
@@ -111,6 +120,7 @@ function syncControlBlock() {
       !rendererReady ||
       makerOpen ||
       nativeDialog ||
+      nativeMenuOpen ||
       shuttingDown ||
       !window.isFocused() ||
       windowMode.transitioning ||
@@ -389,15 +399,13 @@ async function main() {
   });
   {
     managerService = await startManagerSessionServer({ controller });
-    logger
-      .child("session")
-      .info(
-        {
-          event: "manager.started",
-          serverId: managerService.descriptor.serverId,
-        },
-        "Current-session management service started",
-      );
+    logger.child("session").info(
+      {
+        event: "manager.started",
+        serverId: managerService.descriptor.serverId,
+      },
+      "Current-session management service started",
+    );
   }
   controlRouter = new ControlRouter(settings.controls, {
     button: (bit, down, source) => {
@@ -525,7 +533,12 @@ async function main() {
     uiEvents.emit("changed");
   });
   window.webContents.on("context-menu", () => {
-    createClockMenu()?.popup({ window });
+    popupMenu(createClockMenu());
+  });
+  window.on("system-context-menu", (event) => {
+    if (!windowMode.state.clockMode) return;
+    event.preventDefault();
+    popupMenu(createClockMenu());
   });
   window.webContents.on("before-input-event", () => {
     // Menu accelerators must not consume capture input or dispatch twice.
@@ -871,10 +884,51 @@ function canClockInteract() {
     !controlSettings?.opened &&
     !makerOpen &&
     !nativeDialog &&
+    !nativeMenuOpen &&
     !active &&
     !windowMode.transitioning &&
     controller.state.status === "running"
   );
+}
+function popupMenu(menu: Menu | undefined) {
+  if (!menu || window.isDestroyed()) return;
+  if (process.platform !== "win32") {
+    menu.popup({ window });
+    return;
+  }
+  if (nativeMenuOpen) return;
+  nativeMenuOpen = true;
+  syncControlBlock();
+  const finish = () => {
+    if (!nativeMenuOpen) return;
+    nativeMenuOpen = false;
+    // TrackPopupMenu consumes keyboard releases. Do not quarantine a key that
+    // was released in its modal loop when the player next presses it.
+    controlRouter?.releaseDevice("keyboard");
+    syncControlBlock();
+  };
+  // Leave IPC/non-client dispatch before starting the Windows modal menu loop.
+  setImmediate(async () => {
+    try {
+      // The native loop blocks Node; deliver neutral input to QEMU first.
+      await controller.flushInput();
+      if (window.isDestroyed()) return;
+      menu.once("menu-will-close", finish);
+      popupWindowsMenu(menu, window);
+    } catch (error) {
+      finish();
+      logger
+        .child("ui")
+        .error(
+          { event: "menu.native.failure", error: String(error) },
+          "Win32 menu failed",
+        );
+      if (!window.isDestroyed()) menu.popup({ window });
+    } finally {
+      menu.removeListener("menu-will-close", finish);
+      finish();
+    }
+  });
 }
 function createClockMenu() {
   if (!windowMode.state.clockMode) return undefined;
@@ -1139,11 +1193,24 @@ function registerIpc() {
     trusted(event);
     return windowMode.state;
   });
+  ipcMain.on("window.clockDrag", (event, action: unknown) => {
+    trusted(event);
+    if (
+      process.platform !== "win32" ||
+      !["start", "move", "end"].includes(action as string)
+    )
+      return;
+    if (action !== "end" && !canClockInteract()) return;
+    windowMode.drag(
+      action as "start" | "move" | "end",
+      screen.getCursorScreenPoint(),
+    );
+  });
   ipcMain.handle("window.action", async (event, action) => {
     trusted(event);
     switch (action) {
       case "menu":
-        Menu.getApplicationMenu()?.popup({ window });
+        popupMenu(Menu.getApplicationMenu() ?? undefined);
         break;
       case "minimize":
         window.minimize();

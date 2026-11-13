@@ -7,7 +7,7 @@ import type {
   ViewPreferences,
   WindowState,
 } from "../shared/contracts";
-import { WindowChrome } from "./components/WindowChrome";
+import { WindowChrome, ClockControls } from "./components/WindowChrome";
 import { GameScreen } from "./components/GameScreen";
 import { MakeRomDialog } from "./components/MakeRomDialog";
 import {
@@ -18,6 +18,8 @@ import {
 } from "../shared/controls";
 import { useControlInput } from "./hooks/useControlInput";
 export function App() {
+  const windows = navigator.platform.startsWith("Win");
+  const dragging = useRef<number | undefined>(undefined);
   const [state, setState] = useState<AppState>({ status: "idle" });
   const [host, setHost] = useState<WindowState>({
     clockMode: false,
@@ -240,7 +242,44 @@ export function App() {
   );
   return (
     <main
-      className={host.clockMode ? "desktop-clock" : "normal-window"}
+      className={
+        host.clockMode
+          ? `desktop-clock${windows ? " windows-clock" : ""}`
+          : "normal-window"
+      }
+      onPointerDown={(event) => {
+        const target = event.target as HTMLElement;
+        if (
+          !windows ||
+          !host.clockMode ||
+          host.transitioning ||
+          maker ||
+          controlsOpen ||
+          event.button !== 0 ||
+          !target.closest(".game-screen") ||
+          target.closest("button, [role=button], input, a")
+        )
+          return;
+        event.preventDefault();
+        dragging.current = event.pointerId;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        window.desktop.clockDrag("start");
+      }}
+      onPointerMove={(event) => {
+        if (dragging.current === event.pointerId)
+          window.desktop.clockDrag("move");
+      }}
+      onPointerUp={(event) => {
+        if (dragging.current !== event.pointerId) return;
+        dragging.current = undefined;
+        window.desktop.clockDrag("end");
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      onLostPointerCapture={() => {
+        if (dragging.current === undefined) return;
+        dragging.current = undefined;
+        window.desktop.clockDrag("end");
+      }}
       data-ui="app"
       data-status={state.status}
       data-desired-mask={desiredMask}
@@ -374,6 +413,7 @@ export function App() {
           </div>
         )}
       </div>
+      <ClockControls state={host} />
       {maker && <MakeRomDialog close={() => setMaker(false)} />}
     </main>
   );

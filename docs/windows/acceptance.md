@@ -50,6 +50,16 @@ Session 1 使用官方 Zelda 固件和隔离 UserData 验证四种情况：全�
 
 Windows 设置文件为 `%APPDATA%\gnw-emu-desktop\UserData\settings.json`；如需重置设置，完全退出后重命名此文件即可，保留 UserData 中的存档。
 
+## 后续修复：Win32 菜单、桌面时钟与 portable
+
+Windows 主菜单及桌面时钟右键菜单改用 Win32 HMENU；复用 Electron 菜单的状态、角色和快捷键模型。时钟拖动采用客户区指针捕获，避免标题栏右键和双击行为；进入时钟时禁止最大化/全屏，退出恢复原能力。工具栏置于画面之后，只在其区域悬停/聚焦时显示。新增四边停靠和拖动结束后的边缘吸附。
+
+Session 1 使用真实 Windows 鼠标及原生菜单 API 验证 `#32768` 菜单、子菜单、勾选/禁用状态、边框切换、打开按键设置、双击不最大化、工具栏隐藏/显示及返回、四角停靠与拖动吸附左边缘。另通过中文菜单和空窗口时的禁用状态检查。原生菜单会吞掉键盘释放消息；实际复现取消菜单后方向键保持按下，补上菜单前的输入释放/同步与关闭后的重新启用，最终验证按键归零和下一次按键正常响应。
+
+Portable ZIP 含 EXE 相邻的 `portable.txt`，数据写入同级 UserData。使用真正解压的 ZIP 在有空格的目录运行，搬移并重启后时钟/停靠偏好保留；显式数据路径覆盖优先，已有 AppData 设置哈希未变化。完整验收为 5 组通过，本机 227 项单元测试通过，Windows 单元测试（跳过平台不适用项）、双方类型检查/构建及 PowerShell 语法检查通过。复现入口为 `desktop` 下的 `npm run test:windows-clock`，结果见 `out/windows-clock-portable-result.json`、`out/windows-clock-portable-final.log`、`out/windows-native-menu-chinese.json`。
+
+普通包已更新至原正式路径，120 个打包文件逐项哈希与验收包一致。Portable 交付为 `desktop/release/portable/gnw-emu-0.1.0-win-x64-portable.zip`，203857667 字节，SHA-256 `69d5c5a3a9253edc24bea755f58c842d405d2bff9fbbca7122163bfa41208123`。旧普通包变更文件备份在 `out/clock-portable-package-backup`；用户设置和固件保留。
+
 ## 限制
 
 旧 macOS 产品验收套件固定了原提交、路径和本机资产，不作为 Windows 通过依据。POSIX socket/inode/shebang 专有 fixture 在 Windows 排除；以 Windows 专有 ACL/认证/会话及实际桌面验证覆盖平台行为。未验证实体设备、实体手柄、扬声器听感或所有 Retro-Go 核心。

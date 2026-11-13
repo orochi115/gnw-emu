@@ -7,6 +7,7 @@ export function applicationPaths(options: {
   project: string;
   osUserData: string;
   override?: string;
+  portableDirectory?: string;
   kernel?: string;
 }) {
   if (options.kernel === "legacy")
@@ -19,7 +20,7 @@ export function applicationPaths(options: {
     userData: options.override
       ? resolve(options.override)
       : options.packaged
-        ? join(options.osUserData, "UserData")
+        ? join(options.portableDirectory ?? options.osUserData, "UserData")
         : join(options.project, "UserData"),
     qemu: options.packaged
       ? join(

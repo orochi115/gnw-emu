@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from "electron";
 import { clockGeometry } from "../shared/clock-geometry";
 import {
   dockBounds,
+  nearestDock,
   DOCK_CORNERS,
   type DockCorner,
 } from "../shared/dock-geometry";
@@ -21,6 +22,11 @@ export class WindowMode {
   private placement?: Placement;
   private dock: DockCorner;
   private dockTarget?: { x: number; y: number };
+  private dragging?: {
+    cursor: Electron.Point;
+    bounds: Electron.Rectangle;
+    moved: boolean;
+  };
   private model?: "mario" | "zelda";
   private frame = true;
   private density = 1;
@@ -38,6 +44,8 @@ export class WindowMode {
     bounds: Electron.Rectangle;
     maximized: boolean;
     onTop: boolean;
+    maximizable: boolean;
+    fullscreenable: boolean;
   };
   transitioning = false;
 
@@ -275,6 +283,46 @@ export class WindowMode {
     this.applyDock();
     this.recordPlacement();
     this.changed();
+  }
+  /** Windows clock drag stays in the client area: no caption menu or double-click. */
+  drag(action: "start" | "move" | "end", cursor: Electron.Point) {
+    if (!this.clock || this.transitioning || this.modal || !this.canEnter()) {
+      this.dragging = undefined;
+      return;
+    }
+    if (action === "start") {
+      this.dragging = { cursor, bounds: this.window.getBounds(), moved: false };
+      return;
+    }
+    const drag = this.dragging;
+    if (!drag) return;
+    const dx = cursor.x - drag.cursor.x,
+      dy = cursor.y - drag.cursor.y;
+    if (Math.abs(dx) + Math.abs(dy) >= 3 || drag.moved) {
+      if (!drag.moved) {
+        this.release();
+        this.dock = "none";
+        this.dockTarget = undefined;
+        this.persist({ clockDock: "none" });
+        drag.moved = true;
+      }
+      this.applyingBounds = true;
+      try {
+        this.window.setBounds({ x: drag.bounds.x + dx, y: drag.bounds.y + dy });
+      } finally {
+        this.applyingBounds = false;
+      }
+      this.refreshDensity();
+    }
+    if (action === "end") {
+      this.dragging = undefined;
+      if (drag.moved) {
+        const bounds = this.window.getBounds();
+        this.setDock(
+          nearestDock(bounds, screen.getDisplayMatching(bounds).workArea),
+        );
+      }
+    }
   }
   private applyDock() {
     if (!this.clock || this.dock === "none" || this.applyingBounds) return;
@@ -562,6 +610,8 @@ export class WindowMode {
           bounds: this.window.getNormalBounds(),
           maximized: this.window.isMaximized(),
           onTop: this.window.isAlwaysOnTop(),
+          maximizable: this.window.isMaximizable?.() ?? true,
+          fullscreenable: this.window.isFullScreenable?.() ?? true,
         };
         await this.leaveFullscreen();
         if (!this.canEnter()) {
@@ -571,6 +621,8 @@ export class WindowMode {
         }
         this.window.unmaximize();
         this.clock = true;
+        this.window.setMaximizable?.(false);
+        this.window.setFullScreenable?.(false);
         this.window.setAlwaysOnTop(true);
         this.applyScale(
           this.clockScale,
@@ -579,10 +631,13 @@ export class WindowMode {
         );
       } else {
         this.recordPlacement();
+        this.dragging = undefined;
         this.clock = false;
         this.window.unmaximize();
         this.window.setAspectRatio(0);
         this.window.setAlwaysOnTop(this.saved?.onTop ?? false);
+        this.window.setMaximizable?.(this.saved?.maximizable ?? true);
+        this.window.setFullScreenable?.(this.saved?.fullscreenable ?? true);
         this.applyScale(
           this.restoredScale(this.normalScale, this.saved?.bounds),
           this.saved?.bounds,

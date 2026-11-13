@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld("desktop", {
   windowState: () => ipcRenderer.invoke("window.state"),
   onWindowState: (cb: (v: unknown) => void) => subscribe("window.state", cb),
   windowAction: (action: string) => ipcRenderer.invoke("window.action", action),
+  clockDrag: (action: string) => ipcRenderer.send("window.clockDrag", action),
   locale: () => ipcRenderer.invoke("app.locale"),
   state: () => ipcRenderer.invoke("app.state"),
   onState: (cb: (v: unknown) => void) => subscribe("app.state", cb),

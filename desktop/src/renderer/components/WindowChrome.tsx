@@ -54,16 +54,39 @@ export function WindowChrome({
           {!state.clockMode && control("close", t("menu.close"), "×")}
         </div>
       </header>
-      {state.clockMode && (
-        <div
-          className="clock-controls"
-          aria-label={t("menu.clock")}
-          style={{ right: `calc(100% - ${state.controlWidth}px + 6px)` }}
-        >
-          {control("normal", t("window.normal"), "↗")}
-          {control("close", t("menu.close"), "×")}
-        </div>
-      )}
     </>
+  );
+}
+
+/** Place after the canvas so its no-drag region wins native hit testing on macOS. */
+export function ClockControls({ state }: { state: WindowState }) {
+  if (!state.clockMode) return null;
+  return (
+    <div
+      className="clock-controls"
+      aria-label={t("menu.clock")}
+      style={{ right: `calc(100% - ${state.controlWidth}px + 6px)` }}
+    >
+      {(["normal", "close"] as const).map((action) => (
+        <button
+          key={action}
+          data-ui={`window.${action}`}
+          aria-label={t(action === "normal" ? "window.normal" : "menu.close")}
+          title={t(action === "normal" ? "window.normal" : "menu.close")}
+          onClick={() =>
+            void window.desktop
+              .windowAction(action)
+              .catch((error) =>
+                window.desktop.log("error", "window.action.failure", {
+                  action,
+                  message: error.message,
+                }),
+              )
+          }
+        >
+          <span aria-hidden="true">{action === "normal" ? "↗" : "×"}</span>
+        </button>
+      ))}
+    </div>
   );
 }

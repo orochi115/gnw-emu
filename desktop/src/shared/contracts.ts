@@ -93,6 +93,7 @@ export interface DesktopApi {
   windowAction(
     action: "menu" | "minimize" | "maximize" | "close" | "normal",
   ): Promise<void>;
+  clockDrag(action: "start" | "move" | "end"): void;
   locale(): Promise<"zh-CN" | "en">;
   state(): Promise<AppState>;
   onState(callback: (state: AppState) => void): () => void;

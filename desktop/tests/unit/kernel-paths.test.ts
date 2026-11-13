@@ -49,3 +49,20 @@ test("retired legacy and unknown selection fail clearly", () => {
     /kernel/i,
   );
 });
+
+test("portable packages store data beside the executable; explicit overrides still win", () => {
+  const options = {
+    ...base,
+    packaged: true,
+    portableDirectory: "/usb/gnw-emu",
+  };
+  expect(applicationPaths(options).userData).toBe(
+    join("/usb/gnw-emu", "UserData"),
+  );
+  expect(
+    applicationPaths({ ...options, override: "/scratch/test" }).userData,
+  ).toBe(resolve("/scratch/test"));
+  expect(applicationPaths({ ...options, packaged: false }).userData).toBe(
+    join(base.project, "UserData"),
+  );
+});

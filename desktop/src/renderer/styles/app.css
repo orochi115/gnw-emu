@@ -555,12 +555,17 @@ main {
   transition: opacity 140ms;
   app-region: no-drag;
 }
-.desktop-clock:hover .clock-controls,
+.clock-controls:hover,
 .clock-controls:focus-within {
   opacity: 1;
 }
 .desktop-clock .game-screen {
   app-region: drag;
+}
+.windows-clock .game-screen {
+  app-region: no-drag;
+  user-select: none;
+  touch-action: none;
 }
 .desktop-clock .chassis-button {
   app-region: no-drag;

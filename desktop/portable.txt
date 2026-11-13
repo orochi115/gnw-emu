@@ -1,0 +1,2 @@
+gnw-emu portable package: keep this marker beside gnw-emu.exe.
+Settings, saves and logs are stored in the adjacent UserData directory.

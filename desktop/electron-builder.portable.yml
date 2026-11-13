@@ -1,0 +1,9 @@
+extends: ./electron-builder.yml
+directories:
+  output: release/portable
+extraFiles:
+  - from: portable.txt
+    to: portable.txt
+win:
+  target: zip
+  artifactName: gnw-emu-${version}-win-${arch}-portable.zip

@@ -11,11 +11,14 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "test:windows-clock": "node tools/verify-windows-clock.mjs",
     "package:dir": "npm run build && node tools/stage-qemu.mjs && electron-builder --dir",
+    "package:portable": "npm run build && node tools/stage-qemu.mjs && electron-builder --win zip --config electron-builder.portable.yml",
     "format": "prettier --write src tools tests *.ts *.json"
   },
   "dependencies": {
     "i18next": "^27.0.1",
+    "koffi": "^3.3.8",
     "pino": "^10.0.0",
     "pino-pretty": "^13.0.0",
     "pino-roll": "^4.0.0",
