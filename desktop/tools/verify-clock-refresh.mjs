@@ -66,6 +66,7 @@ async function launch() {
         density: d.scaleFactor,
         opacity: w.getOpacity(),
         topmost: w.isAlwaysOnTop(),
+        focused: w.isFocused(),
         physical: screen.dipToScreenRect(w, bounds),
         userData: app.getPath("userData"),
       };
@@ -165,9 +166,35 @@ try {
     n.pid,
     "Taskbar hover covers clock",
   );
+  await ui("click", {
+    x: bar.bounds[0] + (bar.bounds[2] - bar.bounds[0]) * 0.75,
+    y: bar.bounds[3] - 3,
+  });
+  await delay(500);
+  assert.equal(
+    (await ui("hit-test", overlap)).pid,
+    n.pid,
+    "Taskbar activation covers clock",
+  );
+  assert.equal(
+    (await test.info()).focused,
+    false,
+    "Clock must not steal focus",
+  );
+  await ui("click", {
+    x: bar.bounds[0] + (bar.bounds[2] - bar.bounds[0]) * 0.8,
+    y: bar.bounds[3] - 3,
+  });
+  await delay(500);
+  assert.equal(
+    (await ui("hit-test", overlap)).pid,
+    n.pid,
+    "Repeated taskbar activation covers clock",
+  );
+  assert.equal((await test.info()).focused, false);
   results.push({
     check:
-      "native opacity persistence, flush screen docking and taskbar coverage including taskbar hover",
+      "native opacity persistence, flush screen docking and taskbar coverage including taskbar hover and activation",
     passed: true,
     bounds: n.bounds,
     taskbar: bar,

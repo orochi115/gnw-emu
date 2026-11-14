@@ -2,6 +2,8 @@ import { EventEmitter } from "node:events";
 import { beforeEach, expect, test, vi } from "vitest";
 const display = vi.hoisted(() => ({
   density: 2,
+  bounds: undefined as
+    undefined | { x: number; y: number; width: number; height: number },
   workArea: { x: 0, y: 0, width: 1600, height: 1000 },
 }));
 vi.mock("electron", async () => {
@@ -11,7 +13,7 @@ vi.mock("electron", async () => {
       getDisplayMatching: () => ({
         scaleFactor: display.density,
         workArea: display.workArea,
-        bounds: { ...display.workArea, height: display.workArea.height + 40 },
+        bounds: display.bounds ?? display.workArea,
       }),
     }),
   };
@@ -21,6 +23,7 @@ import { WindowMode } from "../../src/main/window-mode";
 
 beforeEach(() => {
   display.density = 2;
+  display.bounds = undefined;
   display.workArea = { x: 0, y: 0, width: 1600, height: 1000 };
 });
 
@@ -170,6 +173,7 @@ function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
     unmaximize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
     setOpacity: vi.fn(),
+    moveTop: vi.fn(),
     isMaximizable: (): boolean => true,
     isFullScreenable: () => true,
     setMaximizable: vi.fn(),
@@ -444,6 +448,7 @@ test("a dead runtime during fullscreen exit cannot finish entering clock mode", 
     setMinimumSize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
     setOpacity: vi.fn(),
+    moveTop: vi.fn(),
     setContentSize: vi.fn(),
     setAspectRatio: vi.fn(),
     setBounds: vi.fn(),
@@ -488,6 +493,7 @@ test("display density changes retain exact pixels or a manually chosen size", as
     setMinimumSize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
     setOpacity: vi.fn(),
+    moveTop: vi.fn(),
     setAspectRatio: vi.fn(),
     setContentSize: (w: number, h: number) => {
       width = w;
@@ -545,6 +551,7 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
     setMinimumSize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
     setOpacity: vi.fn(),
+    moveTop: vi.fn(),
     setAspectRatio: vi.fn(),
     setContentSize: (w: number, h: number) => {
       if (++resizes > 10) throw Error("oscillating density");
@@ -639,6 +646,7 @@ test("clock opacity restores its saved value, persists changes, and normal mode 
   host.emit("closed");
 });
 test("Windows clock docks flush to the physical screen across the taskbar and uses the highest topmost level", async () => {
+  display.bounds = { ...display.workArea, height: 1040 };
   const host = resizingHost();
   const mode = new WindowMode(
     host as any,
@@ -661,4 +669,32 @@ test("Windows clock docks flush to the physical screen across the taskbar and us
   });
   expect(host.setAlwaysOnTop).toHaveBeenCalledWith(true, "screen-saver");
   host.emit("closed");
+});
+test("Windows clock raises itself without taking focus after a taskbar activation", async () => {
+  vi.useFakeTimers();
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {},
+    () => {},
+    undefined,
+    "win32",
+  );
+  try {
+    await mode.fit("zelda", false);
+    await mode.toggle();
+    host.emit("blur");
+    await vi.runAllTimersAsync();
+    expect(host.moveTop).toHaveBeenCalledOnce();
+    await mode.toggle();
+    host.emit("blur");
+    await vi.runAllTimersAsync();
+    expect(host.moveTop).toHaveBeenCalledOnce();
+  } finally {
+    host.emit("closed");
+    vi.useRealTimers();
+  }
 });

@@ -39,6 +39,7 @@ export class WindowMode {
   private modalBounds?: Electron.Rectangle;
   private target?: { width: number; height: number };
   private manualTimer?: ReturnType<typeof setTimeout>;
+  private raiseTimer?: ReturnType<typeof setTimeout>;
   private manualCandidate?: { factor: number; width: number; height: number };
   private lastPublished = "";
   private saved?: {
@@ -107,12 +108,21 @@ export class WindowMode {
     screen.on("display-metrics-changed", this.refreshDensity);
     window.once("closed", () => {
       clearTimeout(this.manualTimer);
+      clearTimeout(this.raiseTimer);
       screen.removeListener("display-metrics-changed", this.refreshDensity);
     });
     window.on("focus", () => this.changed());
     window.on("blur", () => {
       release();
       this.changed();
+      if (this.clock && this.platform === "win32") {
+        // The shell raises the taskbar during activation, after the blur event.
+        // Restore clock stacking after that operation without taking focus.
+        clearTimeout(this.raiseTimer);
+        this.raiseTimer = setTimeout(() => {
+          if (this.clock && !this.window.isDestroyed()) this.window.moveTop();
+        }, 100);
+      }
     });
     window.on("maximize", () => {
       this.finishExpandedEntry();
@@ -659,6 +669,7 @@ export class WindowMode {
         this.recordPlacement();
         this.dragging = undefined;
         this.clock = false;
+        clearTimeout(this.raiseTimer);
         this.window.setOpacity(1);
         this.window.unmaximize();
         this.window.setAspectRatio(0);
