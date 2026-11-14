@@ -53,9 +53,12 @@ async function launch() {
     "stock startup",
   );
   const state = () => page.evaluate(() => window.desktop.windowState());
+  const mainWindowId = await app.evaluate(
+    ({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].id,
+  );
   const info = () =>
-    app.evaluate(({ BrowserWindow, screen, app }) => {
-      const w = BrowserWindow.getAllWindows()[0],
+    app.evaluate(({ BrowserWindow, screen, app }, mainWindowId) => {
+      const w = BrowserWindow.fromId(mainWindowId),
         bounds = w.getBounds(),
         d = screen.getDisplayMatching(bounds);
       return {
@@ -70,7 +73,7 @@ async function launch() {
         physical: screen.dipToScreenRect(w, bounds),
         userData: app.getPath("userData"),
       };
-    });
+    }, mainWindowId);
   const menu = async (id) => {
     await until(
       () =>
@@ -192,6 +195,31 @@ try {
     "Repeated taskbar activation covers clock",
   );
   assert.equal((await test.info()).focused, false);
+  await test.app.evaluate(({ BrowserWindow }) => {
+    globalThis.clockStackProbe = new BrowserWindow({
+      x: 650,
+      y: 100,
+      width: 300,
+      height: 200,
+      show: true,
+      title: "Clock stacking acceptance",
+    });
+    globalThis.clockStackProbe.focus();
+  });
+  await delay(1000);
+  assert.equal((await test.info()).focused, false);
+  await ui("click", {
+    x: bar.bounds[0] + (bar.bounds[2] - bar.bounds[0]) * 0.75,
+    y: bar.bounds[3] - 3,
+  });
+  await delay(500);
+  assert.equal(
+    (await ui("hit-test", overlap)).pid,
+    n.pid,
+    "Taskbar activated from another foreground window covers clock",
+  );
+  assert.equal((await test.info()).focused, false);
+  await test.app.evaluate(() => globalThis.clockStackProbe.destroy());
   results.push({
     check:
       "native opacity persistence, flush screen docking and taskbar coverage including taskbar hover and activation",
