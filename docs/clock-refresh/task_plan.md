@@ -6,4 +6,4 @@ User explicitly requests master implementation first, then merge into special/wi
 - [x] Remove chassis focus/Space activation; retain pointer and configured keyboard input.
 - [x] Move overlay to top-left, size it for small windows.
 - [x] Test master (unit/type/build and real Windows interaction), commit master.
-- [ ] Merge master into special branch, package and verify both EXEs, return ZIP with matching hash.
+- [x] Merge master into special branch, package and verify both EXEs, return ZIP with matching hash.

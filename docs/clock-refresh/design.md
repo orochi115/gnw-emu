@@ -4,7 +4,7 @@ Implement on master first, verify, then merge master into special/windows-stock-
 
 Clock opacity uses a new clockOpacity preference (0.2–1, default 1) and a clock context submenu of 100% down to 20%. Apply native BrowserWindow opacity only in clock mode; normal mode is opaque. Persist using the existing coalesced view settings queue and flush before confirming menu operations.
 
-Remove the 12-pixel dock gap. Windows clock docking/magnetism use full display bounds so a bottom-docked clock can occupy the taskbar area. Other platforms retain the work area. Request the screen-saver topmost level and validate actual Windows hit testing over Shell_TrayWnd, including hover, rather than inferring support from the topmost flag.
+Remove the 12-pixel dock gap. Windows clock docking/magnetism use full display bounds so a bottom-docked clock can occupy the taskbar area. Other platforms retain the work area. Request the screen-saver topmost level and validate actual Windows hit testing over Shell_TrayWnd, including hover and activation. Windows shell activation can reorder the taskbar after clock blur; restore clock stacking using delayed non-activating moveTop, cancel on exit/close, and validate that focus stays with the shell/other window.
 
 Chassis controls keep pointer capture and configured global keyboard mappings. Remove per-button focus, SVG focus indicators and focused Space/Enter activation; tabIndex is -1. General menus/dialogs keep their keyboard controls.
 
