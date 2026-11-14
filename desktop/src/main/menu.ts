@@ -107,6 +107,8 @@ export function clockMenuTemplate(
     normal: () => void;
     dock: (corner: DockCorner) => void;
     clockDock: DockCorner;
+    clockOpacity?: number;
+    setOpacity?: (opacity: number) => void;
     canInteract: boolean;
     showChassis: boolean;
     toggleChassis: () => void;
@@ -151,6 +153,20 @@ export function clockMenuTemplate(
       checked: actions.muted,
       enabled: actions.canInteract,
       click: actions.toggleMute,
+    },
+    {
+      id: "clock.opacity",
+      label: t("menu.opacity"),
+      enabled: actions.canInteract,
+      submenu: [100, 90, 80, 70, 60, 50, 40, 30, 20].map((percent) => ({
+        id: `clock.opacity.${percent}`,
+        label: `${percent}%`,
+        type: "radio" as const,
+        checked:
+          Math.abs((actions.clockOpacity ?? 1) - percent / 100) < 0.000001,
+        enabled: actions.canInteract,
+        click: () => actions.setOpacity?.(percent / 100),
+      })),
     },
     scaleMenuTemplate(actions),
     { type: "separator" },

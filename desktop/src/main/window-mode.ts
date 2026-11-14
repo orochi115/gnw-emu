@@ -19,6 +19,7 @@ export class WindowMode {
   private preferredClock: boolean;
   private normalScale: number;
   private clockScale: number;
+  private clockOpacity: number;
   private placement?: Placement;
   private dock: DockCorner;
   private dockTarget?: { x: number; y: number };
@@ -58,9 +59,11 @@ export class WindowMode {
     private persist: (patch: ViewSettingsPatch) => void = () => {},
     private move: (x: number, y: number) => void = (x, y) =>
       window.setBounds({ x, y }),
+    private platform: NodeJS.Platform = process.platform,
   ) {
     this.normalScale = settings.normalScale ?? 4;
     this.clockScale = settings.clockScale ?? 1;
+    this.clockOpacity = settings.clockOpacity ?? 1;
     this.preferredClock = settings.clockMode ?? false;
     this.placement = settings.clockBounds;
     this.dock = settings.clockDock ?? "none";
@@ -225,6 +228,7 @@ export class WindowMode {
     return {
       clockMode: this.clock,
       clockDock: this.dock,
+      clockOpacity: this.clockOpacity,
       preferredClockMode: this.preferredClock,
       transitioning: this.transitioning,
       pixelPerfect: renderScale !== null && Number.isInteger(renderScale),
@@ -272,6 +276,19 @@ export class WindowMode {
       displayId: screen.getDisplayMatching(this.window.getBounds()).id,
     };
     this.persist({ clockBounds: this.placement });
+  }
+  private clockArea(display: Electron.Display) {
+    return this.platform === "win32" ? display.bounds : display.workArea;
+  }
+  setOpacity(opacity: number) {
+    if (!Number.isFinite(opacity) || opacity < 0.2 || opacity > 1)
+      throw Error("Invalid clock opacity");
+    if (!this.clock || this.transitioning || this.modal)
+      throw Error("Clock mode is busy");
+    this.window.setOpacity(opacity);
+    this.clockOpacity = opacity;
+    this.persist({ clockOpacity: opacity });
+    this.changed();
   }
   setDock(corner: DockCorner) {
     if (!DOCK_CORNERS.includes(corner)) throw Error("Invalid dock corner");
@@ -321,7 +338,10 @@ export class WindowMode {
       if (drag.moved) {
         const bounds = this.window.getBounds();
         this.setDock(
-          nearestDock(bounds, screen.getDisplayMatching(bounds).workArea),
+          nearestDock(
+            bounds,
+            this.clockArea(screen.getDisplayMatching(bounds)),
+          ),
         );
       }
     }
@@ -331,7 +351,7 @@ export class WindowMode {
     const bounds = this.window.getBounds();
     const next = dockBounds(
       bounds,
-      screen.getDisplayMatching(bounds).workArea,
+      this.clockArea(screen.getDisplayMatching(bounds)),
       this.dock,
     );
     this.dockTarget = { x: next.x, y: next.y };
@@ -503,7 +523,7 @@ export class WindowMode {
     let x = Math.round(anchor.x + (anchor.width - width) / 2),
       y = Math.round(anchor.y + (anchor.height - height) / 2);
     if (restorePlacement || !this.clock) {
-      const area = display.workArea;
+      const area = this.clock ? this.clockArea(display) : display.workArea;
       const controlWidth = Math.min(width, area.width);
       x = Math.max(
         area.x ?? 0,
@@ -526,7 +546,7 @@ export class WindowMode {
     if (this.clock && this.dock !== "none") {
       const pinned = dockBounds(
         { x, y, width, height },
-        display.workArea,
+        this.clockArea(display),
         this.dock,
       );
       x = pinned.x;
@@ -559,10 +579,10 @@ export class WindowMode {
       display.scaleFactor,
       factor,
     );
+    const area = this.clock ? this.clockArea(display) : display.workArea;
     return (
-      geometry.width <= display.workArea.width &&
-      geometry.height + (this.clock ? 0 : TITLEBAR_HEIGHT) <=
-        display.workArea.height
+      geometry.width <= area.width &&
+      geometry.height + (this.clock ? 0 : TITLEBAR_HEIGHT) <= area.height
     );
   }
   async setScale(factor: number) {
@@ -625,7 +645,11 @@ export class WindowMode {
         this.clock = true;
         this.window.setMaximizable?.(false);
         this.window.setFullScreenable?.(false);
-        this.window.setAlwaysOnTop(true);
+        this.window.setAlwaysOnTop(
+          true,
+          this.platform === "win32" ? "screen-saver" : "floating",
+        );
+        this.window.setOpacity(this.clockOpacity);
         this.applyScale(
           this.clockScale,
           this.placement ?? this.window.getBounds(),
@@ -635,6 +659,7 @@ export class WindowMode {
         this.recordPlacement();
         this.dragging = undefined;
         this.clock = false;
+        this.window.setOpacity(1);
         this.window.unmaximize();
         this.window.setAspectRatio(0);
         this.window.setAlwaysOnTop(this.saved?.onTop ?? false);

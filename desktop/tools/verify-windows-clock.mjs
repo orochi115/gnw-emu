@@ -99,6 +99,7 @@ async function launch(exe, args = []) {
           bounds,
           contentSize: w.getContentSize(),
           workArea: d.workArea,
+          displayBounds: d.bounds,
           density: d.scaleFactor,
           maximized: w.isMaximized(),
           maximizable: w.isMaximizable(),
@@ -203,7 +204,9 @@ try {
     );
     await ui("escape");
     await ui("escape");
-    await live.page.screenshot({path:join(r,`out/windows-menu-layout-${factor}.png`)});
+    await live.page.screenshot({
+      path: join(r, `out/windows-menu-layout-${factor}.png`),
+    });
     results.push({ case: "normal-menu-layout", factor, expanded, menus });
   }
   await live.command("view.clock");
@@ -273,12 +276,14 @@ try {
   let n = await live.native();
   assert.ok(
     Math.abs(
-      n.bounds.x + n.bounds.width - (n.workArea.x + n.workArea.width - 12),
+      n.bounds.x + n.bounds.width - (n.displayBounds.x + n.displayBounds.width),
     ) <= 1,
   );
   assert.ok(
     Math.abs(
-      n.bounds.y + n.bounds.height - (n.workArea.y + n.workArea.height - 12),
+      n.bounds.y +
+        n.bounds.height -
+        (n.displayBounds.y + n.displayBounds.height),
     ) <= 1,
   );
   const initialSize = { width: n.bounds.width, height: n.bounds.height };
@@ -338,7 +343,7 @@ try {
     initialPhysical.client,
     "Docking changed physical client size",
   );
-  assert.ok(Math.abs(n.bounds.x - (n.workArea.x + 12)) <= 1);
+  assert.ok(Math.abs(n.bounds.x - n.displayBounds.x) <= 1);
   assert.equal((await live.state()).pixelScale, 1);
   await live.page.screenshot({ path: join(r, "out/windows-clock-fixed.png") });
   const b = await live.page.locator('[data-ui="window.normal"]').boundingBox();

@@ -24,6 +24,7 @@ export function App() {
   const [host, setHost] = useState<WindowState>({
     clockMode: false,
     clockDock: "none",
+    clockOpacity: 1,
     pixelPerfect: false,
     scaleFactor: 1,
     pixelScale: 4,

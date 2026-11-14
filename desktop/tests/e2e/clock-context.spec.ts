@@ -70,12 +70,20 @@ test("clock context controls dock and mute the existing game and persist on rest
     expect(
       JSON.parse(await readFile(join(root, "settings.json"), "utf8")).clockMode,
     ).toBe(true);
+    await live.action("ui.contextMenu", "clock.opacity.60");
+    expect((await live.rpc("ui.inspect")).window.clockOpacity).toBe(0.6);
+    expect(
+      await live.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getOpacity(),
+      ),
+    ).toBeCloseTo(0.6, 2);
     const runtime = (await live.rpc("app.getState")).runtimeSessionId;
     const pid = (await live.rpc("app.getDiagnostics")).qemuPid;
     const area = await live.app.evaluate(
       ({ BrowserWindow, screen }) =>
-        screen.getDisplayMatching(BrowserWindow.getAllWindows()[0].getBounds())
-          .workArea,
+        screen.getDisplayMatching(BrowserWindow.getAllWindows()[0].getBounds())[
+          process.platform === "win32" ? "bounds" : "workArea"
+        ],
     );
     // Failed disk persistence rolls back the already-applied live QMP mute.
     const settingsPath = join(root, "settings.json");
@@ -108,8 +116,8 @@ test("clock context controls dock and mute the existing game and persist on rest
         .checked,
     ).toBe(true);
     const pinned = (bounds: any) => {
-      expect(bounds.x + bounds.width).toBe(area.x + area.width - 12);
-      expect(bounds.y + bounds.height).toBe(area.y + area.height - 12);
+      expect(bounds.x + bounds.width).toBe(area.x + area.width);
+      expect(bounds.y + bounds.height).toBe(area.y + area.height);
     };
     pinned(inspect.window.bounds);
     await live.action("ui.contextMenu", "view.scale.half");
@@ -117,7 +125,10 @@ test("clock context controls dock and mute the existing game and persist on rest
     await live.action("ui.contextMenu", "view.chassis");
     inspect = await live.rpc("ui.inspect");
     pinned(inspect.window.bounds);
-    expect(inspect.canvas.pixelScale).toBeCloseTo(0.5, 5);
+    expect(inspect.canvas.pixelScale).toBeCloseTo(
+      0.5 / inspect.window.scaleFactor,
+      5,
+    );
     expect(
       inspect.contextMenus.find((i: any) => i.id === "view.chassis").checked,
     ).toBe(false);
@@ -144,6 +155,7 @@ test("clock context controls dock and mute the existing game and persist on rest
       audio: false,
       clockDock: "bottomRight",
       clockScale: 0.5,
+      clockOpacity: 0.6,
       showChassis: false,
     });
     live = await launch();
@@ -152,6 +164,12 @@ test("clock context controls dock and mute the existing game and persist on rest
       .toBe(true);
     inspect = await live.rpc("ui.inspect");
     expect(inspect.window.clockDock).toBe("bottomRight");
+    expect(inspect.window.clockOpacity).toBe(0.6);
+    expect(
+      await live.app.evaluate(({ BrowserWindow }) =>
+        BrowserWindow.getAllWindows()[0].getOpacity(),
+      ),
+    ).toBeCloseTo(0.6, 2);
     pinned(inspect.window.bounds);
     expect((await live.rpc("app.getDiagnostics")).audioMuted).toBe(true);
     await live.action("ui.contextMenu", "audio.mute");
@@ -166,7 +184,7 @@ test("clock context controls dock and mute the existing game and persist on rest
       .poll(async () => (await live!.rpc("ui.inspect")).window.clockDock)
       .toBe("none");
     expect((await live.rpc("ui.inspect")).canvas.pixelScale).toBeCloseTo(
-      0.5,
+      0.5 / inspect.window.scaleFactor,
       5,
     );
     await live.app.close();

@@ -99,3 +99,11 @@ test("controls binding IDs and menu are available to UI automation", () => {
     validateAutomationParams("ui.click", { id: 'controls.binding.x"]' }),
   ).toThrow();
 });
+test("clock opacity operations accept only supported visible menu presets", () => {
+  expect(
+    validateAutomationParams("ui.contextMenu", { id: "clock.opacity.60" }),
+  ).toEqual({ id: "clock.opacity.60" });
+  expect(() =>
+    validateAutomationParams("ui.contextMenu", { id: "clock.opacity.0" }),
+  ).toThrow();
+});

@@ -57,6 +57,7 @@ export const settingsSchema = z
     normalScale: z.number().finite().min(0.05).max(64).default(4),
     clockScale: z.number().finite().min(0.05).max(64).default(1),
     clockMode: z.boolean().default(false),
+    clockOpacity: z.number().finite().min(0.2).max(1).default(1),
     clockDock: z.enum(DOCK_CORNERS).default("none"),
     clockBounds: z
       .object({

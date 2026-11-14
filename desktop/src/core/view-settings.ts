@@ -2,7 +2,12 @@ import type { Settings } from "./schemas";
 export type ViewSettingsPatch = Partial<
   Pick<
     Settings,
-    "normalScale" | "clockScale" | "clockMode" | "clockBounds" | "clockDock"
+    | "normalScale"
+    | "clockScale"
+    | "clockMode"
+    | "clockOpacity"
+    | "clockBounds"
+    | "clockDock"
   >
 >;
 

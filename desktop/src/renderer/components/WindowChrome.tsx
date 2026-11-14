@@ -1,4 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import type { MenuBarItem, WindowState } from "../../shared/contracts";
 import { t } from "../../shared/locale";
 
@@ -131,7 +137,11 @@ export function ClockControls({ state }: { state: WindowState }) {
     <div
       className="clock-controls"
       aria-label={t("menu.clock")}
-      style={{ right: `calc(100% - ${state.controlWidth}px + 6px)` }}
+      style={
+        {
+          "--clock-control-size": `${Math.max(12, Math.min(28, state.controlWidth * 0.08))}px`,
+        } as CSSProperties
+      }
     >
       {(["normal", "close"] as const).map((action) => (
         <button

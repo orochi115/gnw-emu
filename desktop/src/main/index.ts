@@ -944,6 +944,10 @@ function createClockMenu() {
         void toggleClock().catch(showError);
       },
       clockDock: windowMode.state.clockDock,
+      clockOpacity: windowMode.state.clockOpacity,
+      setOpacity: (opacity) => {
+        void setClockOpacity(opacity).catch(showError);
+      },
       canInteract: canClockInteract(),
       dock: (corner) => {
         void setDock(corner).catch(showError);
@@ -966,6 +970,13 @@ function createClockMenu() {
       },
     }),
   );
+}
+async function setClockOpacity(opacity: number) {
+  if (!canClockInteract()) throw new UserError("error.busy");
+  await perform(async () => {
+    windowMode.setOpacity(opacity);
+    await viewSettings.flush();
+  });
 }
 async function setDock(corner: DockCorner) {
   if (!canClockInteract()) throw new UserError("error.busy");

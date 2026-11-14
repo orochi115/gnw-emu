@@ -11,6 +11,7 @@ vi.mock("electron", async () => {
       getDisplayMatching: () => ({
         scaleFactor: display.density,
         workArea: display.workArea,
+        bounds: { ...display.workArea, height: display.workArea.height + 40 },
       }),
     }),
   };
@@ -118,22 +119,22 @@ test("clock docking survives scale/frame changes, persists and releases on manua
   await mode.toggle();
   mode.setDock("bottomRight");
   expect(host.getBounds()).toEqual({
-    x: 1428,
-    y: 868,
+    x: 1440,
+    y: 880,
     width: 160,
     height: 120,
   });
   await mode.setScale(2);
   expect(host.getBounds()).toEqual({
-    x: 1268,
-    y: 748,
+    x: 1280,
+    y: 760,
     width: 320,
     height: 240,
   });
   await mode.fit("zelda", true);
   const bounds = host.getBounds();
-  expect(bounds.x + bounds.width).toBe(1588);
-  expect(bounds.y + bounds.height).toBe(988);
+  expect(bounds.x + bounds.width).toBe(1600);
+  expect(bounds.y + bounds.height).toBe(1000);
   expect(mode.state.pixelScale).toBe(2);
   expect(mode.state.clockDock).toBe("bottomRight");
   host.setBounds({ x: 400, y: 300 });
@@ -168,6 +169,7 @@ function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
     setAspectRatio: vi.fn(),
     unmaximize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    setOpacity: vi.fn(),
     isMaximizable: (): boolean => true,
     isFullScreenable: () => true,
     setMaximizable: vi.fn(),
@@ -214,10 +216,10 @@ test("clock pointer drag ignores clicks, keeps scale, releases docking and snaps
   mode.drag("move", { x: 500 - before.x + 4, y: 420 });
   mode.drag("end", { x: 500 - before.x + 4, y: 420 });
   expect(mode.state.clockDock).toBe("left");
-  expect(host.getBounds().x).toBe(12);
+  expect(host.getBounds().x).toBe(0);
   expect(mode.state.pixelScale).toBe(1);
   await mode.fit("zelda", false);
-  expect(host.getBounds().x).toBe(12);
+  expect(host.getBounds().x).toBe(0);
   await mode.toggle();
   const normal = host.getBounds();
   mode.drag("start", { x: 500, y: 500 });
@@ -441,6 +443,7 @@ test("a dead runtime during fullscreen exit cannot finish entering clock mode", 
     unmaximize: vi.fn(),
     setMinimumSize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    setOpacity: vi.fn(),
     setContentSize: vi.fn(),
     setAspectRatio: vi.fn(),
     setBounds: vi.fn(),
@@ -484,6 +487,7 @@ test("display density changes retain exact pixels or a manually chosen size", as
     unmaximize: vi.fn(),
     setMinimumSize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    setOpacity: vi.fn(),
     setAspectRatio: vi.fn(),
     setContentSize: (w: number, h: number) => {
       width = w;
@@ -540,6 +544,7 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
     unmaximize: vi.fn(),
     setMinimumSize: vi.fn(),
     setAlwaysOnTop: vi.fn(),
+    setOpacity: vi.fn(),
     setAspectRatio: vi.fn(),
     setContentSize: (w: number, h: number) => {
       if (++resizes > 10) throw Error("oscillating density");
@@ -608,4 +613,52 @@ test("clock drags and docking preserve dimensions with a move-only host adapter"
   } finally {
     host.emit("closed");
   }
+});
+test("clock opacity restores its saved value, persists changes, and normal mode stays opaque", async () => {
+  const host = resizingHost();
+  const patches: any[] = [];
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    { clockOpacity: 0.6 },
+    (patch) => patches.push(patch),
+  );
+  await mode.fit("zelda", false);
+  await mode.toggle();
+  expect(host.setOpacity).toHaveBeenLastCalledWith(0.6);
+  mode.setOpacity(0.4);
+  expect(mode.state.clockOpacity).toBe(0.4);
+  expect(patches).toContainEqual({ clockOpacity: 0.4 });
+  await mode.toggle();
+  expect(host.setOpacity).toHaveBeenLastCalledWith(1);
+  await mode.toggle();
+  expect(host.setOpacity).toHaveBeenLastCalledWith(0.4);
+  expect(() => mode.setOpacity(0)).toThrow();
+  host.emit("closed");
+});
+test("Windows clock docks flush to the physical screen across the taskbar and uses the highest topmost level", async () => {
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {},
+    () => {},
+    undefined,
+    "win32",
+  );
+  await mode.fit("zelda", false);
+  await mode.toggle();
+  mode.setDock("bottomRight");
+  expect(host.getBounds()).toEqual({
+    x: 1440,
+    y: 920,
+    width: 160,
+    height: 120,
+  });
+  expect(host.setAlwaysOnTop).toHaveBeenCalledWith(true, "screen-saver");
+  host.emit("closed");
 });

@@ -20,6 +20,7 @@ export interface MenuBarItem {
 export interface WindowState {
   clockMode: boolean;
   clockDock: DockCorner;
+  clockOpacity: number;
   pixelPerfect: boolean;
   scaleFactor: number;
   pixelScale: number;

@@ -190,3 +190,27 @@ test("clock context omits device and instant states while normal menus retain th
   const file: any = normal.find((i) => i.id === "menu.file");
   expect(file.submenu.map((i: any) => i.id)).toContain("menu.state");
 });
+test("clock menu exposes localized opacity choices and selects persisted opacity", () => {
+  initializeLocale("zh-CN");
+  const selected: number[] = [];
+  const menu: any[] = clockMenuTemplate({
+    normal() {},
+    dock() {},
+    clockDock: "none",
+    canInteract: true,
+    showChassis: true,
+    toggleChassis() {},
+    muted: false,
+    toggleMute() {},
+    quit() {},
+    clockOpacity: 0.6,
+    setOpacity: (opacity) => selected.push(opacity),
+  });
+  const opacity = menu.find((item) => item.id === "clock.opacity");
+  expect(opacity.label).toBe("窗口透明度");
+  expect(opacity.submenu.find((item: any) => item.checked).id).toBe(
+    "clock.opacity.60",
+  );
+  opacity.submenu.find((item: any) => item.id === "clock.opacity.40").click();
+  expect(selected).toEqual([0.4]);
+});

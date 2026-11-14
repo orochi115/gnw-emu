@@ -196,22 +196,12 @@ button.chassis-button:disabled {
   filter: none;
   opacity: 1;
 }
-.chassis-state,
-.chassis-focus {
+.chassis-state {
   position: absolute;
   width: 100%;
   height: 100%;
   inset: 0;
   pointer-events: none;
-}
-.chassis-focus {
-  opacity: 0;
-  fill: none;
-  stroke: var(--focus);
-  stroke-width: 3px;
-}
-.chassis-button:focus-visible .chassis-focus {
-  opacity: 1;
 }
 .loading-overlay {
   position: absolute;
@@ -543,8 +533,8 @@ main {
 }
 .clock-controls {
   position: absolute;
-  top: 6px;
-  right: 6px;
+  top: 2px;
+  left: 2px;
   display: flex;
   z-index: 10;
   background: var(--surface);
@@ -555,6 +545,12 @@ main {
   opacity: 0;
   transition: opacity 140ms;
   app-region: no-drag;
+}
+.clock-controls button {
+  height: var(--clock-control-size, 28px);
+  min-width: var(--clock-control-size, 28px);
+  padding: 0;
+  font-size: calc(var(--clock-control-size, 28px) * 0.65);
 }
 .clock-controls:hover,
 .clock-controls:focus-within {

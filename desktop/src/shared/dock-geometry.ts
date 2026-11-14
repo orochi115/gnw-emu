@@ -19,33 +19,25 @@ export function dockBounds(
   corner: DockCorner,
 ) {
   if (corner === "none") return bounds;
-  const gapX = Math.min(12, Math.max(0, (area.width - bounds.width) / 2));
-  const gapY = Math.min(12, Math.max(0, (area.height - bounds.height) / 2));
-  const clampX = Math.max(
-    area.x + gapX,
-    Math.min(bounds.x, area.x + area.width - bounds.width - gapX),
-  );
-  const clampY = Math.max(
-    area.y + gapY,
-    Math.min(bounds.y, area.y + area.height - bounds.height - gapY),
-  );
+  const right = area.x + Math.max(0, area.width - bounds.width);
+  const bottom = area.y + Math.max(0, area.height - bounds.height);
+  const clampX = Math.max(area.x, Math.min(bounds.x, right));
+  const clampY = Math.max(area.y, Math.min(bounds.y, bottom));
   return {
     ...bounds,
     x: Math.round(
       corner === "top" || corner === "bottom"
         ? clampX
-        : area.x +
-            (corner.endsWith("Right") || corner === "right"
-              ? Math.max(gapX, area.width - bounds.width - gapX)
-              : gapX),
+        : corner.endsWith("Right") || corner === "right"
+          ? right
+          : area.x,
     ),
     y: Math.round(
       corner === "left" || corner === "right"
         ? clampY
-        : area.y +
-            (corner.startsWith("bottom")
-              ? Math.max(gapY, area.height - bounds.height - gapY)
-              : gapY),
+        : corner.startsWith("bottom")
+          ? bottom
+          : area.y,
     ),
   };
 }

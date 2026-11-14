@@ -148,3 +148,18 @@ test("existing mappings gain state shortcuts once, without replacing custom mapp
     await rm(root, { recursive: true, force: true });
   }
 });
+test("clock opacity defaults opaque, persists, and rejects invisible or invalid values", async () => {
+  const root = await mkdtemp(join(tmpdir(), "gnw-clock-opacity-"));
+  try {
+    expect((await loadSettings(root)).clockOpacity).toBe(1);
+    await updateSettings(root, { clockOpacity: 0.6 });
+    expect((await loadSettings(root)).clockOpacity).toBe(0.6);
+    for (const value of [0, 0.19, 1.01, NaN])
+      await expect(
+        updateSettings(root, { clockOpacity: value }),
+      ).rejects.toThrow();
+    expect((await loadSettings(root)).clockOpacity).toBe(0.6);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});

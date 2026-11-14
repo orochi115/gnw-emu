@@ -267,30 +267,22 @@ test("live chassis shows aggregate keyboard/pointer input, releases safely, and 
         throw error;
       }
     };
-    // SELECT/START stay game mappings even with a focused chassis control.
-    await a.focus();
+    // Chassis buttons do not join the keyboard focus system. Configured game
+    // mappings keep working, and an unbound Space does not activate a button.
+    await expect(a).toHaveAttribute("tabindex", "-1");
+    await expect(page.locator(".chassis-focus")).toHaveCount(0);
+    await page.locator("canvas").focus();
     await page.keyboard.down("Tab");
     await mask(2048);
-    await expect(a).toBeFocused();
     await page.keyboard.down("Enter");
     await mask(3072);
     await page.keyboard.up("Tab");
     await mask(1024);
     await page.keyboard.up("Enter");
     await mask(0);
-    // A lagging aggregate snapshot must not destroy local key ownership.
-    await a.focus();
     await page.keyboard.down("Space");
-    await mask(16);
-    const previousInput = (await rpc("app.getDiagnostics")).input;
-    await app.evaluate(
-      ({ BrowserWindow }, input) =>
-        BrowserWindow.getAllWindows()[0].webContents.send("input.state", input),
-      { ...previousInput, desiredMask: 0, appliedMask: 0 },
-    );
-    await expect(a).toHaveAttribute("aria-pressed", "false");
-    await page.keyboard.up("Space");
     await mask(0);
+    await page.keyboard.up("Space");
     await page.locator("canvas").focus();
     await page.keyboard.down("Enter");
     await mask(1024);
@@ -359,13 +351,6 @@ test("live chassis shows aggregate keyboard/pointer input, releases safely, and 
     });
     await mask(0);
     await cdp.detach();
-    // Space remains available for explicitly focused accessible controls.
-    await a.focus();
-    await page.keyboard.down("Space");
-    await mask(16);
-    await page.locator("canvas").focus();
-    await mask(0);
-    await page.keyboard.up("Space");
     await action("ui.pointer", { id: "chassis.button.b", phase: "down" });
     await mask(32);
     await action("ui.menu", { id: "file.make" });

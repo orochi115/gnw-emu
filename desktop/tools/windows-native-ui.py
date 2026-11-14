@@ -66,3 +66,14 @@ elif action=='window':
  hwnd=W.HWND(int(arg['hwnd']));rect=W.RECT();client=W.RECT()
  if not u.GetWindowRect(hwnd,C.byref(rect)) or not u.GetClientRect(hwnd,C.byref(client)):raise RuntimeError('Window geometry unavailable')
  print(json.dumps({'bounds':[rect.left,rect.top,rect.right-rect.left,rect.bottom-rect.top],'client':[client.right-client.left,client.bottom-client.top]}))
+elif action=='taskbar':
+ u.FindWindowW.argtypes=[W.LPCWSTR,W.LPCWSTR];u.FindWindowW.restype=W.HWND
+ hwnd=u.FindWindowW('Shell_TrayWnd',None);rect=W.RECT()
+ if not hwnd or not u.GetWindowRect(hwnd,C.byref(rect)):raise RuntimeError('Taskbar unavailable')
+ print(json.dumps({'hwnd':str(hwnd),'bounds':[rect.left,rect.top,rect.right,rect.bottom]}))
+elif action=='hit-test':
+ u.WindowFromPoint.argtypes=[W.POINT];u.WindowFromPoint.restype=W.HWND
+ u.GetAncestor.argtypes=[W.HWND,W.UINT];u.GetAncestor.restype=W.HWND
+ hwnd=u.WindowFromPoint(W.POINT(round(arg['x']),round(arg['y'])));root=u.GetAncestor(hwnd,2)
+ owner=W.DWORD();u.GetWindowThreadProcessId(root,C.byref(owner));name=C.create_unicode_buffer(128);u.GetClassNameW(root,name,128)
+ print(json.dumps({'hwnd':str(root),'pid':owner.value,'className':name.value}))
