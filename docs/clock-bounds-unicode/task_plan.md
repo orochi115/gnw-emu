@@ -9,4 +9,4 @@ Execute inline under the user's explicit master-first instruction; reviewers are
 - [x] Merge into special/windows-stock-dual, update portable README and Chinese relocation acceptance, package in a new output directory with rebuilt native.
 - [x] Verify extracted Zelda and Mario including Chinese application/UserData paths, saves/restart/clock limits, restrictions, relocation and unchanged firmware.
 - [x] Copy ZIP to local new output directory and validate CRC/SHA256/firmware hashes; record acceptance.
-- [ ] Sync final source/docs and clean temporary tasks.
+- [x] Sync final source/docs and clean temporary tasks.
