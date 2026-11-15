@@ -564,6 +564,12 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
     (bounds) =>
       ({
         scaleFactor: bounds.x + bounds.width / 2 > 0 ? 2 : 1,
+        bounds: {
+          x: bounds.x + bounds.width / 2 > 0 ? 0 : -1600,
+          y: 0,
+          width: 1600,
+          height: 1000,
+        },
         workArea: {
           x: bounds.x + bounds.width / 2 > 0 ? 0 : -1600,
           y: 0,
