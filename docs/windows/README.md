@@ -17,7 +17,7 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\run.ps1 -Profile profil
 
 `bootstrap.ps1` 初始化固定子模块，安装 MSYS2/GCC/CMake/Ninja、Python 工具和 Electron 依赖。默认使用清华 MSYS2 镜像，可用 `-Mirror` 修改。`-SkipArm` 只安装桌面端构建依赖；`-CoreToolchain` 额外安装 GCC 15.2。可设置 `GNW_TOOLCHAIN_ROOT` 覆盖同级工具链目录。
 
-已有源码或编译配置改变时，内核构建脚本拒绝混用旧对象；保留旧目录并通过 `GWEMU_BUILD_DIR` 构建到新目录，或将旧 `build\gwemu` 改名后重新构建。`build.ps1` 的桌面端和打包流程支持同一自定义目录。本次部署的 `build\gwemu` 是指向最终干净构建 `build\gwemu-windows-final` 的目录联接，以保留 Meson 记录的绝对路径。
+已有源码或编译配置改变时，内核构建脚本拒绝混用旧对象；保留旧目录并通过 `GWEMU_BUILD_DIR` 构建到新目录，或将旧 `build\gwemu` 改名后重新构建。`build.ps1` 的桌面端和打包流程支持同一自定义目录。本次部署的 `build\gwemu` 是指向通过 Unicode 回归的干净构建 `build\gwemu-windows-unicode` 的目录联接，以保留 Meson 记录的绝对路径。
 
 ## 目录包
 
@@ -27,6 +27,8 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\build.ps1 -Package
 ```
 
 目录包包含内核、递归收集的 MinGW DLL 和构建来源记录。整目录移动即可，运行无需 MSYS2、Python 或 Node.js。使用外部 `gnwmanager` CLI 时仍需下面的 Python 环境。包不附带 ROM 或用户数据，需用自己的备份创建 `.gnw.json` 或从界面打开已有配置。
+
+运行时的应用、配置、镜像、会话和存档路径支持中文、emoji 和空格。Windows 内核使用 Unicode 参数和文件 API；无需改变系统区域设置。内核更新后，旧快捷存档因二进制哈希绑定而无法载入，更新本身不会删除旧文件。游戏自身保存数据与快捷存档分开存放，仍使用原 profile 的会话目录；需要载入旧快捷存档时请保留旧包及 UserData 备份。
 
 可把一个 `.gnw.json` 配置从资源管理器拖入主窗口打开，也可在游戏运行时拖入配置切换。拖入无效配置或 `.bin` 固件会显示错误并保留当前游戏；制作 ROM 或设置对话框打开时需先关闭对话框。
 
@@ -44,7 +46,11 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\build.ps1 -Portable
 
 ## Windows 菜单和桌面时钟
 
-Windows 普通模式在标题栏中横向显示文件、设备、编辑、设置、视图和窗口菜单；空间不足时自动折叠为三线按钮。标题栏文字由应用绘制，下拉菜单及时钟右键菜单使用 Win32 `HMENU`，保留中文、勾选、禁用状态及快捷键提示。时钟右键菜单只保留返回普通模式、停靠、边框、静音、倍率和退出；设备及即时存档操作仍在普通模式提供。时钟画面可拖动，双击不会最大化；右上角返回/关闭按钮只在鼠标悬停该区域或键盘聚焦时显示。右键可选择自由悬浮、四角或四条边停靠；拖动释放时，距工作区边缘 24 个逻辑像素以内会自动吸附，保留 12 个逻辑像素间距。缩放或切换机身边框后保持停靠位置，拖离边缘恢复自由悬浮。
+Windows 普通模式在标题栏中横向显示文件、设备、编辑、设置、视图和窗口菜单；空间不足时自动折叠为三线按钮。标题栏文字由应用绘制，下拉菜单及时钟右键菜单使用 Win32 `HMENU`，保留中文、勾选、禁用状态及快捷键提示。时钟右键菜单提供返回普通模式、停靠、边框、静音、窗口透明度、倍率和退出；设备及即时存档操作仍在普通模式提供。透明度 20–100% 会持久化，返回普通模式恢复完全不透明。
+
+时钟窗口可覆盖任务栏且不抢焦点，停靠、吸附和移动极限使用完整显示器边界。自由拖动过程中和松手后都保持窗口位于对应显示器内；支持移到另一显示器，超出边界会退回。释放时距边缘 24 个逻辑像素以内自动吸附，没有额外停靠间距。缩放、边框切换或屏幕变化后会修正位置，必要时降到可显示的倍率。正常窗口移动不受此限制。
+
+时钟左上角返回/关闭按钮只在鼠标悬停该区域或键盘聚焦时显示，按钮随小窗口缩小。双击时钟不会最大化。机身游戏按键没有单独焦点系统，仍支持鼠标及配置的键盘映射。
 
 构建普通包和 portable ZIP 后，在已解锁的 Session 1 桌面从 `desktop` 目录运行 `npm run test:windows-clock` 可重复验收。它操作真实鼠标，使用临时数据和 ZIP 副本，验证横向菜单与窄窗口折叠、反复拖动后窗口/客户区尺寸不变、时钟交互及搬移重启；请在测试期间留出鼠标操作权。默认加载 `profiles/zelda.gnw.json`，可通过 `GNW_TEST_PROFILE` 指定自己的 Zelda 配置；`GNW_TEST_PACKAGE_DIR` 和 `GNW_TEST_PORTABLE_ZIP` 可指定待验收包。结果写入 `out/windows-clock-portable-result.json`。
 
