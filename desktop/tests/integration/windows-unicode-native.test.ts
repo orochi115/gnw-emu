@@ -141,15 +141,31 @@ test.runIf(enabled)(
         child.on("exit", resolve);
       });
       child.stdin.on("error", () => {});
-      child.stdin.end(
-        '{"execute":"qmp_capabilities"}\n{"execute":"query-named-block-nodes"}\n{"execute":"quit"}\n',
-      );
+      // QMP commands can finish out of order. Wait for disk inspection before
+      // quitting instead of cancelling it with a pipelined quit/stdio EOF.
+      const command = async (execute: string) => {
+        child.stdin.write(JSON.stringify({ execute, id: execute }) + "\n");
+        for (let i = 0; i < 150; i++) {
+          const lines = stdout.split(/\r?\n/);
+          lines.pop();
+          const reply = lines
+            .map((line) => JSON.parse(line))
+            .find((r) => r.id === execute);
+          if (reply) {
+            expect(reply.error).toBeUndefined();
+            return reply.return;
+          }
+          if (child.exitCode !== null || child.signalCode !== null)
+            throw Error(stderr || "Native exited before QMP reply");
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        throw Error(`QMP timeout: ${execute}`);
+      };
+      await command("qmp_capabilities");
+      const nodes = await command("query-named-block-nodes");
+      expect(JSON.stringify(nodes)).toContain("中文磁盘");
+      await command("quit");
       expect(await exit, stderr).toBe(0);
-      const replies = stdout
-        .trim()
-        .split(/\r?\n/)
-        .map((line) => JSON.parse(line));
-      expect(JSON.stringify(replies)).toContain("中文磁盘");
       expect(await hash(image)).toBe(before);
     } finally {
       clearTimeout(timeout);

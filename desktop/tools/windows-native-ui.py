@@ -67,7 +67,13 @@ elif action=='key-down':u.keybd_event(arg['key'],u.MapVirtualKeyW(arg['key'],0),
 elif action=='window':
  hwnd=W.HWND(int(arg['hwnd']));rect=W.RECT();client=W.RECT()
  if not u.GetWindowRect(hwnd,C.byref(rect)) or not u.GetClientRect(hwnd,C.byref(client)):raise RuntimeError('Window geometry unavailable')
- print(json.dumps({'bounds':[rect.left,rect.top,rect.right-rect.left,rect.bottom-rect.top],'client':[client.right-client.left,client.bottom-client.top]}))
+ class MonitorInfo(C.Structure):_fields_=[('size',W.DWORD),('monitor',W.RECT),('work',W.RECT),('flags',W.DWORD)]
+ u.MonitorFromWindow.argtypes=[W.HWND,W.DWORD];u.MonitorFromWindow.restype=W.HANDLE
+ u.GetMonitorInfoW.argtypes=[W.HANDLE,C.POINTER(MonitorInfo)]
+ info=MonitorInfo();info.size=C.sizeof(info)
+ if not u.GetMonitorInfoW(u.MonitorFromWindow(hwnd,2),C.byref(info)):raise RuntimeError('Monitor geometry unavailable')
+ m=info.monitor
+ print(json.dumps({'bounds':[rect.left,rect.top,rect.right-rect.left,rect.bottom-rect.top],'client':[client.right-client.left,client.bottom-client.top],'monitor':[m.left,m.top,m.right,m.bottom]}))
 elif action=='taskbar':
  u.FindWindowW.argtypes=[W.LPCWSTR,W.LPCWSTR];u.FindWindowW.restype=W.HWND
  hwnd=u.FindWindowW('Shell_TrayWnd',None);rect=W.RECT()

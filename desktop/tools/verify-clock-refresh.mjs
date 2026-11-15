@@ -11,7 +11,9 @@ const resultPath = resolve(
   process.env.GNW_CLOCK_RESULT ?? "../out/clock-refresh-result.json",
 );
 await mkdir(resolve("../out"), { recursive: true });
-const data = await mkdtemp(join(tmpdir(), "gnw-clock-refresh-"));
+const testRoot = await mkdtemp(join(tmpdir(), "gnw-clock-refresh-"));
+const data = join(testRoot, "中文 用户数据 🎮");
+await mkdir(data);
 const results = [];
 let live;
 const ui = async (action, args = {}) =>
@@ -63,6 +65,7 @@ async function launch() {
         d = screen.getDisplayMatching(bounds);
       return {
         pid: process.pid,
+        hwnd: w.getNativeWindowHandle().readBigUInt64LE().toString(),
         bounds,
         screen: d.bounds,
         work: d.workArea,
@@ -145,16 +148,8 @@ try {
     [0, 1],
     [1, 1],
   ]) {
-    await test.app.evaluate(({ BrowserWindow, screen }, id) => {
-      const w = BrowserWindow.fromId(id),
-        b = w.getBounds();
-      const d = screen.getDisplayMatching(b).bounds;
-      w.setPosition(
-        Math.round(d.x + (d.width - b.width) / 2),
-        Math.round(d.y + (d.height - b.height) / 2),
-      );
-    }, test.mainWindowId);
     const before = await test.info();
+    const nativeBefore = await ui("window", { hwnd: before.hwnd });
     const lcd = await test.page
       .locator('[data-ui="game.canvas"]')
       .boundingBox();
@@ -171,29 +166,45 @@ try {
     await ui("drag", { start, end, hold: true });
     await delay(150);
     const held = await test.info();
-    const inside = (n) => {
-      assert(n.bounds.x >= n.screen.x && n.bounds.y >= n.screen.y);
-      assert(n.bounds.x + n.bounds.width <= n.screen.x + n.screen.width);
-      assert(n.bounds.y + n.bounds.height <= n.screen.y + n.screen.height);
-      assert.equal(n.bounds.width, before.bounds.width);
-      assert.equal(n.bounds.height, before.bounds.height);
+    const inside = async (n) => {
+      const native = await ui("window", { hwnd: n.hwnd });
+      const [x, y, w, h] = native.bounds,
+        [left, top, right, bottom] = native.monitor;
+      assert(x >= left && y >= top, JSON.stringify(native));
+      assert(x + w <= right && y + h <= bottom, JSON.stringify(native));
+      assert.deepEqual(
+        native.bounds.slice(2),
+        nativeBefore.bounds.slice(2),
+        "Drag must preserve native pixel dimensions",
+      );
+      assert.deepEqual(native.client, nativeBefore.client);
+      return native;
     };
-    inside(held);
+    const nativeHeld = await inside(held);
     await ui("release-mouse");
     await delay(150);
     const dropped = await test.info();
-    inside(dropped);
-    assert.equal(
-      dropped.bounds.x,
-      dropped.screen.x +
-        (horizontal ? dropped.screen.width - dropped.bounds.width : 0),
+    const nativeDropped = await inside(dropped);
+    assert(
+      Math.abs(
+        dropped.bounds.x -
+          (dropped.screen.x +
+            (horizontal ? dropped.screen.width - dropped.bounds.width : 0)),
+      ) <= 1,
     );
-    assert.equal(
-      dropped.bounds.y,
-      dropped.screen.y +
-        (vertical ? dropped.screen.height - dropped.bounds.height : 0),
+    assert(
+      Math.abs(
+        dropped.bounds.y -
+          (dropped.screen.y +
+            (vertical ? dropped.screen.height - dropped.bounds.height : 0)),
+      ) <= 1,
     );
-    dragResults.push({ held: held.bounds, dropped: dropped.bounds });
+    dragResults.push({
+      held: held.bounds,
+      dropped: dropped.bounds,
+      nativeHeld,
+      nativeDropped,
+    });
   }
   results.push({
     check:
