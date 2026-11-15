@@ -2,6 +2,7 @@ import { BrowserWindow, screen } from "electron";
 import { clockGeometry } from "../shared/clock-geometry";
 import {
   dockBounds,
+  clampBounds,
   nearestDock,
   DOCK_CORNERS,
   type DockCorner,
@@ -71,6 +72,7 @@ export class WindowMode {
     this.density = screen.getDisplayMatching(window.getBounds()).scaleFactor;
     window.on("move", () => {
       if (this.applyingBounds || this.transitioning) return;
+      this.constrainClock();
       const bounds = window.getBounds();
       if (
         this.clock &&
@@ -89,6 +91,7 @@ export class WindowMode {
     window.on("resize", () => {
       if (this.applyingBounds || this.transitioning || this.modal) return;
       this.refreshDensity();
+      this.constrainClock();
       if (this.model && this.gameAvailable && this.settledWindowed) {
         const [width, height] = window.getContentSize();
         if (
@@ -290,6 +293,28 @@ export class WindowMode {
   private clockArea(display: Electron.Display) {
     return this.platform === "win32" ? display.bounds : display.workArea;
   }
+  private constrainClock() {
+    if (!this.clock || this.applyingBounds || this.transitioning || this.modal)
+      return;
+    const bounds = this.window.getBounds();
+    const area = this.clockArea(screen.getDisplayMatching(bounds));
+    if (bounds.width > area.width || bounds.height > area.height) {
+      this.applyScale(
+        this.restoredScale(this.fitScale(), bounds),
+        bounds,
+        true,
+      );
+      return;
+    }
+    const next = clampBounds(bounds, area);
+    if (next.x === bounds.x && next.y === bounds.y) return;
+    this.applyingBounds = true;
+    try {
+      this.move(next.x, next.y);
+    } finally {
+      this.applyingBounds = false;
+    }
+  }
   setOpacity(opacity: number) {
     if (!Number.isFinite(opacity) || opacity < 0.2 || opacity > 1)
       throw Error("Invalid clock opacity");
@@ -337,11 +362,21 @@ export class WindowMode {
       }
       this.applyingBounds = true;
       try {
-        this.move(drag.bounds.x + dx, drag.bounds.y + dy);
+        const candidate = {
+          ...this.window.getBounds(),
+          x: drag.bounds.x + dx,
+          y: drag.bounds.y + dy,
+        };
+        const next = clampBounds(
+          candidate,
+          this.clockArea(screen.getDisplayMatching(candidate)),
+        );
+        this.move(next.x, next.y);
       } finally {
         this.applyingBounds = false;
       }
       this.refreshDensity();
+      this.constrainClock();
     }
     if (action === "end") {
       this.dragging = undefined;
@@ -475,6 +510,7 @@ export class WindowMode {
       this.window.getBounds(),
     ).scaleFactor;
     if (density === this.density) {
+      this.constrainClock();
       this.applyDock();
       this.changed();
       return;
@@ -493,14 +529,15 @@ export class WindowMode {
       this.changed();
     }
   };
-  /** Fit restored normal windows without altering an already fitting preference. */
+  /** Fit restored windows without altering an already fitting preference. */
   private restoredScale(factor: number, anchor = this.window.getBounds()) {
-    if (this.clock) return factor;
     const display = screen.getDisplayMatching(anchor);
     const unit = clockGeometry(this.model, this.frame, display.scaleFactor);
+    const area = this.clock ? this.clockArea(display) : display.workArea;
     const limit = Math.min(
-      Math.floor(display.workArea.width) / unit.layoutWidth,
-      Math.floor(display.workArea.height - TITLEBAR_HEIGHT) / unit.layoutHeight,
+      Math.floor(area.width) / unit.layoutWidth,
+      Math.floor(area.height - (this.clock ? 0 : TITLEBAR_HEIGHT)) /
+        unit.layoutHeight,
     );
     if (factor <= limit) return factor;
     // Prefer integer LCD pixels, then half scale, with a fractional fallback.
@@ -522,6 +559,10 @@ export class WindowMode {
     this.cancelManualScale();
     const display = screen.getDisplayMatching(anchor);
     this.density = display.scaleFactor;
+    if (this.clock) {
+      factor = this.restoredScale(factor, anchor);
+      this.rememberScale(factor);
+    }
     const geometry = clockGeometry(
       this.model,
       this.frame,
@@ -532,7 +573,8 @@ export class WindowMode {
       height = geometry.height + (this.clock ? 0 : TITLEBAR_HEIGHT);
     let x = Math.round(anchor.x + (anchor.width - width) / 2),
       y = Math.round(anchor.y + (anchor.height - height) / 2);
-    if (restorePlacement || !this.clock) {
+    // Every scale/frame change keeps the whole clock within its dock limits.
+    {
       const area = this.clock ? this.clockArea(display) : display.workArea;
       const controlWidth = Math.min(width, area.width);
       x = Math.max(

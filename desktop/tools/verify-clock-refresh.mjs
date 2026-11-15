@@ -103,7 +103,7 @@ async function launch() {
     for (const label of labels) await ui("select", { pid: n.pid, label });
     return menus;
   };
-  return { app, page, state, info, menu, context };
+  return { app, page, state, info, menu, context, mainWindowId };
 }
 try {
   await ui("session");
@@ -138,6 +138,69 @@ try {
   const button = test.page.locator('[data-ui="chassis.button.a"]');
   await button.click();
   assert(!(await button.evaluate((b) => document.activeElement === b)));
+  const dragResults = [];
+  for (const [horizontal, vertical] of [
+    [0, 0],
+    [1, 0],
+    [0, 1],
+    [1, 1],
+  ]) {
+    await test.app.evaluate(({ BrowserWindow, screen }, id) => {
+      const w = BrowserWindow.fromId(id),
+        b = w.getBounds();
+      const d = screen.getDisplayMatching(b).bounds;
+      w.setPosition(
+        Math.round(d.x + (d.width - b.width) / 2),
+        Math.round(d.y + (d.height - b.height) / 2),
+      );
+    }, test.mainWindowId);
+    const before = await test.info();
+    const lcd = await test.page
+      .locator('[data-ui="game.canvas"]')
+      .boundingBox();
+    const start = [
+      (before.bounds.x + lcd.x + lcd.width / 2) * before.density,
+      (before.bounds.y + lcd.y + lcd.height / 2) * before.density,
+    ];
+    const end = [
+      (before.screen.x + horizontal * before.screen.width) * before.density +
+        (horizontal ? -2 : 1),
+      (before.screen.y + vertical * before.screen.height) * before.density +
+        (vertical ? -2 : 1),
+    ];
+    await ui("drag", { start, end, hold: true });
+    await delay(150);
+    const held = await test.info();
+    const inside = (n) => {
+      assert(n.bounds.x >= n.screen.x && n.bounds.y >= n.screen.y);
+      assert(n.bounds.x + n.bounds.width <= n.screen.x + n.screen.width);
+      assert(n.bounds.y + n.bounds.height <= n.screen.y + n.screen.height);
+      assert.equal(n.bounds.width, before.bounds.width);
+      assert.equal(n.bounds.height, before.bounds.height);
+    };
+    inside(held);
+    await ui("release-mouse");
+    await delay(150);
+    const dropped = await test.info();
+    inside(dropped);
+    assert.equal(
+      dropped.bounds.x,
+      dropped.screen.x +
+        (horizontal ? dropped.screen.width - dropped.bounds.width : 0),
+    );
+    assert.equal(
+      dropped.bounds.y,
+      dropped.screen.y +
+        (vertical ? dropped.screen.height - dropped.bounds.height : 0),
+    );
+    dragResults.push({ held: held.bounds, dropped: dropped.bounds });
+  }
+  results.push({
+    check:
+      "physical mouse drag at all four screen corners stays visible while held and on release, without resizing",
+    passed: true,
+    dragResults,
+  });
   await test.context("Dock", "Bottom Left");
   let n = await test.info();
   assert(Math.abs(n.bounds.x - n.screen.x) <= 1);
@@ -290,6 +353,7 @@ try {
   );
   throw error;
 } finally {
+  await ui("release-mouse").catch(() => {});
   await ui("escape").catch(() => {});
   await ui("escape").catch(() => {});
   await live?.close().catch(() => {});

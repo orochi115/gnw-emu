@@ -12,6 +12,25 @@ export const DOCK_CORNERS = [
 export type DockCorner = (typeof DOCK_CORNERS)[number];
 type Rectangle = { x: number; y: number; width: number; height: number };
 
+/** The same limits apply to free movement and explicit edge docking. */
+export function clampBounds(bounds: Rectangle, area: Rectangle): Rectangle {
+  return {
+    ...bounds,
+    x: Math.round(
+      Math.max(
+        area.x,
+        Math.min(bounds.x, area.x + Math.max(0, area.width - bounds.width)),
+      ),
+    ),
+    y: Math.round(
+      Math.max(
+        area.y,
+        Math.min(bounds.y, area.y + Math.max(0, area.height - bounds.height)),
+      ),
+    ),
+  };
+}
+
 /** Keep pixel size unchanged; oversized windows retain accessible top-left controls. */
 export function dockBounds(
   bounds: Rectangle,
@@ -21,20 +40,19 @@ export function dockBounds(
   if (corner === "none") return bounds;
   const right = area.x + Math.max(0, area.width - bounds.width);
   const bottom = area.y + Math.max(0, area.height - bounds.height);
-  const clampX = Math.max(area.x, Math.min(bounds.x, right));
-  const clampY = Math.max(area.y, Math.min(bounds.y, bottom));
+  const clamped = clampBounds(bounds, area);
   return {
     ...bounds,
     x: Math.round(
       corner === "top" || corner === "bottom"
-        ? clampX
+        ? clamped.x
         : corner.endsWith("Right") || corner === "right"
           ? right
           : area.x,
     ),
     y: Math.round(
       corner === "left" || corner === "right"
-        ? clampY
+        ? clamped.y
         : corner.startsWith("bottom")
           ? bottom
           : area.y,

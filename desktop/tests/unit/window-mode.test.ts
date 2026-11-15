@@ -698,3 +698,144 @@ test("Windows clock raises itself without taking focus after a taskbar activatio
     vi.useRealTimers();
   }
 });
+
+test.each(["win32", "darwin"] as const)(
+  "%s clock drag clamps every edge during movement and native moves without resizing",
+  async (platform) => {
+    display.bounds = { x: -1600, y: -100, width: 1600, height: 1100 };
+    display.workArea = { x: -1600, y: -75, width: 1600, height: 1025 };
+    const area = platform === "win32" ? display.bounds : display.workArea;
+    const host = resizingHost({ x: -1200, y: 300, width: 640, height: 512 });
+    const mode = new WindowMode(
+      host as any,
+      () => {},
+      () => {},
+      () => true,
+      {},
+      () => {},
+      undefined,
+      platform,
+    );
+    try {
+      await mode.fit("zelda", true);
+      await mode.toggle();
+      const size = host.getContentSize();
+      const assertInside = () => {
+        const b = host.getBounds();
+        expect(b.x).toBeGreaterThanOrEqual(area.x);
+        expect(b.y).toBeGreaterThanOrEqual(area.y);
+        expect(b.x + b.width).toBeLessThanOrEqual(area.x + area.width);
+        expect(b.y + b.height).toBeLessThanOrEqual(area.y + area.height);
+        expect(host.getContentSize()).toEqual(size);
+      };
+      for (const [x, y] of [
+        [-5000, -5000],
+        [5000, -5000],
+        [-5000, 5000],
+        [5000, 5000],
+      ]) {
+        mode.drag("start", { x: 0, y: 0 });
+        mode.drag("move", { x, y });
+        assertInside();
+        mode.drag("end", { x, y });
+        assertInside();
+      }
+      mode.setDock("none");
+      host.setBounds({ x: -6000, y: 6000 });
+      assertInside();
+      await mode.toggle();
+      host.setBounds({ x: -6000, y: 6000 });
+      expect(host.getBounds().x).toBe(-6000);
+    } finally {
+      host.emit("closed");
+    }
+  },
+);
+
+test("clock movement can cross monitors with negative origins and clamps on the target display", async () => {
+  const monitors = [
+    {
+      id: 1,
+      scaleFactor: 1,
+      bounds: { x: -800, y: 0, width: 800, height: 600 },
+      workArea: { x: -800, y: 0, width: 800, height: 560 },
+    },
+    {
+      id: 2,
+      scaleFactor: 1,
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      workArea: { x: 0, y: 0, width: 800, height: 560 },
+    },
+  ];
+  const spy = vi
+    .spyOn(screen, "getDisplayMatching")
+    .mockImplementation(
+      (b: any) => monitors[b.x + b.width / 2 >= 0 ? 1 : 0] as any,
+    );
+  const host = resizingHost({ x: -650, y: 100, width: 320, height: 272 });
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    { normalScale: 1 },
+    () => {},
+    undefined,
+    "win32",
+  );
+  try {
+    await mode.fit("zelda", false);
+    await mode.toggle();
+    const before = host.getBounds();
+    mode.drag("start", { x: before.x, y: before.y });
+    mode.drag("move", { x: 300, y: 100 });
+    expect(host.getBounds()).toMatchObject({
+      x: 300,
+      y: 100,
+      width: 320,
+      height: 240,
+    });
+    mode.drag("end", { x: 300, y: 100 });
+    host.setBounds({ x: -900, y: -10 });
+    expect(host.getBounds()).toMatchObject({ x: -800, y: 0 });
+  } finally {
+    host.emit("closed");
+    spy.mockRestore();
+  }
+});
+test("clock resizes, scale changes and disappearing screens retain a fully visible window", async () => {
+  const host = resizingHost();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    { clockScale: 64 },
+    () => {},
+    undefined,
+    "win32",
+  );
+  const inside = () => {
+    const b = host.getBounds();
+    expect(b.x).toBeGreaterThanOrEqual(0);
+    expect(b.y).toBeGreaterThanOrEqual(0);
+    expect(b.x + b.width).toBeLessThanOrEqual(display.workArea.width);
+    expect(b.y + b.height).toBeLessThanOrEqual(display.workArea.height);
+  };
+  try {
+    await mode.fit("zelda", true);
+    await mode.toggle();
+    inside();
+    host.setBounds({ x: 1400, y: 900, width: 3000, height: 2000 });
+    inside();
+    await mode.setScale(64);
+    inside();
+    await mode.fit("zelda", false);
+    inside();
+    display.workArea = { x: 0, y: 0, width: 600, height: 400 };
+    screen.emit("display-metrics-changed");
+    inside();
+  } finally {
+    host.emit("closed");
+  }
+});

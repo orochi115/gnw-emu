@@ -57,7 +57,9 @@ elif action=='drag':
  x,y=arg['start'];tx,ty=arg['end'];u.SetCursorPos(round(x),round(y));u.mouse_event(2,0,0,0,0);time.sleep(.1)
  for i in range(1,21):
   u.SetCursorPos(round(x+(tx-x)*i/20),round(y+(ty-y)*i/20));time.sleep(.025)
- u.mouse_event(4,0,0,0,0);print('{}')
+ if not arg.get('hold',False):u.mouse_event(4,0,0,0,0)
+ print('{}')
+elif action=='release-mouse':u.mouse_event(4,0,0,0,0);print('{}')
 elif action=='escape':u.keybd_event(27,0,0,0);u.keybd_event(27,0,2,0);print('{}')
 elif action=='key-up':u.keybd_event(arg['key'],u.MapVirtualKeyW(arg['key'],0),3,0);print('{}')
 elif action=='key-down':u.keybd_event(arg['key'],u.MapVirtualKeyW(arg['key'],0),1,0);print('{}')
