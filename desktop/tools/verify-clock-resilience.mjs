@@ -77,11 +77,8 @@ async function launch() {
     if (response.error) throw Error(JSON.stringify(response.error));
     return response.result;
   };
-  const hostPid = app.process().pid;
-  const native = () =>
-    ps(
-      `Get-CimInstance Win32_Process -Filter 'ParentProcessId = ${hostPid}' | Where-Object Name -eq 'qemu-system-arm.exe' | Select-Object -ExpandProperty ProcessId`,
-    ).then((x) => Number(x));
+  const hostPid = await app.evaluate(() => process.pid);
+  const native = async () => (await rpc("app.getDiagnostics", {})).qemuPid;
   const state = () => page.evaluate(() => window.desktop.state());
   const windowState = () => page.evaluate(() => window.desktop.windowState());
   const menu = async (id) => {
@@ -99,7 +96,7 @@ async function launch() {
       id,
     );
   };
-  return { app, page, state, windowState, native, hostPid, menu };
+  return { app, page, state, windowState, native, hostPid, menu, rpc };
 }
 try {
   let t = await launch();
@@ -108,6 +105,11 @@ try {
   await t.menu("view.clock");
   await until(async () => (await t.windowState()).clockMode, "clock");
   assert.equal((await t.state()).devicePower.usbPower, true);
+  await t.menu("view.scale.half");
+  await until(
+    async () => (await t.windowState()).clockScale === 0.5,
+    "small clock scale",
+  );
   const controls = t.page.locator(".clock-controls");
   const toolbar = await controls.boundingBox();
   const viewport =
@@ -137,11 +139,13 @@ try {
     };
   });
   await ui("taskbar-raise", {});
+  await delay(300); // first blur repair has finished
+  await ui("taskbar-raise", { activate: false });
   await delay(2300);
   const b = info.physical;
   const hit = await ui("hit-test", {
-    x: b.x + b.width - 3,
-    y: b.y + b.height - 3,
+    x: b.x + b.width * 0.5,
+    y: b.y + b.height - 15,
   });
   assert.equal(hit.pid, t.hostPid);
   const after = await t.app.evaluate(({ BrowserWindow }) =>
@@ -149,7 +153,7 @@ try {
   );
   assert.deepEqual(after, info.bounds);
   results.push({ case: "already-blurred-taskbar-repair", hit, bounds: after });
-  await t.page.evaluate(() => window.desktop.windowAction("minimize"));
+  await controls.locator('[data-ui="window.minimize"]').click({ force: true });
   await delay(2400);
   assert(
     await t.app.evaluate(({ BrowserWindow }) =>
@@ -168,8 +172,15 @@ try {
     async () => !(await t.state()).devicePower.usbPower,
     "manual USB disconnect",
   );
+  await t.menu("state.save");
+  await until(
+    async () => (await t.state()).stateSlots?.[0],
+    "USB-off snapshot save",
+  );
   await t.menu("view.clock");
   await until(async () => (await t.windowState()).clockMode, "clock reentry");
+  await t.menu("state.load");
+  await until(async () => !(await t.state()).stateOperation, "snapshot load");
   assert.equal((await t.state()).devicePower.usbPower, true);
   results.push({ case: "clock-minimize-and-manual-usb-policy", toolbar });
   await ps(`Stop-Process -Id ${ownedPid} -Force`);

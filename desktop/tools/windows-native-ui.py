@@ -90,6 +90,6 @@ elif action=='taskbar-raise':
  u.SetWindowPos.argtypes=[W.HWND,W.HWND,C.c_int,C.c_int,C.c_int,C.c_int,W.UINT]
  hwnd=u.FindWindowW('Shell_TrayWnd',None)
  if not hwnd:raise RuntimeError('Taskbar unavailable')
- u.SetForegroundWindow(hwnd)
+ if arg.get('activate',True):u.SetForegroundWindow(hwnd)
  if not u.SetWindowPos(hwnd,W.HWND(-1),0,0,0,0,0x13):raise RuntimeError('Taskbar stacking injection failed')
  print('{}')
