@@ -16,7 +16,7 @@
 # The script writes out/profiles/sd-update-<wiring>.gnw.json. Bank 2 in that profile
 # is a blank 256 KiB image; the installed firmware is the session's
 # bank2.bin under UserData/kernels/gwemu/sessions/<profile id>/. The source card stays
-# out/sd/update/card.img; the running copy is the session's sdcard.img.
+# ../roms/sd/update/card.img; the running copy is the session's sdcard.img.
 # FRESH=1 creates a new JSON identity and rebuilds our generated card only.
 # An explicitly supplied SDCARD is never rebuilt.
 # Previous application saves are retained.
@@ -34,13 +34,13 @@ if [ -n "${ROMS:-}" ]; then
     ROMS_ARG=--roms
 else
     ROMS_ARG=--assets
-    ROMS=$ROOT/local/retrogo-assets/media
+    ROMS=$WS/roms/retrogo-assets/media
 fi
 D=$ROOT/out/sd/update
 . "$ROOT/scripts/launch_common.sh"
 select_sd_assets
-DB=$ASSETS/out/sd/dualboot
-CARD=${SDCARD:-$ASSETS/out/sd/update/card.img}
+DB=$WS/roms/sd/dualboot
+CARD=${SDCARD:-$WS/roms/sd/update/card.img}
 GNW_EXPLICIT_CARD=${SDCARD:-}
 if [ "${FRESH:-0}" = 1 ] && [ -z "$GNW_EXPLICIT_CARD" ]; then CARD=$D/card.img; fi
 

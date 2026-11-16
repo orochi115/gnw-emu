@@ -4,7 +4,7 @@
 #
 #   scripts/run_sd.sh [BACKUP_DIR] [Electron application flags]
 #
-# BACKUP_DIR defaults to ../game-and-watch-backup/backups/full_20261104_1021
+# BACKUP_DIR defaults to ../roms/backups/full_20261104_1021
 # (bank1.bin + ext.bin are used; the backup itself is never modified).
 # Whatever is missing is prepared first: the firmware
 # (scripts/build_retrogo_sd.sh), cores (scripts/fetch_cores.sh, or
@@ -12,9 +12,9 @@
 #
 #   SD_WIRING=spi1|ospi   SD mod wiring (default spi1)
 #   ROMS=DIR              old Retro-Go roms/ tree for the card
-#                         (default normalized local/retrogo-assets/media)
+#                         (default ../roms/retrogo-assets/media)
 #   SYSTEMS=nes,gb,...    only these systems on the card
-#   SDCARD=FILE           card image (default out/sd/sdcard.img)
+#   SDCARD=FILE           card image (default ../roms/sd/sdcard.img)
 #   FRESH=1               new identity; rebuild a generated card, never explicit SDCARD
 #   FRESH=1 creates a new JSON identity; previous saves are retained.
 #
@@ -28,7 +28,7 @@
 set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WS=$(cd "$ROOT/.." && pwd)
-B=${GNW_BACKUP_DIR:-$WS/game-and-watch-backup/backups/full_20261104_1021}
+B=${GNW_BACKUP_DIR:-$WS/roms/backups/full_20261104_1021}
 case ${1:-} in
 -*|"") ;;
 *) B=$1; shift ;;
@@ -38,12 +38,12 @@ if [ -n "${ROMS:-}" ]; then
     ROMS_ARG=--roms
 else
     ROMS_ARG=--assets
-    ROMS=$ROOT/local/retrogo-assets/media
+    ROMS=$WS/roms/retrogo-assets/media
 fi
 . "$ROOT/scripts/launch_common.sh"
 select_sd_assets
 GNW_EXPLICIT_CARD=${SDCARD:-}
-SDCARD=${SDCARD:-$ASSETS/out/sd/sdcard.img}
+SDCARD=${SDCARD:-$WS/roms/sd/sdcard.img}
 # FRESH may rebuild our generated card, never an explicitly supplied source.
 if [ "${FRESH:-0}" = 1 ] && [ -z "$GNW_EXPLICIT_CARD" ]; then
     SDCARD=$ROOT/out/sd/sdcard.img

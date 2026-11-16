@@ -75,7 +75,7 @@ scripts/build_retrogo_sd.sh      # 固件、sd_content/、retro-go_update.bin（
 scripts/fetch_cores.sh           # 下载核心与 SD bootloader → out/dl/<core>/x/{cores,bios}/…, out/dl/bootloader/
 #   或者
 scripts/build_cores.sh           # 从源码编译同一批文件，并逐字节比对 release（见下文）
-scripts/make_sd_image.py out/sd/sdcard.img --assets local/retrogo-assets/media
+scripts/make_sd_image.py out/sd/sdcard.img --assets ../roms/retrogo-assets/media
 #   --systems nes,gb    只放部分系统
 #   --with-update       把 retro-go_update.bin 放到根目录，供升级流程使用
 scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升级流程用的 Bank 1 和 ext
@@ -102,7 +102,7 @@ scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升
 ### 直启：沿用实机的双系统备份，Bank 2 换成 SD 版
 
 ```sh
-scripts/run_sd.sh ../game-and-watch-backup/backups/full_20261104_1021
+scripts/run_sd.sh ../roms/backups/full_20261104_1021
 ```
 
 脚本写 `out/profiles/sd-<备份名>-<接线>.gnw.json`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdCard` 指向源卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 和 SD 卡的工作副本在 `UserData/sessions/<profile id>/`，源卡不被写入。不读取或迁移旧的存档副本。
@@ -120,7 +120,7 @@ scripts/run_sd_update.sh
 ```sh
 scripts/build_sd_patch.sh
 scripts/make_sd_dualboot.py out/sd/dualboot
-scripts/make_sd_image.py out/sd/update/card.img --assets local/retrogo-assets/media --with-update
+scripts/make_sd_image.py out/sd/update/card.img --assets ../roms/retrogo-assets/media --with-update
 ```
 
 流程：原厂时钟 → ← + G → 0x08032000 的 bootloader 在卡上发现 `retro-go_update.bin`，把 firmware_update 载入 RAM（VTOR=0x24000000）→ 解包 tar → 擦写 Bank 2 → 屏幕显示 “Firmware update done” → 按任意键复位 → 原厂 → ← + G → Retro-Go SD。Bank 2 的结果与 `gw_retro_go_intflash.bin` 逐字节相同。原厂固件存在时 bootloader 本身不更新，Bank 1 保持不变。

@@ -4,7 +4,7 @@ set -eu
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 WS=$(cd "$ROOT/.." && pwd)
 . "$ROOT/scripts/launch_common.sh"
-B=${GNW_BACKUP_DIR:-$WS/game-and-watch-backup/backups/full_20261104_1021}
+B=${GNW_BACKUP_DIR:-$WS/roms/backups/full_20261104_1021}
 case ${1:-} in -*) ;; "") ;; *) B=$1; shift ;; esac
 B=$(cd "$B" && pwd)
 for f in bank1.bin bank2.bin ext.bin; do

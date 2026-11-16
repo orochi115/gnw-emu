@@ -16,7 +16,7 @@ Content, in this order (later sources win):
 The partition table comes from Retro-Go's scripts/make_sdcard_image.py, the
 filesystem from mtools (mformat/mcopy), like its gwemu_release target.
 
-  scripts/make_sd_image.py out/sd/sdcard.img --assets local/retrogo-assets/media
+  scripts/make_sd_image.py out/sd/sdcard.img --assets ../roms/retrogo-assets/media
 """
 import argparse
 import os

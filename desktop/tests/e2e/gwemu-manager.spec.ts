@@ -741,7 +741,7 @@ for (const wiring of ["spi1", "ospi"] as const) {
         model: "zelda",
         internalFlash: join(project, "out/sd/full_20261104_1021_bank1.bin"),
         externalFlash: resolve(
-          "../../game-and-watch-backup/backups/full_20261104_1021/ext.bin",
+          "../../roms/backups/full_20261104_1021/ext.bin",
         ),
         bank2Flash: join(
           project,

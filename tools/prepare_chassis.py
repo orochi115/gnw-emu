@@ -157,7 +157,7 @@ def prepare(source_dir, output_dir, preview_dir):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-dir", type=Path,
-                        default=ROOT.parent / "retro-go-assets/images/official/eu")
+                        default=ROOT.parent / "roms/retro-go-assets/images/official/eu")
     parser.add_argument("--output-dir", type=Path,
                         default=ROOT / "desktop/src/renderer/assets/chassis")
     parser.add_argument("--preview-dir", type=Path, default=ROOT / "out/chassis-preview")

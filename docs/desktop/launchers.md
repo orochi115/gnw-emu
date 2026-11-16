@@ -20,7 +20,7 @@ scripts/run_sd.sh [备份目录]
 scripts/run_sd_update.sh
 ```
 
-默认 dump 为工作区 `game-and-watch-backup/backups/full_20261104_1021`；可用位置参数或 `GNW_BACKUP_DIR` 覆盖。所有入口透传 Electron 参数，支持只有参数而省略备份目录：
+默认 dump 为工作区 `roms/backups/full_20261104_1021`；可用位置参数或 `GNW_BACKUP_DIR` 覆盖。所有入口透传 Electron 参数，支持只有参数而省略备份目录：
 
 ```sh
 ./run_backup_emu.sh --language=en --debug

@@ -243,7 +243,7 @@ def build(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--assets", type=Path, default=ROOT / "local/retrogo-assets/media")
+    parser.add_argument("--assets", type=Path, default=ROOT.parent / "roms/retrogo-assets/media")
     parser.add_argument("--selection", type=Path, default=ROOT / "profiles/retrogo-flash-selection.json")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--source", type=Path, default=ROOT / "externals/retro-go-sd")
