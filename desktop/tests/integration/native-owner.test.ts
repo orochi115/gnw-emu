@@ -8,6 +8,11 @@ test("forced host termination ends its owned native child", async () => {
   await mkdir(resolve("out"), { recursive: true });
   const directory = await mkdtemp(resolve("out/native-owner-"));
   let nativePid: number | undefined;
+  const unrelated = spawn(
+    process.execPath,
+    ["-e", "setInterval(()=>{},1000)"],
+    { stdio: "ignore" },
+  );
   let parent: ReturnType<typeof spawn> | undefined;
   const alive = (pid: number) => {
     try {
@@ -65,7 +70,9 @@ test("forced host termination ends its owned native child", async () => {
     for (let i = 0; i < 50 && alive(nativePid); i++)
       await new Promise((r) => setTimeout(r, 100));
     expect(alive(nativePid)).toBe(false);
+    expect(alive(unrelated.pid!)).toBe(true);
   } finally {
+    unrelated.kill("SIGKILL");
     parent?.kill("SIGKILL");
     if (nativePid && alive(nativePid)) process.kill(nativePid, "SIGKILL");
     await rm(directory, { recursive: true, force: true });
