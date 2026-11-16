@@ -1,6 +1,8 @@
 # Windows 移植验证（2026-11-13）
 
-目标主机 `sakura@172.16.40.35`，Windows 11 x64。项目 `D:\LLM_Work\Game_Watch\gnw-emu`，同级工具链目录 `toolchains`。验证使用复制到项目 `local` 的个人 Mario/Zelda 备份与隔离的临时 UserData，未操作实体设备。
+> 个人路径和主机地址已替换为示例占位符；验证结果与提交记录保持原样。
+
+目标主机 `<user>@<windows-host>`，Windows 11 x64。项目 `D:\Projects\GameWatch\gnw-emu`，同级工具链目录 `toolchains`。验证使用复制到项目 `local` 的个人 Mario/Zelda 备份与隔离的临时 UserData，未操作实体设备。
 
 ## 工具链与已验证构建
 
@@ -30,7 +32,7 @@ manager 实际构建另复现原生 GCC 依赖文件参数无法读取 MSYS `/d/
 
 ## 最终交付
 
-- 桌面程序：`D:\LLM_Work\Game_Watch\gnw-emu\desktop\release\win-unpacked\gnw-emu.exe`，保留整个 `win-unpacked` 目录即可运行。
+- 桌面程序：`D:\Projects\GameWatch\gnw-emu\desktop\release\win-unpacked\gnw-emu.exe`，保留整个 `win-unpacked` 目录即可运行。
 - gwemu 提交：`9170bdd56ee536ecdde432e109543aea3a9401e9`；打包 native SHA-256：`f74e6d483db2a3a5f0d597129a433ccde95c4bb901702505d921b2c6faa85d0f`。
 - manager 提交：`07593cea608085b541375b1590c20f075916eeb6`。
 - 原始 ROM 和已有 UserData 保留；测试使用隔离数据，验证来源文件哈希未变化。目录包未配置代码签名证书。
@@ -38,7 +40,7 @@ manager 实际构建另复现原生 GCC 依赖文件参数无法读取 MSYS `/d/
 
 ## 后续修复：自带配置与文件拖放
 
-仓库自带的 `profiles/mario.gnw.json` 和 `profiles/zelda.gnw.json` 使用 `../../firmware`，与原先验收专用的 `windows-*.gnw.json` 不同。已将四个原厂备份另行传至 `D:\LLM_Work\Game_Watch\firmware`，核验 SHA-256 与原始备份一致，两份自带配置通过 CLI 路径/镜像校验。固件未加入 Git。
+仓库自带的 `profiles/mario.gnw.json` 和 `profiles/zelda.gnw.json` 使用 `../../firmware`，与原先验收专用的 `windows-*.gnw.json` 不同。已将四个原厂备份另行传至 `D:\Projects\GameWatch\firmware`，核验 SHA-256 与原始备份一致，两份自带配置通过 CLI 路径/镜像校验。固件未加入 Git。
 
 新增主窗口 `.gnw.json` 拖放打开，复用可信 IPC、加载保护和最近记录。真实 Windows CDP 文件拖放测试在旧版本上失败（保持 idle），修复后的开发版通过（中文/空格文件名）。更新的目录包使用自带 `profiles/zelda.gnw.json` 通过拖放验收：Zelda 画面、运行中重新加载、无效配置/`.bin`/多文件拒绝、制作对话框期间禁止换 ROM、最近记录、页面不导航和来源文件哈希均验证。两次验收各 1 passed；本机配置/最近记录/菜单回归 13 passed，TypeScript 检查及独立代码审查通过。目录包 native 和全部 39 个 DLL 的哈希再次核验通过。
 

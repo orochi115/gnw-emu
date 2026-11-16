@@ -1,5 +1,7 @@
 # Windows native port (2026-11-13)
-User authorizes implementation and toolchain installation on sakura@172.16.40.35 under D:\LLM_Work\Game_Watch.
+
+> 个人路径和主机地址已替换为示例占位符；验证结果与提交记录保持原样。
+User authorizes implementation and toolchain installation on <user>@<windows-host> under D:\Projects\GameWatch.
 - [x] Inspect repository and Windows host.
 - [x] Install isolated MSYS2 UCRT64 and ARM GNU toolchains; transfer pinned sources.
 - [x] Build native gwemu; resolve demonstrated Windows compilation failures.

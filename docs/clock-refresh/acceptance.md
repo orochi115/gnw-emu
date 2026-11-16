@@ -1,5 +1,7 @@
 # Desktop clock refresh acceptance — 2026-11-14
 
+> 个人路径和主机地址已替换为示例占位符；验证结果与提交记录保持原样。
+
 Implemented on master (`d47a785`, `5847269`) and merged into special/windows-stock-dual before packaging. Packaged source revision: `fbbaab456547f73f6405b4994aff9c853afbc851`; subsequent changes only extend verification and acceptance documentation.
 
 - Clock context menu offers 20–100% opacity. Native opacity 60% persisted on disk and after restart; normal mode restored 100%.
@@ -14,7 +16,7 @@ Implemented on master (`d47a785`, `5847269`) and merged into special/windows-sto
 
 An exploratory full local Vitest run could not validate 24 existing native integration scenarios because the local native binary hash differs from its stage manifest. Those fixture failures are separate from the desktop checks above and the correctly staged Windows artifact.
 
-Returned ZIP: `/Users/sakura/GameWatch_Zelda/out/gnw-stock-clock-refresh/gnw-stock-special-0.1.0-win-x64.zip` (296560055 bytes, about 283 MiB).
+Returned ZIP: `/path/to/workspace/out/gnw-stock-clock-refresh/gnw-stock-special-0.1.0-win-x64.zip` (296560055 bytes, about 283 MiB).
 
 SHA256: `a71b52c188c413db92523303359453d5892a6ecf5dfd0cbb98ed5579117d1b91`.
 

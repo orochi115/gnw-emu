@@ -2,22 +2,22 @@
 
 支持 Windows 11 x64，PowerShell 5.1+。桌面端和 gwemu 为 Windows 原生进程；MSYS2 UCRT64 只用于构建。安装 Node.js 24+、Python 3.11+、Git for Windows，并确保 `node`、`python`、`git`、`curl.exe`、`tar.exe` 可用。建议使用无空格的工作目录。
 
-本次部署目录为 `D:\LLM_Work\Game_Watch\gnw-emu`，工具链位于同级 `toolchains`。
+以下示例使用 `D:\Projects\gnw-emu`；请替换成自己的克隆目录。工具链默认位于同级 `toolchains`。
 
-本机的 Mario/Zelda 备份也位于 `D:\LLM_Work\Game_Watch\firmware`，因此仓库自带的 `profiles\mario.gnw.json` 和 `profiles\zelda.gnw.json` 可直接打开。它们通过 `../../firmware` 引用备份；配置的相对路径以配置文件所在目录为基准。固件不随 Git 源码分发，复制源码到其他机器时需单独准备自己的备份。
+固件不随源码分发。通过“制作 ROM…”选择自己的 Mario/Zelda 镜像，保存为 `.gnw.json`。仓库自带的 `profiles\mario.gnw.json` 和 `profiles\zelda.gnw.json` 通过 `../../firmware` 引用备份；仅在这些路径存在时可直接使用。相对路径以配置文件所在目录为基准。
 
 在 PowerShell 中：
 
 ```powershell
-cd D:\LLM_Work\Game_Watch\gnw-emu
+cd D:\Projects\gnw-emu
 powershell -ExecutionPolicy Bypass -File scripts\windows\bootstrap.ps1 -CoreToolchain
 powershell -ExecutionPolicy Bypass -File scripts\windows\build.ps1
-powershell -ExecutionPolicy Bypass -File scripts\windows\run.ps1 -Profile profiles\windows-mario.gnw.json
+powershell -ExecutionPolicy Bypass -File scripts\windows\run.ps1
 ```
 
 `bootstrap.ps1` 初始化固定子模块，安装 MSYS2/GCC/CMake/Ninja、Python 工具和 Electron 依赖。默认使用清华 MSYS2 镜像，可用 `-Mirror` 修改。`-SkipArm` 只安装桌面端构建依赖；`-CoreToolchain` 额外安装 GCC 15.2。可设置 `GNW_TOOLCHAIN_ROOT` 覆盖同级工具链目录。
 
-已有源码或编译配置改变时，内核构建脚本拒绝混用旧对象；保留旧目录并通过 `GWEMU_BUILD_DIR` 构建到新目录，或将旧 `build\gwemu` 改名后重新构建。`build.ps1` 的桌面端和打包流程支持同一自定义目录。本次部署的 `build\gwemu` 是指向通过 Unicode 回归的干净构建 `build\gwemu-windows-unicode` 的目录联接，以保留 Meson 记录的绝对路径。
+已有源码或编译配置改变时，内核构建脚本拒绝混用旧对象；保留旧目录并通过 `GWEMU_BUILD_DIR` 构建到新目录，或将旧 `build\gwemu` 改名后重新构建。`build.ps1` 的桌面端和打包流程支持同一自定义目录。构建目录记录绝对路径，不能直接搬移到不同位置继续使用。
 
 ## 目录包
 
@@ -70,7 +70,7 @@ manager 和 Retro-Go 使用 ARM GCC 10.3，核心使用 ARM GCC 15.2。核心默
 Flash-only 使用明确的 ROM 选择清单和新输出目录：
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\windows\build-firmware.ps1 -Target retrogo-flash -Output D:\LLM_Work\Game_Watch\flash-build -Assets D:\media -Selection D:\selection.json
+powershell -ExecutionPolicy Bypass -File scripts\windows\build-firmware.ps1 -Target retrogo-flash -Output D:\Projects\flash-build -Assets D:\media -Selection D:\selection.json
 ```
 
 清单格式、核心资源准备和双启动参数见 [Retro-Go 文档](../retrogo.md)。该包装命令提供 standalone 默认参数；更复杂参数可在 MSYS2 环境中调用 `scripts/build_retrogo_flash.py`，指定 Windows venv 和工具链。
@@ -81,8 +81,8 @@ Windows manager 使用当前用户专有 ACL 目录和带随机令牌的回环 T
 
 ```powershell
 cd desktop
-$env:GNW_TEST_FIRMWARE = 'D:\LLM_Work\Game_Watch\gnw-emu\local'
-$env:GNWMANAGER_PYTHON = 'D:\LLM_Work\Game_Watch\gnw-emu\build\windows-python\Scripts\python.exe'
+$env:GNW_TEST_FIRMWARE = 'D:\Projects\gnw-emu\local'
+$env:GNWMANAGER_PYTHON = 'D:\Projects\gnw-emu\build\windows-python\Scripts\python.exe'
 $env:GWEMU_WINDOWS_INTEGRATION = '1'
 npm test
 npm run test:e2e -- tests/e2e/windows-native.spec.ts
@@ -104,15 +104,4 @@ powershell -ExecutionPolicy Bypass -File scripts\windows\make-sd-image.ps1 -Outp
 git -c core.autocrlf=false clone --branch master --recurse-submodules https://github.com/orochi115/gnw-emu.git
 ```
 
-随后在项目目录运行 bootstrap。本次部署也保留了源码 Git bundles，便于离线传输。
-
-完整源码 bundles 位于 `D:\LLM_Work\Game_Watch`。在包含这三个文件的目录中，可重建新的源码目录：
-
-```powershell
-git -c core.autocrlf=false clone --branch master gnw-emu-windows-source.bundle gnw-emu-copy
-git -c core.autocrlf=false clone --branch gnw-emu gwemu-windows-source.bundle gnw-emu-copy\externals\gwemu
-git -c core.autocrlf=false clone --branch gnw-emu-manager-ram gnwmanager-windows-source.bundle gnw-emu-copy\externals\gnwmanager
-git -C gnw-emu-copy submodule absorbgitdirs externals/gwemu externals/gnwmanager
-```
-
-随后在新目录运行 bootstrap 初始化其余公开的固定依赖，并重新构建；构建目录不能直接搬移到不同路径。
+随后在项目目录运行 bootstrap。

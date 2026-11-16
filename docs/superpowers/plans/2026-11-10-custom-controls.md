@@ -1,5 +1,7 @@
 # Custom Controls Implementation Plan
 
+> 个人路径和主机地址已替换为示例占位符；验证结果与提交记录保持原样。
+
 > **For agentic workers:** Use subagent-driven-development for isolated tasks and requesting-code-review for spec and quality review. Use test-driven-development for input, matching, persistence and lifecycle behavior.
 
 **Goal:** Implement the approved shared keyboard/gamepad mappings, turbo, hotkeys, conflict UI and settings persistence without forwarding configuration input to QEMU.
@@ -9,7 +11,7 @@
 **Tech Stack:** TypeScript, React, Electron, Zod, Vitest, Playwright, existing QMP client.
 
 Spec: `docs/superpowers/specs/2026-11-10-custom-controls-design.md`.
-Worktree: `/Users/sakura/GameWatch_Zelda/gnw-emu-controls`, branch `feat/custom-controls`.
+Worktree: `/path/to/workspace/gnw-emu-controls`, branch `feat/custom-controls`.
 Baseline: 22 files / 70 unit tests passed before changes. Reuse installed node_modules and built QEMU via ignored symlinks; ROM profiles reference the shared workspace firmware.
 
 ## Shared interfaces

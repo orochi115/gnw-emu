@@ -1,8 +1,10 @@
 # Clock resilience acceptance (2026-11-16)
 
+> 个人路径和主机地址已替换为示例占位符；验证结果与提交记录保持原样。
+
 Implemented on master (`8eea2fa`), then merged into `special/windows-stock-dual` (`88c20f9`). Later master commits improve the committed acceptance scripts and ownership test; they do not change the packaged application. Existing unrelated working changes and previous releases are preserved. No firmware BIN was added to Git.
 
-The Windows package was built on `sakura@172.16.40.35` using the clean pinned Unicode native build. Its source manifest records `88c20f9de29be3655b2f0cd53269c9255451491c`. D: ran out of disk space; only this task's incomplete build output was removed and the completed package was built on C:.
+The Windows package was built on `<user>@<windows-host>` using the clean pinned Unicode native build. Its source manifest records `88c20f9de29be3655b2f0cd53269c9255451491c`. D: ran out of disk space; only this task's incomplete build output was removed and the completed package was built on C:.
 
 Local artifact: `../out/gnw-stock-clock-resilience/gnw-stock-special-0.1.0-win-x64.zip` relative to the parent workspace. Size 296568964 bytes; SHA256 `2427b27488102ca3df0644598d0dca0b6229a1b0d494c9953a8f9855ce816d19`. Native SHA256 remains `f9743e317d0f593eada11f10770e75fee4b1c06821071a0087157706fb98383f`; snapshots from the preceding Unicode package retain compatibility. The older pre-Unicode kernel's quick snapshots remain incompatible. Keep backups when migrating old UserData.
 

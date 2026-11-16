@@ -1,5 +1,7 @@
 # gwemu 管理控制器验收
 
+> 个人路径和主机地址已替换为示例占位符；验证结果与提交记录保持原样。
+
 本批实现当前会话接入计划 Task 2：桌面控制器独占管理、设备动作和结束恢复。RPC 服务、GDB proxy、Python 自动发现与完整固件工作流仍由后续任务实施。独立规范与质量复审均已批准，本批已关闭。
 
 ## 行为与边界
@@ -18,7 +20,7 @@
 
 ```sh
 cd desktop
-GWEMU_DESKTOP_BINARY=/Users/sakura/GameWatch_Zelda/gnw-emu/build/gwemu-session-manager-release/qemu-system-arm npm run test -- tests/integration/manager-controller.test.ts tests/integration/gwemu-supply-controller.test.ts tests/integration/gwemu-savestate-controller.test.ts tests/integration/startup-cancellation.test.ts
+GWEMU_DESKTOP_BINARY=/path/to/workspace/gnw-emu/build/gwemu-session-manager-release/qemu-system-arm npm run test -- tests/integration/manager-controller.test.ts tests/integration/gwemu-supply-controller.test.ts tests/integration/gwemu-savestate-controller.test.ts tests/integration/startup-cancellation.test.ts
 ```
 
 结果：**59 项通过，零跳过，40.28 秒**，其中控制器 25 项。相关 backend/protocol/endpoints/session-lease 单元测试 **35 项通过，零跳过**；类型、格式和差异检查通过。集成测试使用独立合成镜像、隔离 UserData、真实 TCG、Unix RSP 与 qtest 观测，不触及产品历史数据。每个测试回收所观察的任务子进程并核对合成源字节。

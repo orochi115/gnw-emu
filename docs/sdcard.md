@@ -102,7 +102,7 @@ scripts/build_sd_patch.sh && scripts/make_sd_dualboot.py out/sd/dualboot   # 升
 ### 直启：沿用实机的双系统备份，Bank 2 换成 SD 版
 
 ```sh
-scripts/run_sd.sh ../roms/backups/full_20261104_1021
+scripts/run_sd.sh /path/to/backup
 ```
 
 脚本写 `out/profiles/sd-<备份名>-<接线>.gnw.json`（Bank 1 用加过元数据字的副本、Bank 2 用 SD 版 Retro-Go、`sdCard` 指向源卡镜像），再调用 `scripts/run.sh`。开机进原厂时钟，按 ← + G 进入 Retro-Go SD。`SD_WIRING=ospi` 切到软件 SPI 接法。外挂 Flash 和 SD 卡的工作副本在 `UserData/sessions/<profile id>/`，源卡不被写入。不读取或迁移旧的存档副本。

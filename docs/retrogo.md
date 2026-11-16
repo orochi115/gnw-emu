@@ -8,11 +8,11 @@ ROM、封面、BIOS 和金手指不提交公开 Git。一次迁移会复制所�
 
 ```sh
 python3 scripts/migrate_retrogo_assets.py \
-  --source ../xx/game-and-watch-retro-go/roms \
+  --source /path/to/old-retrogo/roms \
   --output ../roms/retrogo-assets
 ```
 
-`originals/` 保留原样资料，`media/` 是供新固件使用的目录。Game Boy Color 会分到 `media/roms/gbc`；同 stem 的 GB/GBC 游戏使用带原扩展标识的名字，关联封面和金手指同步映射。`manifest.json` 提供完整对应关系。这里的 532 个 ROM 全量迁移不代表所有游戏都可同时放进 64 MiB Flash。
+`originals/` 保留原样资料，`media/` 是供新固件使用的目录。Game Boy Color 会分到 `media/roms/gbc`；同 stem 的 GB/GBC 游戏使用带原扩展标识的名字，关联封面和金手指同步映射。`manifest.json` 提供完整对应关系。全量迁移不代表所有游戏都可同时放进 64 MiB Flash。
 
 ## Flash-only
 
@@ -25,8 +25,8 @@ python3 scripts/build_retrogo_flash.py --output out/my-retrogo-flash
 # Zelda 原厂 + Bank 2；原厂的前 4 MiB 外置区原样保留。
 python3 scripts/build_retrogo_flash.py --output out/my-retrogo-dualboot \
   --bank 2 --extflash-offset 0x400000 \
-  --ofw-bank1 ../roms/backups/full_20261104_1021/bank1.bin \
-  --ofw-extflash ../roms/backups/full_20261104_1021/ext.bin
+  --ofw-bank1 /path/to/backup/bank1.bin \
+  --ofw-extflash /path/to/backup/ext.bin
 ```
 
 默认 [选择清单](../profiles/retrogo-flash-selection.json) 包含 8 类平台的 9 个游戏（含 GB 与 GBC），可复制清单并用 `--selection` 指定自己的游戏。入口支持 `--assets`、`--source`、`--cores`、`--gcc-path`、`--python-venv`、`--model` 和芯片容量选项。超过只读区、与可写区重叠、文件缺失或输出已存在都会失败，不能通过自动删除游戏解决容量问题。
