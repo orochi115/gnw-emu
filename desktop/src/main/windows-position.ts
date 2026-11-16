@@ -25,3 +25,22 @@ export function moveWindowsWindow(window: BrowserWindow, x: number, y: number) {
   if (!native.position(hwnd, null, point.x, point.y, 0, 0, 0x15))
     throw Error("SetWindowPos failed");
 }
+
+/** Restore taskbar stacking without focus, size or position changes. */
+export function raiseWindowsClock(window: BrowserWindow) {
+  if (window.isDestroyed()) return;
+  const native = (api ??= loadApi());
+  const hwnd = native.koffi.decode(window.getNativeWindowHandle(), "void *");
+  if (
+    !native.position(
+      hwnd,
+      native.koffi.decode(Buffer.alloc(8, 255), "void *"),
+      0,
+      0,
+      0,
+      0,
+      0x13,
+    )
+  )
+    throw Error("Clock SetWindowPos failed");
+}

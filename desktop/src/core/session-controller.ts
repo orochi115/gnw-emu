@@ -1,6 +1,7 @@
 import { UserError, errorState } from "../shared/user-error";
 import { EventEmitter } from "node:events";
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess } from "node:child_process";
+import { spawnOwnedNative } from "./owned-process";
 import { access, mkdir } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -143,6 +144,8 @@ export class SessionController extends EventEmitter {
   private manager?: ManagerContext;
   private slot = 0;
   private stopPromise?: Promise<void>;
+  private failureWork?: Promise<void>;
+  private clockUsbRequired = false;
   private startup?: {
     cancelled: boolean;
     cancel: () => void;
@@ -160,9 +163,11 @@ export class SessionController extends EventEmitter {
       managerDirectory?: string;
       /** Disable native GDB for accelerators without guest debugging (e.g. qtest). */
       enableManager?: boolean;
+      clockUsbRequired?: boolean;
     },
   ) {
     super();
+    this.clockUsbRequired = options.clockUsbRequired ?? false;
   }
   private publish(update: AppState) {
     this.state = update;
@@ -229,6 +234,7 @@ export class SessionController extends EventEmitter {
         const data = join(this.options.userData, "kernels", "gwemu");
         lease = await acquireLease(join(data, "leases", profile.id), id);
         const session = await prepareSession(profile, data, kernel);
+        if (this.clockUsbRequired) session.usbPower = true;
         const runDir = join(session.directory, "runs", id);
         await mkdir(runDir, { recursive: true });
         const stateFile = join(runDir, "state.json");
@@ -309,7 +315,7 @@ export class SessionController extends EventEmitter {
         transferred = true;
         await verifyKernelIdentity(this.options.qemu, identity);
         checkRuntime();
-        const child = spawn(this.options.qemu, args, {
+        const child = spawnOwnedNative(this.options.qemu, args, {
           stdio: ["ignore", "pipe", "pipe"],
           windowsHide: true,
           env: {
@@ -393,6 +399,12 @@ export class SessionController extends EventEmitter {
           "connect",
         );
         checkRuntime();
+        if (this.clockUsbRequired)
+          await qmp.command("qom-set", {
+            path: "/machine",
+            property: "usb-power",
+            value: true,
+          });
         let deviceState = await backend.readDeviceState();
         checkRuntime();
         if (deviceState.devicePower.powered) {
@@ -463,7 +475,19 @@ export class SessionController extends EventEmitter {
       finish();
     }
   }
-  private async failed(error: Error) {
+  private failed(error: Error): Promise<void> {
+    if (this.failureWork) return this.failureWork;
+    const old = this.state;
+    const work = this.finishFailure(error, old);
+    this.failureWork = work;
+    void work
+      .finally(() => {
+        if (this.failureWork === work) this.failureWork = undefined;
+      })
+      .catch(() => {});
+    return work;
+  }
+  private async finishFailure(error: Error, old: AppState) {
     this.options.logger.error(
       { err: error, event: "failure", runtimeSessionId: this.runtime?.id },
       "Session failed",
@@ -474,6 +498,7 @@ export class SessionController extends EventEmitter {
       ...errorState(error),
       saveUncertain: true,
     });
+    this.emit("runtime-failure", error, old.runtimeSessionId);
   }
   private async claimNativeEndpoint(
     runtime: Runtime,
@@ -1026,6 +1051,15 @@ export class SessionController extends EventEmitter {
               context.runtime.qmp.command("query-status", undefined, 1000),
             );
           }
+          if (this.clockUsbRequired)
+            await this.managerFinishAwait(
+              context,
+              context.runtime.qmp.command(
+                "qom-set",
+                { path: "/machine", property: "usb-power", value: true },
+                1000,
+              ),
+            );
           const value = await this.managerFinishAwait(
             context,
             context.runtime.backend.readDeviceState(1000),
@@ -1182,7 +1216,7 @@ export class SessionController extends EventEmitter {
                   : "battery";
             const value =
               property === "usb-power"
-                ? !current.devicePower.usbPower
+                ? this.clockUsbRequired || !current.devicePower.usbPower
                 : property === "battery-present"
                   ? !current.devicePower.batteryPresent
                   : Math.min(
@@ -1240,6 +1274,48 @@ export class SessionController extends EventEmitter {
               runtime.deviceJobs > 0 || this.manager?.runtime === runtime,
           });
       });
+    runtime.powerWork = work.catch(() => {});
+    await work;
+  }
+  /** Clock owns the required power source, independent of host window visibility. */
+  nativeProcess() {
+    const runtime = this.runtime;
+    return runtime?.child?.pid && !runtime.stopping
+      ? { pid: runtime.child.pid, id: runtime.id }
+      : undefined;
+  }
+  async setClockUsbRequired(required: boolean) {
+    this.clockUsbRequired = required;
+    const runtime = this.runtime;
+    if (
+      !required ||
+      !runtime ||
+      runtime.stopping ||
+      this.busy ||
+      this.stateWork ||
+      this.manager
+    )
+      return;
+    const work = runtime.powerWork.then(async () => {
+      if (
+        !this.clockUsbRequired ||
+        this.runtime !== runtime ||
+        runtime.stopping
+      )
+        return;
+      const state = await runtime.backend.readDeviceState();
+      if (!state.devicePower.usbPower)
+        await runtime.qmp.command("qom-set", {
+          path: "/machine",
+          property: "usb-power",
+          value: true,
+        });
+      if (this.runtime === runtime && !runtime.stopping)
+        this.publish({
+          ...this.state,
+          ...(await runtime.backend.readDeviceState()),
+        });
+    });
     runtime.powerWork = work.catch(() => {});
     await work;
   }
@@ -1466,6 +1542,12 @@ export class SessionController extends EventEmitter {
         );
       runtime.input.resetHost();
       runtime.backend.resetHostInput();
+      if (this.clockUsbRequired)
+        await runtime.qmp.command("qom-set", {
+          path: "/machine",
+          property: "usb-power",
+          value: true,
+        });
       const powered = await refresh();
       const slots = await stateSlotTimes(
         runtime.session.directory,

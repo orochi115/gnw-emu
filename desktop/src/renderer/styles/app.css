@@ -548,7 +548,9 @@ main {
 }
 .clock-controls button {
   height: var(--clock-control-size, 28px);
-  min-width: var(--clock-control-size, 28px);
+  min-width: 0;
+  width: var(--clock-control-size, 28px);
+  flex: 0 0 var(--clock-control-size, 28px);
   padding: 0;
   font-size: calc(var(--clock-control-size, 28px) * 0.65);
 }

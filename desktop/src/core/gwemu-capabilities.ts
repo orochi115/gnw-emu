@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawnOwnedNative } from "./owned-process";
 import { QmpClient } from "./qmp-client";
 import { UserError } from "../shared/user-error";
 
@@ -10,7 +10,10 @@ async function probe(
   inspect: (qmp: QmpClient) => Promise<void>,
 ) {
   const qmp = new QmpClient();
-  let child: ReturnType<typeof spawn> | undefined;
+  let child: ReturnType<typeof spawnOwnedNative> | undefined;
+  let stderr = "",
+    exitDetail = "",
+    phase = "connect";
   let exit: Promise<void> | undefined;
   const timed = async <T>(work: Promise<T>, ms: number): Promise<T> => {
     let timer: NodeJS.Timeout | undefined;
@@ -19,7 +22,7 @@ async function probe(
         work,
         new Promise<never>((_r, reject) => {
           timer = setTimeout(
-            () => reject(new UserError("error.kernelBuild")),
+            () => reject(new Error("Native capability probe timed out")),
             ms,
           );
         }),
@@ -30,7 +33,7 @@ async function probe(
   };
   try {
     const port = await qmp.listen();
-    child = spawn(
+    child = spawnOwnedNative(
       binary,
       [
         "-M",
@@ -45,25 +48,37 @@ async function probe(
         "-qmp",
         `tcp:127.0.0.1:${port},server=off`,
       ],
-      { env, stdio: "ignore" },
+      { env, stdio: ["ignore", "ignore", "pipe"], windowsHide: true },
     );
+    child.stderr?.on("data", (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-4096);
+    });
     exit = new Promise<void>((resolve, reject) => {
       child!.once("error", reject);
-      child!.once("exit", () => resolve());
+      child!.once("exit", (code, signal) => {
+        exitDetail = `exit=${code}; signal=${signal}`;
+        resolve();
+      });
     });
     exit.catch(() => {});
     await timed(
       Promise.race([
         qmp.ready,
         exit.then(() => {
-          throw new UserError("error.kernelBuild");
+          throw new Error("Native process exited before QMP connection");
         }),
       ]),
-      3000,
+      5000,
     );
+    phase = "inspect";
     await inspect(qmp);
-  } catch {
-    throw new UserError("error.kernelBuild");
+  } catch (error) {
+    if (error instanceof UserError && error.code === "error.kernelBuild")
+      throw error;
+    throw new UserError("error.kernelConnection", {
+      phase: `${machine}:${phase}`,
+      detail: `${String(error)}; ${exitDetail}; ${stderr}`.slice(-4096),
+    });
   } finally {
     if (child && child.exitCode === null && child.signalCode === null) {
       await qmp.command("quit", undefined, 500).catch(() => {});

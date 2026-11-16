@@ -38,7 +38,12 @@ import pino from "pino";
 import { EventEmitter } from "node:events";
 import { applicationPaths } from "../core/paths";
 import { popupWindowsMenu, menuBarItems, menuBarSubmenu } from "./windows-menu";
-import { moveWindowsWindow } from "./windows-position";
+import { moveWindowsWindow, raiseWindowsClock } from "./windows-position";
+import { KernelRecovery } from "../core/kernel-recovery";
+import { closeNativeOwner } from "../core/owned-process";
+import { MemoryMonitor } from "../core/memory-monitor";
+import { windowsMemory } from "./windows-memory";
+import { powerMonitor } from "electron";
 import { SessionController } from "../core/session-controller";
 import { startManagerSessionServer } from "../core/manager-session-server";
 import { createProfile } from "../core/profile-store";
@@ -82,6 +87,9 @@ let nativeDialog = false;
 let nativeMenuOpen = false;
 let automation: Awaited<ReturnType<typeof startAutomationServer>> | undefined;
 let controller: SessionController;
+let recovery: KernelRecovery;
+let memoryMonitor: MemoryMonitor;
+let restoringClock = false;
 let managerService:
   Awaited<ReturnType<typeof startManagerSessionServer>> | undefined;
 let dialogs: DialogAdapter;
@@ -393,14 +401,72 @@ async function main() {
     process.platform === "win32"
       ? (x, y) => moveWindowsWindow(window, x, y)
       : undefined,
+    process.platform,
+    process.platform === "win32"
+      ? () => {
+          try {
+            raiseWindowsClock(window);
+          } catch (error) {
+            logger
+              .child("view")
+              .warn(
+                { event: "window.raise.failed", err: error },
+                "Clock stacking repair failed",
+              );
+          }
+        }
+      : undefined,
   );
+  powerMonitor.on("resume", () => windowMode.repairStacking());
+  powerMonitor.on("unlock-screen", () => windowMode.repairStacking());
   windowMode.setGameAvailable(false);
   controller = new SessionController({
     ...paths,
+    clockUsbRequired: settings.clockMode,
     logger: logger.child("session"),
     logFor: (module) => logger.child(module),
     createDisplay: (id) => startDisplay(window, id, logger.child("display")),
   });
+  recovery = new KernelRecovery({
+    start: async (path) => {
+      await controller.setClockUsbRequired(
+        windowMode.state.clockMode || windowMode.state.preferredClockMode,
+      );
+      await controller.load(path);
+    },
+    stop: () => controller.stop(),
+    log: (event, fields) =>
+      logger.child("recovery").info({ event, ...fields }, "Kernel recovery"),
+    recovered: () => {
+      if (!shuttingDown && !window.isDestroyed())
+        window.webContents.send("app.toast", {
+          code: "kernel.recovered",
+          kind: "info",
+        });
+      restorePreferredClock();
+    },
+  });
+  controller.on("runtime-failure", (error, id) => {
+    if (!shuttingDown) void recovery.recover(error, id).catch(showError);
+  });
+  memoryMonitor = new MemoryMonitor({
+    sample: async () => {
+      const native = controller.nativeProcess();
+      return {
+        ...native,
+        ...(process.platform === "win32" ? windowsMemory(native?.pid) : {}),
+        main: process.memoryUsage(),
+        hosts: app
+          .getAppMetrics()
+          .map(({ pid, type, memory }) => ({ pid, type, memory })),
+      };
+    },
+    log: (event, fields, warning) =>
+      logger
+        .child("memory")
+        [warning ? "warn" : "info"]({ event, ...fields }, "Memory diagnostics"),
+  });
+  memoryMonitor.start();
   {
     managerService = await startManagerSessionServer({ controller });
     logger.child("session").info(
@@ -728,6 +794,7 @@ function toggleChassis() {
 function restorePreferredClock() {
   if (
     !shuttingDown &&
+    !restoringClock &&
     !active &&
     !makerOpen &&
     !controlSettings?.opened &&
@@ -736,9 +803,11 @@ function restorePreferredClock() {
     windowMode.state.preferredClockMode &&
     !windowMode.state.clockMode &&
     !windowMode.transitioning
-  )
-    void windowMode
-      .toggle(false)
+  ) {
+    restoringClock = true;
+    void controller
+      .setClockUsbRequired(true)
+      .then(() => windowMode.toggle(false))
       .then(() => {
         logger
           .child("view")
@@ -747,7 +816,11 @@ function restorePreferredClock() {
             "Restored preferred clock mode",
           );
       })
-      .catch(showError);
+      .catch(showError)
+      .finally(() => {
+        restoringClock = false;
+      });
+  }
 }
 function canSetScale(factor: number) {
   return (
@@ -781,7 +854,11 @@ async function toggleClock() {
     throw new UserError("error.busy");
   try {
     await perform(async () => {
+      const entering = !windowMode.state.clockMode;
+      if (entering) await controller.setClockUsbRequired(true);
       await windowMode.toggle();
+      if (!windowMode.state.clockMode)
+        await controller.setClockUsbRequired(false);
       await viewSettings.flush();
     });
     logger.child("view").info(
@@ -1065,7 +1142,7 @@ async function openRom() {
 }
 /** All successful host load routes record history, including CLI and Save and Load. */
 async function loadRom(path: string) {
-  await controller.load(path);
+  await recovery.load(path);
   try {
     await recentRoms.record(path);
     createMenu();
@@ -1618,7 +1695,9 @@ async function shutdown() {
   shuttingDown = true;
   controlHost?.destroy();
   controlRouter?.dispose();
+  memoryMonitor?.dispose();
   try {
+    await recovery?.stop();
     await managerService?.close();
     await active?.catch(() => {});
     await preferenceChange.catch(() => {});
@@ -1635,6 +1714,8 @@ async function shutdown() {
   } finally {
     await managerService?.close().catch(() => {});
     await controller.stop().catch(() => {});
+    recovery?.dispose();
+    closeNativeOwner();
     await viewSettings.flush();
     for (const cancel of waiters.values()) cancel();
     await automation?.close();
@@ -1651,6 +1732,9 @@ if (!app.requestSingleInstanceLock()) {
     .catch(async (error) => {
       await managerService?.close().catch(() => {});
       await controller?.stop().catch(() => {});
+      memoryMonitor?.dispose();
+      recovery?.dispose();
+      closeNativeOwner();
       process.stderr.write(String(error) + "\n");
       app.exit(1);
     });
@@ -1666,3 +1750,5 @@ if (!app.requestSingleInstanceLock()) {
   });
   app.on("window-all-closed", () => app.quit());
 }
+
+app.on("will-quit", () => closeNativeOwner());

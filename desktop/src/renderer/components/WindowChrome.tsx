@@ -139,16 +139,28 @@ export function ClockControls({ state }: { state: WindowState }) {
       aria-label={t("menu.clock")}
       style={
         {
-          "--clock-control-size": `${Math.max(12, Math.min(28, state.controlWidth * 0.08))}px`,
+          "--clock-control-size": `${Math.min(28, Math.max(8, state.controlWidth * 0.08), Math.max(1, (state.controlWidth - 6) / 3))}px`,
         } as CSSProperties
       }
     >
-      {(["normal", "close"] as const).map((action) => (
+      {(["normal", "minimize", "close"] as const).map((action) => (
         <button
           key={action}
           data-ui={`window.${action}`}
-          aria-label={t(action === "normal" ? "window.normal" : "menu.close")}
-          title={t(action === "normal" ? "window.normal" : "menu.close")}
+          aria-label={t(
+            action === "normal"
+              ? "window.normal"
+              : action === "minimize"
+                ? "menu.minimize"
+                : "menu.close",
+          )}
+          title={t(
+            action === "normal"
+              ? "window.normal"
+              : action === "minimize"
+                ? "menu.minimize"
+                : "menu.close",
+          )}
           onClick={() =>
             void window.desktop.windowAction(action).catch((error) =>
               window.desktop.log("error", "window.action.failure", {
@@ -158,7 +170,9 @@ export function ClockControls({ state }: { state: WindowState }) {
             )
           }
         >
-          <span aria-hidden="true">{action === "normal" ? "↗" : "×"}</span>
+          <span aria-hidden="true">
+            {action === "normal" ? "↗" : action === "minimize" ? "−" : "×"}
+          </span>
         </button>
       ))}
     </div>

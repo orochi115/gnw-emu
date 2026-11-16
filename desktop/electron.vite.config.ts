@@ -1,9 +1,21 @@
 import { defineConfig, externalizeDepsPlugin } from "electron-vite";
 import react from "@vitejs/plugin-react";
 import { resolve } from "node:path";
+import { copyFileSync } from "node:fs";
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [
+      externalizeDepsPlugin(),
+      {
+        name: "native-parent-guardian",
+        closeBundle() {
+          copyFileSync(
+            resolve("src/core/native-guardian.cjs"),
+            resolve("out/main/native-guardian.cjs"),
+          );
+        },
+      },
+    ],
     build: {
       rollupOptions: {
         input: {

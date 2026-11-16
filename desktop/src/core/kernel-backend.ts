@@ -4,8 +4,7 @@ import { createReadStream } from "node:fs";
 import { createHash } from "node:crypto";
 import type { StateIdentity } from "./savestate-store";
 import { join } from "node:path";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
+import { executeNativeProbe } from "./native-probe";
 import type { Profile } from "./schemas";
 import {
   gwemuPowerSchema,
@@ -60,7 +59,6 @@ async function imageSizes(images: {
       : undefined,
   };
 }
-const execute = promisify(execFile);
 export async function captureKernelIdentity(
   kind: KernelKind,
   binary: string,
@@ -92,11 +90,12 @@ export async function preflightKernel(
       ["-device", "gnw-h7b0-soc,help"],
       ["-device", "gnw-h7b0-sai1,help"],
     ].map((args) =>
-      execute(binary, ["-display", "none", ...args], {
-        env: kernelEnvironment(kind),
-        timeout: 3000,
-        maxBuffer: 65536,
-      }),
+      executeNativeProbe(
+        binary,
+        ["-display", "none", ...args],
+        kernelEnvironment(kind),
+        args.join(" "),
+      ),
     ),
   );
   const available = checks.map((value) => value.stdout + value.stderr);

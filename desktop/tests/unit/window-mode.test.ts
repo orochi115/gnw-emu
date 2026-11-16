@@ -151,6 +151,8 @@ function resizingHost(initial = { x: 100, y: 100, width: 960, height: 640 }) {
   const host = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     isFocused: () => true,
+    isVisible: (): boolean => true,
+    isMinimized: (): boolean => false,
     isMaximized: (): boolean => false,
     isFullScreen: () => false,
     isAlwaysOnTop: () => false,
@@ -437,6 +439,8 @@ test("a dead runtime during fullscreen exit cannot finish entering clock mode", 
   const host = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     isFocused: () => true,
+    isVisible: (): boolean => true,
+    isMinimized: (): boolean => false,
     isMaximized: () => false,
     isFullScreen: () => true,
     isAlwaysOnTop: () => false,
@@ -478,6 +482,8 @@ test("display density changes retain exact pixels or a manually chosen size", as
   const host = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     isFocused: () => true,
+    isVisible: (): boolean => true,
+    isMinimized: (): boolean => false,
     isMaximized: () => false,
     isFullScreen: () => false,
     isAlwaysOnTop: () => false,
@@ -535,6 +541,8 @@ test("restoring 1:1 at a mixed-density screen boundary does not oscillate", asyn
   const host = Object.assign(new EventEmitter(), {
     isDestroyed: () => false,
     isFocused: () => true,
+    isVisible: (): boolean => true,
+    isMinimized: (): boolean => false,
     isMaximized: () => false,
     isFullScreen: () => false,
     isAlwaysOnTop: () => false,
@@ -693,11 +701,11 @@ test("Windows clock raises itself without taking focus after a taskbar activatio
     await mode.fit("zelda", false);
     await mode.toggle();
     host.emit("blur");
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(host.moveTop).toHaveBeenCalledOnce();
     await mode.toggle();
     host.emit("blur");
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(100);
     expect(host.moveTop).toHaveBeenCalledOnce();
   } finally {
     host.emit("closed");
@@ -843,5 +851,52 @@ test("clock resizes, scale changes and disappearing screens retain a fully visib
     inside();
   } finally {
     host.emit("closed");
+  }
+});
+
+test("Windows clock repairs stacking while already blurred, skips hidden/minimized, and cleans up", async () => {
+  vi.useFakeTimers();
+  const host = resizingHost(),
+    raise = vi.fn();
+  const mode = new WindowMode(
+    host as any,
+    () => {},
+    () => {},
+    () => true,
+    {},
+    () => {},
+    undefined,
+    "win32",
+    raise,
+  );
+  try {
+    await mode.fit("mario", false);
+    await mode.toggle();
+    raise.mockClear();
+    const bounds = host.getBounds();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(raise).toHaveBeenCalledOnce();
+    expect(host.getBounds()).toEqual(bounds);
+    host.isMinimized = () => true;
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(raise).toHaveBeenCalledOnce();
+    host.isMinimized = () => false;
+    host.isVisible = () => false;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(raise).toHaveBeenCalledOnce();
+    host.isVisible = () => true;
+    host.emit("restore");
+    expect(raise).toHaveBeenCalledTimes(2);
+    await mode.toggle();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(raise).toHaveBeenCalledTimes(2);
+    await mode.toggle();
+    host.emit("closed");
+    raise.mockClear();
+    await vi.advanceTimersByTimeAsync(4000);
+    expect(raise).not.toHaveBeenCalled();
+  } finally {
+    host.emit("closed");
+    vi.useRealTimers();
   }
 });

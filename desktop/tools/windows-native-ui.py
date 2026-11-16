@@ -85,3 +85,11 @@ elif action=='hit-test':
  hwnd=u.WindowFromPoint(W.POINT(round(arg['x']),round(arg['y'])));root=u.GetAncestor(hwnd,2)
  owner=W.DWORD();u.GetWindowThreadProcessId(root,C.byref(owner));name=C.create_unicode_buffer(128);u.GetClassNameW(root,name,128)
  print(json.dumps({'hwnd':str(root),'pid':owner.value,'className':name.value}))
+elif action=='taskbar-raise':
+ u.FindWindowW.argtypes=[W.LPCWSTR,W.LPCWSTR];u.FindWindowW.restype=W.HWND
+ u.SetWindowPos.argtypes=[W.HWND,W.HWND,C.c_int,C.c_int,C.c_int,C.c_int,W.UINT]
+ hwnd=u.FindWindowW('Shell_TrayWnd',None)
+ if not hwnd:raise RuntimeError('Taskbar unavailable')
+ u.SetForegroundWindow(hwnd)
+ if not u.SetWindowPos(hwnd,W.HWND(-1),0,0,0,0,0x13):raise RuntimeError('Taskbar stacking injection failed')
+ print('{}')

@@ -41,6 +41,7 @@ export class WindowMode {
   private target?: { width: number; height: number };
   private manualTimer?: ReturnType<typeof setTimeout>;
   private raiseTimer?: ReturnType<typeof setTimeout>;
+  private stackTimer?: ReturnType<typeof setInterval>;
   private manualCandidate?: { factor: number; width: number; height: number };
   private lastPublished = "";
   private saved?: {
@@ -62,6 +63,7 @@ export class WindowMode {
     private move: (x: number, y: number) => void = (x, y) =>
       window.setBounds({ x, y }),
     private platform: NodeJS.Platform = process.platform,
+    private raise: () => void = () => window.moveTop(),
   ) {
     this.normalScale = settings.normalScale ?? 4;
     this.clockScale = settings.clockScale ?? 1;
@@ -112,6 +114,7 @@ export class WindowMode {
     window.once("closed", () => {
       clearTimeout(this.manualTimer);
       clearTimeout(this.raiseTimer);
+      clearInterval(this.stackTimer);
       screen.removeListener("display-metrics-changed", this.refreshDensity);
     });
     window.on("focus", () => this.changed());
@@ -123,10 +126,12 @@ export class WindowMode {
         // Restore clock stacking after that operation without taking focus.
         clearTimeout(this.raiseTimer);
         this.raiseTimer = setTimeout(() => {
-          if (this.clock && !this.window.isDestroyed()) this.window.moveTop();
+          this.repairStacking();
         }, 100);
       }
     });
+    window.on("restore", () => this.repairStacking());
+    window.on("show", () => this.repairStacking());
     window.on("maximize", () => {
       this.finishExpandedEntry();
       this.fixedExpanded = false;
@@ -143,6 +148,17 @@ export class WindowMode {
     window.on("leave-full-screen", () => {
       this.restoreExpandedFactor();
     });
+  }
+  repairStacking() {
+    if (
+      this.platform !== "win32" ||
+      !this.clock ||
+      this.window.isDestroyed() ||
+      !this.window.isVisible() ||
+      this.window.isMinimized()
+    )
+      return;
+    this.raise();
   }
   private get expanded() {
     return this.window.isMaximized() || this.window.isFullScreen();
@@ -701,6 +717,10 @@ export class WindowMode {
           true,
           this.platform === "win32" ? "screen-saver" : "floating",
         );
+        if (this.platform === "win32") {
+          this.stackTimer = setInterval(() => this.repairStacking(), 2000);
+          this.stackTimer.unref?.();
+        }
         this.window.setOpacity(this.clockOpacity);
         this.applyScale(
           this.clockScale,
@@ -711,6 +731,8 @@ export class WindowMode {
         this.recordPlacement();
         this.dragging = undefined;
         this.clock = false;
+        clearInterval(this.stackTimer);
+        this.stackTimer = undefined;
         clearTimeout(this.raiseTimer);
         this.window.setOpacity(1);
         this.window.unmaximize();
