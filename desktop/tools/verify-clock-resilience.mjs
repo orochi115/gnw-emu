@@ -3,11 +3,15 @@ import { _electron as electron } from "@playwright/test";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtemp, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { resolve, join } from "node:path";
+import { resolve, join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 const exec = promisify(execFile),
   results = [];
+function record(value) {
+  results.push(value);
+  console.log(value.case);
+}
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 async function until(fn, label) {
   for (let i = 0; i < 300; i++) {
@@ -18,9 +22,15 @@ async function until(fn, label) {
   throw Error(`Timed out: ${label}`);
 }
 const root = await mkdtemp(join(tmpdir(), "gnw-resilience-"));
-const data = join(root, "中文 数据 🎮");
-await mkdir(data);
 const exe = process.env.GNW_CLOCK_EXE;
+const data = exe
+  ? join(
+      dirname(resolve(exe)),
+      "UserData",
+      basename(exe).replace(/^gnw-|\.exe$/g, ""),
+    )
+  : join(root, "中文 数据 🎮");
+await mkdir(data, { recursive: true });
 const profile = resolve(
   process.env.GNW_TEST_PROFILE ?? "../profiles/windows-mario.gnw.json",
 );
@@ -152,7 +162,7 @@ try {
     BrowserWindow.getAllWindows()[0].getBounds(),
   );
   assert.deepEqual(after, info.bounds);
-  results.push({ case: "already-blurred-taskbar-repair", hit, bounds: after });
+  record({ case: "already-blurred-taskbar-repair", hit, bounds: after });
   await controls.locator('[data-ui="window.minimize"]').click({ force: true });
   await delay(2400);
   assert(
@@ -172,17 +182,20 @@ try {
     async () => !(await t.state()).devicePower.usbPower,
     "manual USB disconnect",
   );
+  const oldSavedAt = (await t.state()).stateSlots?.[0];
   await t.menu("state.save");
-  await until(
-    async () => (await t.state()).stateSlots?.[0],
-    "USB-off snapshot save",
-  );
+  await until(async () => {
+    const stamp = (await t.state()).stateSlots?.[0];
+    return stamp && stamp !== oldSavedAt;
+  }, "USB-off snapshot save");
   await t.menu("view.clock");
   await until(async () => (await t.windowState()).clockMode, "clock reentry");
-  await t.menu("state.load");
+  // Clock mode exposes quick states through hotkeys rather than the normal menu.
+  await t.page.keyboard.press("F8");
+  await delay(300);
   await until(async () => !(await t.state()).stateOperation, "snapshot load");
   assert.equal((await t.state()).devicePower.usbPower, true);
-  results.push({ case: "clock-minimize-and-manual-usb-policy", toolbar });
+  record({ case: "clock-minimize-and-manual-usb-policy", toolbar });
   await ps(`Stop-Process -Id ${ownedPid} -Force`);
   const old = ownedPid;
   await until(async () => {
@@ -198,7 +211,7 @@ try {
     "clock restored after restart",
   );
   assert.equal((await t.state()).devicePower.usbPower, true);
-  results.push({
+  record({
     case: "native-fault-recovery",
     oldPid: old,
     newPid: ownedPid,
@@ -226,12 +239,12 @@ try {
   );
   assert(memory?.systemCommitLimitBytes > 0);
   assert(memory?.handleCount > 0);
-  results.push({ case: "persisted-memory-and-recovery-log", memory });
+  record({ case: "persisted-memory-and-recovery-log", memory });
   await t.app.close();
   live = undefined;
   assert.equal(
     await ps(
-      `Get-Process -Id ${ownedPid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id`,
+      `Get-Process -Id ${ownedPid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id; exit 0`,
     ),
     "",
   );
@@ -248,11 +261,11 @@ try {
   await until(
     async () =>
       !(await ps(
-        `Get-Process -Id ${ownedPid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id`,
+        `Get-Process -Id ${ownedPid} -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Id; exit 0`,
       )),
     "job cleanup after forced UI termination",
   );
-  results.push({
+  record({
     case: "normal-and-forced-UI-exit-cleanup",
     hostPid: parent,
     nativePid: ownedPid,
