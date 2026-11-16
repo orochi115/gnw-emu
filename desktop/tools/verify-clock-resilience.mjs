@@ -112,6 +112,8 @@ try {
   let t = await launch();
   ownedPid = await t.native();
   assert(ownedPid > 0);
+  if ((await t.windowState()).clockMode)
+    await t.page.evaluate(() => window.desktop.windowAction("normal"));
   await t.menu("view.clock");
   await until(async () => (await t.windowState()).clockMode, "clock");
   assert.equal((await t.state()).devicePower.usbPower, true);
