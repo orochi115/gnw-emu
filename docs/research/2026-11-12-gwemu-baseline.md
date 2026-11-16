@@ -17,7 +17,7 @@
 
 未修改上游在 Mario 1 MiB NOR 上，QMP greeting 后 capabilities 超时。`sample` 堆栈定位到 `gnw_h7b0_soc.c` 的 unlock baseline memcpy：固定复制 Zelda 长度 `0x30c3a8 + 1300`，超过实际 mmap 容量。原始诊断在 `out/gwemu-baseline-mario/headless-stack.txt` 与该目录报告中。
 
-修复将实际 NOR 长度传入初始化；baseline 先填 `0xff`，只复制 `min(capacity, baseline_size)`，保留原 sidecar 格式与长度。代码进入固定提交，`patches/gwemu/0001-limit-unlock-baseline-to-flash-capacity.patch` 仅供审查，构建不修改源码。原生回归已观察修复前 1 MiB 失败/4 MiB 通过，修复后两者通过；测试同时核对 QMP、sidecar 长度/内容和源文件不变。
+修复将实际 NOR 长度传入初始化；baseline 先填 `0xff`，只复制 `min(capacity, baseline_size)`，保留原 sidecar 格式与长度。代码进入固定提交，构建不修改源码。当时留下的审查补丁副本已删除。原生回归已观察修复前 1 MiB 失败/4 MiB 通过，修复后两者通过；测试同时核对 QMP、sidecar 长度/内容和源文件不变。
 
 ## 同镜像观察
 

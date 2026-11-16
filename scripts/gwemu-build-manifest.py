@@ -58,11 +58,6 @@ def main():
             'host': {'system': platform.system(), 'architecture': platform.machine(),
                      'release': platform.release(), 'pythonVersion': platform.python_version()},
             'tools': tools,
-            'migrationPatches': [
-                {'file': patch.name, 'sha256': digest(patch)}
-                for patch in sorted((Path(__file__).resolve().parent.parent /
-                                     'patches' / 'gwemu').glob('*.patch'))
-            ],
             'artifact': {'path': str(binary), 'sha256': digest(binary),
                          'version': run(str(binary), '-display', 'none', '--version')},
         }

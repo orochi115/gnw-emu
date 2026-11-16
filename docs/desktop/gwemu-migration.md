@@ -16,8 +16,7 @@
 
 - 上游：`slash-proc/gwemu`，`gnw-h7b0` 基线 `3bfce5fd26a402660a8526b3a7ffc92048c3966a`，gwemu v0.0.29 / QEMU 11.0.2。
 - 集成仓库：[orochi115/gwemu](https://github.com/orochi115/gwemu)，当前 RAM 管理固件修复产物固定 `ae00b68951ab44b0dffb265e3f61340d735a68e5`，已公开发布并核对远程完整 SHA；此前已发布的存档产物为 `830192d221a70f2dff5fc466ac5d3c3c74bca584`，RTC 产物为 `60c313344b2747cb99a64bedfe958295bb575d11`；此前软件 SPI、冷循环和供电批次来源见对应研究报告。首批基线为 `28936af4e4147f2b92514ee4b640022d00f75aa2`。
-- 集成修复：初始化解锁 baseline 时只读取实际 NOR 容量，缺失尾部填 `0xff`；保留原 sidecar 长度。原来的 Zelda baseline 长度超过 Mario 1 MiB 映射，会阻塞初始化。
-- `patches/gwemu/0001-limit-unlock-baseline-to-flash-capacity.patch` 是修复的审查副本，代码已在固定提交中；构建不向源码注入补丁。
+- 集成修复：初始化解锁 baseline 时只读取实际 NOR 容量，缺失尾部填 `0xff`；保留原 sidecar 长度。原来的 Zelda baseline 长度超过 Mario 1 MiB 映射，会阻塞初始化。修复已在固定的 gwemu 提交中，构建不向源码注入补丁。
 
 需要 C/C++ 编译器、Python >= 3.11、Ninja、CMake、pkg-config、GLib、Pixman、libpng 和 liblzma。上游即使只做 headless 实验也会构建 SDL3/ImGui；首次配置会下载其 wrap 固定依赖。脚本在 QEMU 自有 `pyvenv` 安装固定 `PyYAML==6.0.3`，不改宿主 Python。
 
@@ -31,7 +30,7 @@ GWEMU_BUILD_DIR=build/gwemu-session-manager-release sh scripts/build_gwemu.sh
 
 默认输出为 `build/gwemu`；桌面开发入口固定读取 `build/gwemu-session-manager-release`，历史 `build/gwemu-manager-ram` 产物保留供对照。可用 `GWEMU_SRC`、`GWEMU_BUILD_DIR`、`GWEMU_PYTHON` 显式指定来源、目录和解释器。源码路径、revision、解释器或配置环境变化时，脚本拒绝复用已有输出目录，选择新目录重新构建。
 
-`gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、补丁审查副本哈希、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
+`gnw-build-manifest.json` 记录实际 revision、tracked diff、dirty 状态、配置参数、编译器/依赖版本、宿主信息和产物 SHA-256。它提供来源追溯；未固定宿主 SDK/系统库，而且上游版本标头包含构建时间，因此不承诺跨宿主或重复构建的二进制字节完全相同。
 
 查询版本时使用 `-display none --version` 或上游识别的 `-version`。单独的 `--version` 会触发该版本的默认 GUI 入口。
 

@@ -17,7 +17,7 @@
 - `.gitmodules`、`externals/gwemu`：固定上游来源和 commit，不移除旧子模块。
 - `scripts/build_gwemu.sh`：独立构建与错误处理，禁止调用旧构建脚本或给新源码注入旧机器。
 - `scripts/gwemu-build-manifest.py`：记录源码 revision、dirty 状态、配置参数、宿主工具版本、构建产物 SHA-256；复现来源可核对。
-- `patches/gwemu/0001-limit-unlock-baseline-to-flash-capacity.patch`：实测新增容量边界修复的审查副本；正式修复已进入独立 gwemu 仓库，构建不再修改源码。manifest 记录补丁 SHA-256 与实际 tracked diff。
+- 容量边界修复已进入独立 gwemu 仓库，构建不修改源码。当时的审查补丁副本已删除；manifest 记录实际 tracked diff。
 - `desktop/src/core/gwemu-command.ts`：实验参数映射，所有可写镜像只使用 session 文件；显式报告尚不支持的 UID/OSPI 等字段。
 - `desktop/tools/compare-kernels.ts`、`desktop/tools/kernel-probe.ts`：对照入口和 QMP/GDB 实测；不进入桌面产品流程，不实现阶段三发现协议。
 - `desktop/tests/unit/gwemu-command.test.ts`、`desktop/tests/integration/kernel-comparison.test.ts`：保护源镜像/隔离目录、参数与失败清理验证。
