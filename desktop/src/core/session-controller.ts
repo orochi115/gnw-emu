@@ -1137,6 +1137,7 @@ export class SessionController extends EventEmitter {
     ].includes(action);
     runtime.deviceJobs++;
     this.publish({ ...this.state, deviceOperation: true });
+    let announcedUsb = false;
     const work = runtime.powerWork
       .then(async () => {
         if (
@@ -1197,6 +1198,7 @@ export class SessionController extends EventEmitter {
               property,
               value,
             });
+            if (property === "usb-power") announcedUsb = true;
           }
         } finally {
           try {
@@ -1206,8 +1208,17 @@ export class SessionController extends EventEmitter {
               this.runtime === runtime &&
               !runtime.stopping &&
               !runtime.uncertain
-            )
+            ) {
               this.publish({ ...this.state, ...value });
+              if (announcedUsb)
+                this.toast({
+                  code: value.devicePower.usbPower
+                    ? "device.usb.connected"
+                    : "device.usb.disconnected",
+                  kind: "info",
+                  duration: 3000,
+                });
+            }
           } catch (error) {
             runtime.execution = "unknown";
             if (this.runtime === runtime && !runtime.stopping)
