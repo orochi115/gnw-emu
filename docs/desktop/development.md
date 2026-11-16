@@ -1,6 +1,6 @@
 # 开发与构建
 
-先按根README构建本机QEMU。Node使用支持 import.meta.dirname 的现代版本（本次Node24），锁定的Electron39自带Node运行时。桌面发行运行不依赖Python；Python继续用于硬件回归与镜像工具。
+先按[构建与开发指南](../development.md)构建本机 gwemu 内核。Node使用支持 import.meta.dirname 的现代版本（本次Node24），锁定的Electron39自带Node运行时。桌面发行运行不依赖Python；Python继续用于硬件回归与镜像工具。
 
 ```sh
 scripts/build.sh
